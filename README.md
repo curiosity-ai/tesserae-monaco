@@ -31,7 +31,7 @@ dotnet tool update --global Transpose.Compiler
 dotnet tool update --global dotnet-serve
 export PATH="$PATH:$HOME/.dotnet/tools"
 
-dotnet build Tesserae.Monaco.sln
+dotnet build Tesserae.Monaco.slnx
 ```
 
 node is required: the build bundles Monaco from the pinned npm package (nothing Monaco-related is

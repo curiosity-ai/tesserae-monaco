@@ -1,0 +1,12 @@
+<Solution>
+  <Configurations>
+    <BuildType Name="Debug" />
+    <BuildType Name="Release" />
+    <Platform Name="Any CPU" />
+  </Configurations>
+  <Project Path="Tesserae.Monaco/Tesserae.Monaco.csproj" />
+  <Project Path="Tesserae.Monaco.Sample/Tesserae.Monaco.Sample.csproj" />
+  <Folder Name="/DevOps/">
+    <File Path=".azure-devops/build-nuget-transpose.yml" />
+  </Folder>
+</Solution>

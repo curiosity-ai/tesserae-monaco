@@ -30,7 +30,7 @@ dotnet tool update --global Transpose.Compiler
 dotnet tool update --global dotnet-serve
 export PATH="$PATH:$HOME/.dotnet/tools"
 
-dotnet build Tesserae.Monaco.sln
+dotnet build Tesserae.Monaco.slnx
 ```
 
 The first build runs `npm install && npm run bundle` in `Tesserae.Monaco/` via the `BundleMonaco`
