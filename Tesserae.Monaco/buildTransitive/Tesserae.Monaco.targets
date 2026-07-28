@@ -1,0 +1,58 @@
+<Project>
+  <!--
+    Shipped inside the Tesserae.Monaco NuGet package and auto-imported by referencing projects
+    (buildTransitive/, so transitive consumers get it too). On build it copies the pre-built Monaco
+    distribution into the Transpose output folder, next to the compiled app, where the components
+    load it from at runtime (assets/js/monaco).
+
+    Monaco is copied rather than embedded as a Transpose resource on purpose - see the note in
+    tps.json. In short: Transpose emits a <script> tag for each ".js" resource and renames them into
+    ".min.js" variants, and Monaco must be loaded on demand under a name its own bundle expects, so
+    neither is survivable.
+
+    The same file serves both consumption models. A package consumer resolves the payload at
+    ../monaco inside the restored package. Inside this repo there is no such folder, so it falls
+    back to Tesserae.Monaco/assets/js/monaco - the (gitignored) esbuild output. That lets
+    Tesserae.Monaco.Sample import this file directly and exercise exactly the copy a real consumer
+    gets.
+  -->
+  <PropertyGroup>
+    <_MonacoPackagedDir>$([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)..', 'monaco'))</_MonacoPackagedDir>
+    <_MonacoRepoBundleDir>$([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)..', 'assets', 'js', 'monaco'))</_MonacoRepoBundleDir>
+
+    <_MonacoSourceDir Condition="Exists('$(_MonacoPackagedDir)')">$(_MonacoPackagedDir)</_MonacoSourceDir>
+    <_MonacoSourceDir Condition="'$(_MonacoSourceDir)' == '' and Exists('$(_MonacoRepoBundleDir)')">$(_MonacoRepoBundleDir)</_MonacoSourceDir>
+  </PropertyGroup>
+
+  <!--
+    Runs after Build so it lands after the Transpose compiler has written (and possibly cleaned) the
+    output folder. SkipUnchangedFiles keeps the ~14 MB bundle off the critical path on rebuilds.
+
+    The destination is resolved inside the target, not in the PropertyGroup above: this file is
+    imported before the .NET SDK's own targets, so $(OutDir) is still empty at import time and
+    computing the path there would silently copy into the wrong folder.
+  -->
+  <Target Name="_CopyMonacoAssets"
+          AfterTargets="Build"
+          Condition="'$(DesignTimeBuild)' != 'true'">
+
+    <Error Condition="'$(_MonacoSourceDir)' == ''"
+           Text="Tesserae.Monaco: no Monaco distribution found. Looked in '$(_MonacoPackagedDir)' (package) and '$(_MonacoRepoBundleDir)' (repo). If building this repo from source, run 'npm install &amp;&amp; npm run bundle' in the Tesserae.Monaco folder." />
+
+    <PropertyGroup>
+      <MonacoAssetsOutputDir Condition="'$(MonacoAssetsOutputDir)' == ''">$([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)', '$(OutDir)', 'tps', 'assets', 'js', 'monaco'))</MonacoAssetsOutputDir>
+    </PropertyGroup>
+
+    <ItemGroup>
+      <_MonacoFiles Include="$(_MonacoSourceDir)**\*" />
+    </ItemGroup>
+
+    <Copy SourceFiles="@(_MonacoFiles)"
+          DestinationFiles="@(_MonacoFiles->'$(MonacoAssetsOutputDir)%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true"
+          OverwriteReadOnlyFiles="true" />
+
+    <Message Importance="normal"
+             Text="Tesserae.Monaco: copied Monaco from $(_MonacoSourceDir) to $(MonacoAssetsOutputDir)" />
+  </Target>
+</Project>

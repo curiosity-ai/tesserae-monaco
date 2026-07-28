@@ -1,0 +1,96 @@
+variables:
+  buildConfiguration: 'Release'
+
+trigger:
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - Tesserae.Monaco/*
+      - .azure-devops/build-nuget-transpose.yml
+
+pool:
+  vmImage: 'windows-latest'
+
+steps:
+- checkout: self
+  submodules: true
+  persistCredentials: true
+
+- task: PowerShell@2
+  displayName: 'Create CalVer Version'
+  inputs:
+    targetType: 'inline'
+    script: |
+      $dottedDate = (Get-Date).ToString("yy.M")
+      $buildID = $($env:BUILD_BUILDID)
+      $modBuildID = [int]$buildID % 65536  # ensure fits in int16
+      $newTargetVersion = "$dottedDate.$modBuildID"
+      Write-Host "##vso[task.setvariable variable=targetVersion;]$newTargetVersion"
+      Write-Host "Updated targetVersion to '$newTargetVersion'"
+
+- task: UseDotNet@2
+  displayName: 'Use .NET 10.0 sdk'
+  inputs:
+    packageType: sdk
+    version: 10.x
+    installationPath: $(Agent.ToolsDirectory)/dotnet
+
+- task: NuGetToolInstaller@1
+
+- task: CmdLine@2
+  displayName: 'install Transpose compiler'
+  inputs:
+    script: 'dotnet tool update --global Transpose.Compiler'
+
+- task: NodeTool@0
+  displayName: 'Use Node.js 22.x'
+  inputs:
+    versionSpec: '22.x'
+
+# There is no global-tool compiler for Transpose: the Transpose.Build.Target SDK
+# runs the `tps` compiler as part of the normal `dotnet build` below.
+
+# Bundle Monaco's ESM build into the scripts the package ships (also runs as an MSBuild target
+# during the build, but doing it explicitly here makes the produced artifact visible in the logs).
+# Monaco is not vendored in this repo - it is restored from the pinned npm package every build.
+- task: CmdLine@2
+  displayName: 'bundle monaco js'
+  inputs:
+    script: |
+      npm install --no-audit --no-fund
+      npm run bundle
+    workingDirectory: '$(Build.SourcesDirectory)/Tesserae.Monaco/'
+
+- task: CmdLine@2
+  displayName: 'restore Tesserae.Monaco project'
+  inputs:
+    script: 'dotnet restore $(Build.SourcesDirectory)\Tesserae.Monaco\Tesserae.Monaco.csproj'
+    workingDirectory: '$(Build.SourcesDirectory)/Tesserae.Monaco/'
+
+- task: CmdLine@2
+  displayName: 'Build Tesserae.Monaco'
+  inputs:
+    script: 'dotnet build $(Build.SourcesDirectory)\Tesserae.Monaco\Tesserae.Monaco.csproj -c $(buildConfiguration) /p:Version=$(targetVersion)'
+    workingDirectory: '$(Build.SourcesDirectory)/Tesserae.Monaco/'
+
+# The sample is not packed, but building it proves the package is consumable end to end - it is the
+# only thing that exercises Tesserae.Monaco.targets copying Monaco into an app's output.
+- task: CmdLine@2
+  displayName: 'Build Tesserae.Monaco.Sample'
+  inputs:
+    script: 'dotnet build $(Build.SourcesDirectory)\Tesserae.Monaco.Sample\Tesserae.Monaco.Sample.csproj -c $(buildConfiguration)'
+    workingDirectory: '$(Build.SourcesDirectory)/Tesserae.Monaco.Sample/'
+
+- task: CmdLine@2
+  inputs:
+    script: 'dir $(Build.SourcesDirectory)\Tesserae.Monaco\bin\ /S'
+
+- task: NuGetCommand@2
+  displayName: 'push Tesserae.Monaco to nuget'
+  inputs:
+    command: 'push'
+    packagesToPush: '**/*/Tesserae.Monaco.$(targetVersion).nupkg' # The package name comes from the PackageID, not project name
+    nuGetFeedType: 'external'
+    publishFeedCredentials: 'nuget-curiosity-org'

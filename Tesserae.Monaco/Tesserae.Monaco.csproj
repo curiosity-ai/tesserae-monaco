@@ -1,0 +1,75 @@
+<Project Sdk="Transpose.Build.Target/26.7.2692">
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <DefineConstants>TRANSPOSE</DefineConstants>
+    <AssemblyName>Tesserae.Monaco</AssemblyName>
+    <RootNamespace>Tesserae.Monaco</RootNamespace>
+    <LangVersion>7.2</LangVersion>
+    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+    <DebugType>None</DebugType>
+    <DebugSymbols>false</DebugSymbols>
+    <SkipResourcesExtraction>true</SkipResourcesExtraction>
+    <MinifyLocalVariables>true</MinifyLocalVariables>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Transpose.BCL" Version="26.7.3064" />
+    <PackageReference Include="Transpose.Core" Version="26.7.3065" />
+    <PackageReference Include="Tesserae" Version="2026.7.68604" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
+    <Copyright>(c) Copyright 2026 Curiosity GmbH - all right reserved</Copyright>
+    <Company>Curiosity GmbH</Company>
+    <Authors>Curiosity GmbH</Authors>
+    <PackageProjectUrl>https://github.com/curiosity-ai/tesserae.monaco</PackageProjectUrl>
+    <PackageId>Tesserae.Monaco</PackageId>
+    <Description>Tesserae.Monaco is a Tesserae (Transpose C# to JavaScript) wrapper around the Monaco code editor, providing code editor, code viewer and diff viewer components.</Description>
+    <PackageTags>transpose, HTML, UI, components, monaco, editor, code, diff, tesserae</PackageTags>
+    <NoWarn>1701;1702;1591</NoWarn>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+    <None Include="buildTransitive/Tesserae.Monaco.targets" Pack="true" PackagePath="buildTransitive/" />
+  </ItemGroup>
+
+  <!--
+    Monaco is consumed from the pinned npm package and bundled from its ESM build by
+    build/bundle-monaco.mjs (esbuild). Nothing Monaco-related is committed to this repo: the bundle
+    is generated on every build and gitignored.
+
+    The bundle step is not optional. Monaco's ESM tree cannot be loaded by a browser as-is - it
+    contains ~133 bare `import './x.css'` statements that browsers reject, across 1331 modules - and
+    its prebuilt AMD alternative is deprecated upstream. See the header of build/bundle-monaco.mjs.
+
+    The output is packed and copied into the consuming app's output by Tesserae.Monaco.targets,
+    rather than embedded as a Transpose resource - see the note in tps.json.
+  -->
+  <PropertyGroup>
+    <MonacoBundleDir>$(MSBuildProjectDirectory)/assets/js/monaco</MonacoBundleDir>
+  </PropertyGroup>
+
+  <Target Name="BundleMonaco" BeforeTargets="BeforeBuild" Inputs="package.json;build/bundle-monaco.mjs" Outputs="$(MonacoBundleDir)/version.txt">
+    <Exec Command="npm install --no-audit --no-fund" WorkingDirectory="$(MSBuildProjectDirectory)" />
+    <Exec Command="npm run bundle" WorkingDirectory="$(MSBuildProjectDirectory)" />
+  </Target>
+
+  <!--
+    Resolved in a target rather than a static ItemGroup so the glob runs after BundleMonaco has
+    produced the files - a static include is evaluated before any target runs and would come back
+    empty on a fresh clone.
+
+    Hooked on _GetPackageFiles, which is where NuGet collects Pack="true" items. GenerateNuspec is
+    too late: it takes _GetPackageFiles as a dependency, so items added there never reach the
+    nuspec and the package silently ships without Monaco.
+  -->
+  <Target Name="IncludeMonacoInPackage" BeforeTargets="_GetPackageFiles" DependsOnTargets="BundleMonaco">
+    <ItemGroup>
+      <None Include="$(MonacoBundleDir)/**" Pack="true" PackagePath="monaco/" />
+    </ItemGroup>
+  </Target>
+</Project>

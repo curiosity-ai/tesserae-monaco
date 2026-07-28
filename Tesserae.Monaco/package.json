@@ -1,0 +1,16 @@
+{
+  "name": "tesserae-monaco-assets",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Pins monaco-editor and bundles its ESM build into the scripts shipped by the Tesserae.Monaco package.",
+  "dependencies": {
+    "monaco-editor": "0.56.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.1"
+  },
+  "scripts": {
+    "bundle": "node build/bundle-monaco.mjs"
+  },
+  "type": "module"
+}

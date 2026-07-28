@@ -1,0 +1,65 @@
+{
+    // Always build both minified and non-minified versions of the code so that resources for both versions are always included in the binary and so referencing projects can decide whether
+    // to use the minified versions or the non-minified versions
+    "outputFormatting": "Both",
+    "resources": [
+        // Include the JS that is compiled from the C# in this project - be sure to include non-minified AND minified version (and to include the meta data files required for reflection)
+        // because Transpose will only include ".min.js" versions of resources when a project that references this is built in Release and will only include NON-".min.js" versions when built
+        // in Debug (this is the default behaviour for projects that don't have any external resources to build into the binary but when a "resources" section is present in a tps.json
+        // file then that default behaviour is lost and must be opted back into).
+        {
+            "name": "Tesserae.Monaco.js",
+            "files": [
+                "$(OutDir)tps/Tesserae.Monaco.js"
+            ]
+        },
+        {
+            "name": "Tesserae.Monaco.meta.js",
+            "files": [
+                "$(OutDir)tps/Tesserae.Monaco.meta.js"
+            ]
+        },
+        {
+            "name": "Tesserae.Monaco.min.js",
+            "files": [
+                "$(OutDir)tps/Tesserae.Monaco.min.js"
+            ]
+        },
+        {
+            "name": "Tesserae.Monaco.meta.min.js",
+            "files": [
+                "$(OutDir)tps/Tesserae.Monaco.meta.min.js"
+            ]
+        }
+        // NOTE: the Monaco distribution itself is deliberately NOT a Transpose resource. It is
+        // packed into the NuGet package under monaco/ and copied into the consuming project's
+        // output by buildTransitive/Tesserae.Monaco.targets instead. Three reasons:
+        //   - Transpose emits a <script> tag for every ".js" resource, but Monaco must be loaded on
+        //     demand by its own AMD loader; eagerly injecting editor.main.js and workerMain.js both
+        //     breaks them and costs megabytes on first paint.
+        //   - "outputFormatting": "Both" renames resources into ".min.js" variants, and Monaco's AMD
+        //     module ids are its file paths - a renamed file is an unresolvable module.
+        //   - The "files" globs are single-level, so Monaco's nested tree (94 files across 20-odd
+        //     folders) cannot be expressed without one entry per folder.
+    ],
+    "cleanOutputFolderBeforeBuildPattern": "*.*",
+    "loader": {
+        "type": "Global"
+    },
+    "generateTypeScript": false,
+    "generateDocumentation": "None",
+    "rules": {
+        "anonymousType": "Plain",
+        "arrayIndex": "Managed",
+        "autoProperty": "Plain",
+        "boxing": "Managed",
+        "externalCast": "Plain",
+        "inlineComment": "Plain",
+        "integer": "Managed",
+        "lambda": "Plain",
+        "useShortForms": true
+    },
+    "sourceMap": {
+        "enabled": false
+    }
+}
