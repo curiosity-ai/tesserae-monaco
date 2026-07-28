@@ -19,29 +19,32 @@
   <PropertyGroup>
     <_MonacoPackagedDir>$([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)..', 'monaco'))</_MonacoPackagedDir>
     <_MonacoRepoBundleDir>$([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)..', 'assets', 'js', 'monaco'))</_MonacoRepoBundleDir>
-
-    <_MonacoSourceDir Condition="Exists('$(_MonacoPackagedDir)')">$(_MonacoPackagedDir)</_MonacoSourceDir>
-    <_MonacoSourceDir Condition="'$(_MonacoSourceDir)' == '' and Exists('$(_MonacoRepoBundleDir)')">$(_MonacoRepoBundleDir)</_MonacoSourceDir>
   </PropertyGroup>
 
   <!--
     Runs after Build so it lands after the Transpose compiler has written (and possibly cleaned) the
     output folder. SkipUnchangedFiles keeps the ~14 MB bundle off the critical path on rebuilds.
 
-    The destination is resolved inside the target, not in the PropertyGroup above: this file is
-    imported before the .NET SDK's own targets, so $(OutDir) is still empty at import time and
-    computing the path there would silently copy into the wrong folder.
+    Everything is resolved inside the target rather than in a top-level PropertyGroup, because
+    MSBuild evaluates those at import time - before any target has run. That would break two ways:
+    $(OutDir) is still empty then, so the copy would land somewhere wrong; and on a fresh clone the
+    repo bundle does not exist yet (the referenced project's BundleMonaco target creates it later in
+    the same build), so the Exists() check would fail and the build would report Monaco missing even
+    though it is about to appear.
   -->
   <Target Name="_CopyMonacoAssets"
           AfterTargets="Build"
           Condition="'$(DesignTimeBuild)' != 'true'">
 
-    <Error Condition="'$(_MonacoSourceDir)' == ''"
-           Text="Tesserae.Monaco: no Monaco distribution found. Looked in '$(_MonacoPackagedDir)' (package) and '$(_MonacoRepoBundleDir)' (repo). If building this repo from source, run 'npm install &amp;&amp; npm run bundle' in the Tesserae.Monaco folder." />
-
     <PropertyGroup>
+      <_MonacoSourceDir Condition="Exists('$(_MonacoPackagedDir)')">$(_MonacoPackagedDir)</_MonacoSourceDir>
+      <_MonacoSourceDir Condition="'$(_MonacoSourceDir)' == '' and Exists('$(_MonacoRepoBundleDir)')">$(_MonacoRepoBundleDir)</_MonacoSourceDir>
+
       <MonacoAssetsOutputDir Condition="'$(MonacoAssetsOutputDir)' == ''">$([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)', '$(OutDir)', 'tps', 'assets', 'js', 'monaco'))</MonacoAssetsOutputDir>
     </PropertyGroup>
+
+    <Error Condition="'$(_MonacoSourceDir)' == ''"
+           Text="Tesserae.Monaco: no Monaco distribution found. Looked in '$(_MonacoPackagedDir)' (package) and '$(_MonacoRepoBundleDir)' (repo). If building this repo from source, run 'npm install &amp;&amp; npm run bundle' in the Tesserae.Monaco folder." />
 
     <ItemGroup>
       <_MonacoFiles Include="$(_MonacoSourceDir)**\*" />
