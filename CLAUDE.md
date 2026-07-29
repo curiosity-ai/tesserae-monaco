@@ -156,3 +156,57 @@ Note Playwright's Chromium refuses some ports (5060 is "unsafe"); 5000-5002 are 
 
 Build in **Release** at least once before shipping: Transpose selects `.min.js` resources only there,
 so a Debug-only pass does not prove the minified resource set is wired up.
+
+Serve the sample with `dotnet serve`. It is a long-running server that does not exit on its own, so
+start it in the background and poll the port rather than waiting for the process to finish.
+
+## Open bug: closing a modal that contains an editor hangs the page
+
+**Not fixed.** Reproduce with the sample's "Inside a modal" section: open it, then close it. The main
+thread locks up hard enough that Chromium kills the tab (Playwright reports `Target page, context or
+browser has been closed`). Opening is fine, and the modal can stay open indefinitely.
+
+What is established, each from a clean single-browser run:
+
+| Case | Result |
+|---|---|
+| Plain Tesserae modal, no editor - open then close | fine (`modals: 1 -> 0`) |
+| Modal with editor - open, held open 5s+ | fine, stays responsive |
+| Modal with editor - close via Escape | hang, tab killed |
+| Modal with editor - close by detaching the layer from the DOM | hang |
+
+So it is the editor's teardown - not Tesserae's `Modal`, not Escape or focus handling, and not the
+open path.
+
+Ruled out by measurement, not inspection:
+
+- **ResizeObserver / MutationObserver feedback.** Both constructors were wrapped to count callbacks;
+  neither reached 400 before the hang.
+- **DOM thrash.** Counters on `removeChild` / `appendChild` / `insertBefore` / `remove` /
+  `createElement` / `setAttribute` / `querySelectorAll` / `getBoundingClientRect` - none reached 3000.
+- **`monaco.editor.dispose()`.** Skipping it entirely still hangs.
+- **`ref dynamic` mis-emission** in `DisposeProvider`. The emitted JS is correct
+  (`provider.v.dispose()`).
+- **Tesserae's `DomObserver`.** `CheckUnmounted` is bounded; nothing loops.
+
+Approaches already tried that did **not** fix it - don't repeat them:
+
+1. Replacing the hand-rolled `ResizeObserver -> layout()` with Monaco's own `automaticLayout`. (Worth
+   doing on its own merits - a hand-rolled observer calling `layout()` does loop on its own output,
+   because Monaco's layout writes sizes back into the subtree being observed - but it is not this bug.)
+2. Deferring the provider disposal to a macrotask via `setTimeout(..., 0)`.
+3. Removing per-editor provider registration altogether, in favour of one registration per language
+   dispatching through a model-keyed `WeakMap`. Architecturally nicer, still hangs.
+
+A four-way bisect appeared to show "skip provider disposal -> survives", which is what motivated 2
+and 3. **That result was noise**: all four cases shared one browser, so a crashed page poisoned the
+later ones, and the run's own "skip both -> hang" row contradicted it. Give each case its own browser
+instance.
+
+The combination never cleanly tested is **no provider teardown AND no `editor.dispose()`**, each in a
+fresh browser, repeated. If that still hangs, the loop is in the Modal-close path interacting with
+Monaco's DOM rather than in this package's dispose, and the investigation moves to the Tesserae side.
+
+One measurement trap worth knowing: `getBoundingClientRect()` reflects ancestor transforms, so during
+the modal's open animation the editor and every ancestor read `height: 0` even though Monaco had
+correctly written `height: 496px`. That is not a sizing bug - don't chase it.
