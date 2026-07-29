@@ -28,10 +28,13 @@ namespace Tesserae.Monaco
 
         /// <summary>
         /// Where this package's Monaco bundle lives, relative to the page - the folder holding
-        /// <c>monaco.js</c>, <c>monaco.css</c> and the <c>*.worker.js</c> files. Defaults to
-        /// <c>assets/js/monaco</c>, which is where the build copies them, so you only need to set
-        /// this if you serve Monaco from somewhere else (a CDN, a shared static host). Must be set
-        /// before the first editor is built.
+        /// <c>monaco.js</c> and the <c>*.worker.js</c> files. Defaults to <c>assets/js/monaco</c>,
+        /// which is where the build copies them, so you only need to set this if you serve Monaco
+        /// from somewhere else (a CDN, a shared static host). Must be set before the first editor is
+        /// built.
+        ///
+        /// The workers are located by the bundle itself, relative to its own script URL, so pointing
+        /// this at another origin moves them too - no second setting to keep in sync.
         /// </summary>
         public static string AssetsPath
         {
@@ -79,13 +82,9 @@ namespace Tesserae.Monaco
         {
             var baseUrl = BaseUrl;
 
-            // The stylesheet first, so the editor is never briefly rendered unstyled.
-            Require.LoadStyle(baseUrl + "/monaco.css");
-
-            // MonacoEnvironment has to exist before monaco.js evaluates - the editor reads it the
-            // first time it needs a worker, and there is no way to supply it afterwards.
-            ConfigureWorkers(baseUrl);
-
+            // One script, and everything else is already inside it: the bundle injects Monaco's
+            // stylesheet and installs MonacoEnvironment itself, resolving its own worker URLs from
+            // the script's own src. See build/bundle-monaco.mjs.
             await Require.LoadScriptAsync(baseUrl + "/monaco.js");
 
             if (!IsLoaded)
@@ -103,50 +102,6 @@ namespace Tesserae.Monaco
             _pendingLanguages.Clear();
 
             DefineThemes();
-        }
-
-        /// <summary>
-        /// Tells Monaco which bundled worker to spin up for each language service. Monaco asks by
-        /// label, and anything it doesn't recognise falls back to the core editor worker (which is
-        /// what powers plain-text features like word-based suggestions and diff computation).
-        ///
-        /// The cross-origin branch matters when <see cref="AssetsPath"/> points at a CDN: the Worker
-        /// constructor rejects a cross-origin script outright, so the URL is wrapped in a
-        /// same-origin blob that <c>importScripts</c> the real one - the workaround Monaco's own
-        /// documentation prescribes. It is only used when needed, since a strict CSP may forbid
-        /// blob workers.
-        /// </summary>
-        private static void ConfigureWorkers(string baseUrl)
-        {
-            Script.Write(
-                @"(function(base) {
-                    var workers = {
-                        typescript: 'ts.worker.js',
-                        javascript: 'ts.worker.js',
-                        json:       'json.worker.js',
-                        css:        'css.worker.js',
-                        scss:       'css.worker.js',
-                        less:       'css.worker.js',
-                        html:       'html.worker.js',
-                        handlebars: 'html.worker.js',
-                        razor:      'html.worker.js'
-                    };
-
-                    window.MonacoEnvironment = {
-                        getWorker: function(moduleId, label) {
-                            var url = base + '/' + (workers[label] || 'editor.worker.js');
-
-                            if (new URL(url, document.baseURI).origin !== window.location.origin) {
-                                var shim = 'importScripts(' + JSON.stringify(url) + ');';
-                                url = URL.createObjectURL(new Blob([shim], { type: 'text/javascript' }));
-                            }
-
-                            return new Worker(url, { name: label });
-                        }
-                    };
-                })({0})",
-                baseUrl
-            );
         }
 
         /// <summary>

@@ -125,7 +125,7 @@ from `Theme.Secondary.Background` when Monaco loads. After toggling the Tesserae
 
 | Member | Purpose |
 |---|---|
-| `MonacoEditor.AssetsPath` | Folder holding `monaco.js`, `monaco.css` and the `*.worker.js` files (default `assets/js/monaco`, where the build copies them). Set before the first editor is built. |
+| `MonacoEditor.AssetsPath` | Folder holding `monaco.js` and the `*.worker.js` files (default `assets/js/monaco`, where the build copies them). Set before the first editor is built; the workers follow it automatically. |
 | `MonacoEditor.LoadAsync()` | Loads Monaco (at most once per page). Components await this themselves; call it to warm Monaco up, or before calling `monaco.*` directly. |
 | `MonacoEditor.IsLoaded` | Whether `monaco.*` is safe to call. |
 | `MonacoEditor.GetLanguageIds()` / `TryGetLanguageIdForExtension` | Monaco's language registry. |
@@ -148,22 +148,26 @@ text/css"*), spread across 1331 modules. This is what Monaco's own docs mean by 
 (compatible with e.g. webpack)". The alternative — Monaco's prebuilt AMD dist — is deprecated
 upstream and slated for removal, so it is deliberately not used.
 
-esbuild resolves that graph and emits eight files into `assets/js/monaco/`:
+esbuild resolves that graph and emits seven files into `assets/js/monaco/`. As much as possible is
+resolved at build time — the module graph, minification, `codicon.ttf` as a data URI, Monaco's
+stylesheet folded into the JS as a self-injecting `<style>`, and the `MonacoEnvironment` worker wiring
+— so the browser only ever fetches plain IIFE scripts:
 
 | File | Size | Loaded |
 |---|---|---|
-| `monaco.js` | ~4.5 MB | On first editor (an IIFE exposing `window.monaco`) |
-| `monaco.css` | ~340 KB | On first editor |
+| `monaco.js` | ~4.8 MB | On first editor (an IIFE exposing `window.monaco`, stylesheet folded in) |
 | `editor.worker.js` | ~300 KB | On demand — diffs, word-based suggestions |
 | `json.worker.js` | ~430 KB | On demand — a `json` model |
 | `css.worker.js` | ~1 MB | On demand — a `css`/`scss`/`less` model |
 | `html.worker.js` | ~750 KB | On demand — an `html`/`handlebars`/`razor` model |
 | `ts.worker.js` | ~7 MB | On demand — a `typescript`/`javascript` model |
 
-Only `monaco.js` + `monaco.css` are fetched to show an editor; the language workers are pulled in by
-Monaco itself the first time a model needs one, wired up through `MonacoEnvironment.getWorker`. When
-`AssetsPath` points at a different origin, workers are loaded through a same-origin blob shim, since
-the `Worker` constructor rejects cross-origin scripts.
+Only `monaco.js` is fetched to show an editor; the language workers are pulled in by Monaco itself the
+first time a model needs one. The bundle installs `MonacoEnvironment` and resolves the worker URLs
+from its own script URL, so pointing `AssetsPath` at another origin moves the workers with it — and in
+that case they load through a same-origin blob shim, since the `Worker` constructor rejects
+cross-origin scripts. Set your own `window.MonacoEnvironment` before the first editor if you want a
+different worker strategy.
 
 ## License
 

@@ -56,10 +56,20 @@ consumed as-is:
 - The **AMD** build (`min/vs/...`) does load directly via `vs/loader.js`, and worked when tried, but
   upstream marks AMD as deprecated and slated for removal. Don't reintroduce it.
 
-So `build/bundle-monaco.mjs` produces `monaco.js` (IIFE → `window.monaco`), `monaco.css`, and five
-`*.worker.js` files. Only `monaco.js` + `monaco.css` load up front; the language workers are pulled in
-by Monaco on demand through `MonacoEnvironment.getWorker`, which `ConfigureWorkers` installs **before**
-`monaco.js` evaluates (there is no way to supply it afterwards).
+So `build/bundle-monaco.mjs` produces `monaco.js` (IIFE → `window.monaco`) and five `*.worker.js`
+files. Everything that can be resolved ahead of time is: the module graph, minification, `codicon.ttf`
+as a data URI, Monaco's stylesheet folded into the JS as a self-injecting `<style>`, and
+`MonacoEnvironment.getWorker` baked in with the worker filenames. The browser fetches plain IIFE
+scripts — no module graph, no import map, no runtime patching.
+
+That means the C# side does nothing but load one script. In particular the bundle resolves its own
+base URL from `document.currentScript.src`, so the workers follow wherever `monaco.js` is served from
+and there is no second setting to keep in sync — and the old ordering constraint (MonacoEnvironment
+had to exist *before* `monaco.js` evaluated) is gone, because the bundle sets it itself. The `||`
+guard means a host can still install its own `MonacoEnvironment` beforehand if it wants a different
+worker strategy.
+
+Only `monaco.js` loads up front; the language workers are pulled in by Monaco on demand.
 
 If you bump the `monaco-editor` pin, re-run the browser verification below — worker entry-point paths
 and the CSS-import situation have both changed between minor versions.
