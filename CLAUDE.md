@@ -124,6 +124,30 @@ mechanism came across, as `LanguageDefinition` + `MonacoEditor.RegisterLanguage`
   `/index.html/assets/...` when the app is served as a file rather than a directory.
 - Verify emitted JS with `node --check bin/.../tps/Tesserae.Monaco.js` — a Transpose emit bug shows up
   there long before it shows up as a confusing runtime error.
+- **The `Transpose.Compiler` tool and the `Transpose.BCL` package have to be updated together.** The
+  compiler emits calls into the `tps.js` runtime that `Transpose.BCL` ships, and a newer compiler can
+  emit a call the pinned runtime does not have. Updating only the tool left the sample rendering a
+  blank page: the compiler emitted `Transpose.anon(...)` for `CustomLanguageSample`'s anonymous
+  Monarch objects, 26.7's runtime had no `anon`, and `Main` threw before appending anything to the
+  body. `node --check` passes in that state — the JS is syntactically fine, the callee just does not
+  exist — so the only symptom is an empty page plus one console error. Bump both, and note the two
+  version lines move independently (BCL 26.8.x alongside Core 26.7.x is normal).
+
+## Building on the docs' own claims
+
+Two things in the checklist below are easy to misread, both confirmed by measurement:
+
+- **"Format Document" is not Shift+Alt+F everywhere.** Monaco takes VS Code's per-platform bindings:
+  Shift+Alt+F on Windows, Shift+Option+F on macOS, **Ctrl+Shift+I on Linux**. Verification happens on
+  Linux here, so Shift+Alt+F does nothing and looks exactly like a broken `OnFormat` — the keydown
+  arrives with the right `key`/`code`/`keyCode` at a focused editor and no action runs. Confirm with
+  the keybinding service (`editor._standaloneKeybindingService.getKeybindings()`) before suspecting
+  the provider; `editor.getAction('editor.action.formatDocument').run()` exercises the same path
+  without any keyboard involved. Ctrl+K Ctrl+F for format-selection is the same on all platforms.
+- **Every editor owns its own suggest widget inside the shared overflow host.** So
+  `document.querySelector('.suggest-widget')` returns whichever editor's widget comes first in the
+  DOM, usually a hidden one with no rows. Any check for "the suggest list is open" has to scan
+  `querySelectorAll` for the visible one, or it reports a working popup as broken.
 
 ## Monaco behaviour worth preserving
 
@@ -157,12 +181,25 @@ python3 -m http.server 5002 --directory Tesserae.Monaco.Sample/bin/Debug/netstan
 ```
 
 Then check, with the console clean throughout: an editor renders and highlights; completion opens and
-**inserts** on accept; hover shows documentation on a real mouse hover; Shift+Alt+F applies the
-formatter; a TODO squiggles about a second after typing stops; the diff shows both panes; the custom
-`greet` language colours its keywords; a `json` model produces a validation marker (this is the only
-check that proves the bundled workers load); and the suggest popup is not clipped inside the modal.
+**inserts** on accept; hover shows documentation on a real mouse hover; the Format Document keybinding
+applies the formatter (**Ctrl+Shift+I** on Linux — see above); a TODO squiggles about a second after
+typing stops; the diff shows both panes; the custom `greet` language colours its keywords; a `json`
+model produces a validation marker (this is the only check that proves the bundled workers load); and
+the suggest popup is not clipped inside the modal.
 
 Note Playwright's Chromium refuses some ports (5060 is "unsafe"); 5000-5002 are fine.
+
+Two habits that save a wasted round of debugging when driving this page with Playwright:
+
+- **Address editors by DOM order, not by content.** `monaco.editor.getEditors()` returns them in
+  creation order and includes the diff editor's two inner editors, and several sections seed the *same*
+  sample text — so "the editor containing TODO" finds the Code editor sample, which has no validator,
+  rather than the Diagnostics one. Sorting on `compareDocumentPosition` gives the stable order
+  `0` Code editor, `1` Code viewer, `2`/`3` diff original/modified, `4` Completion+hover,
+  `5` Formatting, `6` Diagnostics, `7` Custom language, `8` Auto height.
+- **Read the page only after the thing you are measuring has settled.** The diff's decorations arrive
+  from the diff worker and the `greet` tokens after `RegisterLanguage` flushes; sampling immediately
+  after load reports zero of either and looks like a real regression. Poll instead of sleeping once.
 
 Build in **Release** at least once before shipping: Transpose selects `.min.js` resources only there,
 so a Debug-only pass does not prove the minified resource set is wired up.
@@ -220,3 +257,45 @@ Monaco's DOM rather than in this package's dispose, and the investigation moves 
 One measurement trap worth knowing: `getBoundingClientRect()` reflects ancestor transforms, so during
 the modal's open animation the editor and every ancestor read `height: 0` even though Monaco had
 correctly written `height: 496px`. That is not a sizing bug - don't chase it.
+
+### It is a rendering stall, not a main-thread lockup
+
+Measured while re-verifying the sample. This reframes everything above, and explains why every
+main-thread hypothesis in the "ruled out" list came back clean: **the loop is not on the main thread.**
+
+With the modal open, the main thread still answers `page.evaluate` instantly, while:
+
+- `requestAnimationFrame` never fires - **0 ticks in 2 wall-clock seconds** (~120 before opening),
+- `document.timeline.currentTime` does not advance at all,
+- the modal's own `tss-modal-animate` animation sits at `playState: "running", currentTime: 0`, so the
+  layer stays at the `0%` keyframe (`transform: scale(0)`) and the editor reads 0x0 forever - the
+  "measurement trap" above, except it never resolves,
+- every synthetic keystroke, mouse move and `page.screenshot` times out, because each waits on a frame
+  the renderer never produces. This is almost certainly what "Chromium kills the tab" looked like.
+
+So the table row "open, held open 5s+ - fine, stays responsive" is not wrong, it just measured the
+wrong thing: the page answers script while rendering nothing. The stall therefore begins at **open**,
+which makes the close path a symptom rather than the cause, and moves the investigation to compositing
+the animated modal layer with Monaco's layers inside it.
+
+Suppressing the animation removes it completely. With
+`*, *::before, *::after { animation: none !important; transition: none !important; }` injected before
+opening, rAF runs at ~60fps, the editor lays out at its real 956x556, the suggest popup opens and is
+unclipped, and input and screenshots work - so the editor inside the modal is otherwise entirely
+healthy. That is also how to verify the "Inside a modal" section at all; without it the check cannot
+get a frame to measure and every assertion times out for the wrong reason.
+
+Controls, each in its own fresh browser, all of which keep producing frames - so it is neither the
+animation alone nor Monaco alone, but the two composited together:
+
+| Case | Frames |
+|---|---|
+| Blank page, `tss-modal-animation` on a plain div | fine (~88 ticks/1.5s, animation completes) |
+| Sample page with Monaco loaded, same animation on a plain div, modal never opened | fine |
+| Blank page, a bare `monaco.editor.create`, same animation on a plain div | fine |
+| Sample page, modal with an editor opened, animation live | **0 ticks, timeline frozen** |
+
+Next step, given the above: keep `editor.dispose()` and the provider teardown out of it for now and
+look at why the animated layer never gets a frame - e.g. whether Monaco's `will-change`/`transform`
+layers inside an animating ancestor are what wedges the compositor, and whether Tesserae's 0.3s
+`tss-modal-animation` can be applied to a wrapper that does not contain the editor's own layers.
