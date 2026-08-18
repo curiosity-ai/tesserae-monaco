@@ -50,7 +50,9 @@ dotnet serve --port 5000
 ```
 
 See [CLAUDE.md](CLAUDE.md) for how the Monaco bundle is produced and why, and for the Transpose and
-Monaco behaviours worth knowing before changing anything.
+Monaco behaviours worth knowing before changing anything. For the Transpose and Tesserae lessons that
+generalise beyond this package - the interop rules, the toolchain hazards, and how to verify them - see
+[TRANSPOSE-AND-TESSERAE.md](TRANSPOSE-AND-TESSERAE.md), which is indexed by symptom.
 
 ## License
 
