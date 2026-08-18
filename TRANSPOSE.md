@@ -1,8 +1,11 @@
-# Lessons learned: Transpose and Tesserae
+# Lessons learned: Transpose
 
-Notes for anyone — human or agent — working on a **Transpose** (C#-to-JavaScript) project, especially
-one using **Tesserae** for its UI. Written while building [Tesserae.Monaco](README.md), but almost none
-of it is Monaco-specific.
+Notes for anyone — human or agent — working on a **Transpose** (C#-to-JavaScript) project. Written while
+building [Tesserae.Monaco](README.md), but none of it is Monaco-specific.
+
+For the UI framework, see **[TESSERAE.md](TESSERAE.md)**. The two overlap in one place: a package built by
+a newer compiler can ship types that are unusable synchronously, which shows up as a Tesserae failure but
+is a Transpose mechanism — [§4.2](#42-chunked-lazy-modules-turn-every-type-into-a-stub) has it.
 
 Transpose has few surprises in its *language* support and several in the seam between C# and JavaScript.
 Nearly everything below is about that seam. Each entry gives the **symptom** first, because that is what
@@ -22,15 +25,14 @@ that this work relied on and did not contradict.
 | `Cannot read properties of undefined (reading '$$name')` | a BCL generic over an `[External]` type | [1.4](#14-a-bcl-generic-over-an-external-type-cannot-be-constructed) |
 | `DataCloneError` quoting a function body | a C# array or anonymous type sent to a worker | [2.1](#21-a-c-array-cannot-cross-into-a-web-worker) |
 | `someMethod$1 is not a function`, or a call silently not matching | two declarations sharing a `[Name]` | [1.5](#15-two-declarations-cannot-share-a-name) |
-| `this.Foo is not a function` inside a callback you passed to JS | `Script.Write` placeholder re-evaluated in a nested function | [3.1](#31-scriptwrite-placeholders-are-textual-substitution) |
+| `this.Foo is not a function` inside a callback you passed to JavaScript | `Script.Write` placeholder re-evaluated in a nested function | [3.1](#31-scriptwrite-placeholders-are-textual-substitution) |
 | An async result silently vanishes; no error | `await` on an `IPromise` | [2.2](#22-never-await-an-ipromise) |
 | A member access works in Debug and breaks in Release | reading a plain class's members from JavaScript | [2.4](#24-only-objectliteral-member-names-survive-minification) |
-| Blank page, one console error, `node --check` passes | compiler newer than the pinned runtime | [4.1](#41-the-compiler-tool-and-the-bcl-must-move-together) |
-| `tss.UI.VStack is not a function` (or any `X is not a function` on a package type) | the package ships chunked lazy modules | [4.2](#42-chunked-lazy-modules-turn-every-type-into-a-stub) |
-| A JS enum arrives as a string like `"Warning"` | enum without `[Enum(Emit.Value)]` | [2.3](#23-enums-crossing-into-javascript-need-enumemitvalue) |
+| A JavaScript enum arrives as a string like `"Warning"` | enum without `[Enum(Emit.Value)]` | [2.3](#23-enums-crossing-into-javascript-need-enumemitvalue) |
 | A property is emitted camel-cased (`.alt` for `.Alt`) | `[External]` type without `[Convention(Notation.None)]` | [1.2](#12-conventionnotationnone-on-every-external-type) |
-| Nothing renders and nothing errors | `Children(...)` called more than once on one stack | [5.2](#52-children-replaces-and-chaining-it-does-not-append) |
-| A component removed from the DOM never comes back | `DomObserver.WhenMounted` fires once | [5.1](#51-the-mount-lifecycle-fires-once-re-arm-it-for-remounting) |
+| A `void` `Script.*` call is a syntax error in the output | expression-bodied lambda emitting `return <statement>` | [3.2](#32-a-void-scriptwrite-in-an-expression-bodied-lambda-emits-return-js) |
+| Blank page, one console error, `node --check` passes | compiler newer than the pinned runtime | [4.1](#41-the-compiler-tool-and-the-bcl-must-move-together) |
+| `X is not a function` on a type a referenced package ships | that package ships chunked lazy modules | [4.2](#42-chunked-lazy-modules-turn-every-type-into-a-stub) |
 
 ---
 
@@ -346,156 +348,39 @@ all see the type — but *using* one requires a fetch, so it is reachable only t
 Synchronous use throws `X is not a function` and the page renders nothing. Diagnose it in seconds:
 
 ```bash
-grep -c 'chunks/' path/to/output/tss.js     # 0 = classic script, hundreds = chunked
+grep -c 'chunks/' path/to/output/thePackage.js   # 0 = classic script, hundreds = chunked
 ```
 
 `"loader": { "type": "Global" }` in your `tps.json` does **not** help: that governs what *your* project
 emits, not how a referenced package's shipped resource loads. Either pin back to a non-chunked build or
-teach your entry point to await the module load before touching any package type. **(measured)**
+teach your entry point to await the module load before touching any package type.
+
+This is the mechanism behind the Tesserae pin in this repository — see
+[TESSERAE.md §6](TESSERAE.md#6-when-tesserae-itself-is-the-problem) for how it presented. **(measured)**
 
 ### 4.3 Build Release once before shipping
 
 `outputFormatting: "Both"` means resources are also emitted as `.min.js`, and Release selects those. A
-Debug-only pass does not prove the minified set is wired up — nor does it exercise [2.4](#24-only-objectliteral-member-names-survive-minification).
+Debug-only pass does not prove the minified set is wired up — nor does it exercise
+[§2.4](#24-only-objectliteral-member-names-survive-minification).
 
 ---
 
-## 5. Tesserae
-
-### 5.1 The mount lifecycle fires once — re-arm it for remounting
-
-A component that wraps a library needing a live DOM node creates it on mount:
-
-```csharp
-public HTMLElement Render()
-{
-    if (!_mountRequested)
-    {
-        _mountRequested = true;
-        DomObserver.WhenMounted(_container, () => MountAsync().FireAndForget());
-    }
-
-    return _container;
-}
-```
-
-`WhenMounted` and `WhenRemoved` each fire **once**. If teardown on `WhenRemoved` does not re-arm
-`WhenMounted`, a component removed from the DOM and re-added renders an empty container ever after — and
-never says why. Tearing down without re-arming leaks; re-arming without tearing down leaks harder. Do
-both, and keep an explicit `Dispose()` as the one-way door:
-
-```csharp
-private void HandleRemoved()
-{
-    if (_disposed) return;
-
-    Teardown();
-    ArmMountObserver();   // a re-added container rebuilds and replays its configuration
-}
-```
-
-Anything the user can change — text, scroll position, caret — should be captured on teardown and
-restored on the next create, or a remount silently reverts it. **(measured)**
-
-### 5.2 `Children(...)` replaces, and chaining it does not append
-
-```csharp
-var content = VStack().Children(a, b);
-
-foreach (var extra in more) content.Children(extra);   // renders NOTHING extra, silently
-```
-
-Build one list and pass it once:
-
-```csharp
-var sections = new List<IComponent> { a, b };
-sections.AddRange(more);
-
-var content = VStack().Children(sections.ToArray());
-```
-
-This fails with no error and no console output, which makes it expensive to find. **(measured)**
-
-### 5.3 A component that owns its own sizing
-
-Implement `ISpecialCaseStyling` so the Tesserae sizing helpers style the container you control rather
-than a wrapper:
-
-```csharp
-public HTMLElement StylingContainer      => _container;
-public bool        PropagateToStackItemParent => false;   // sizing stays on the container
-```
-
-### 5.4 Resolving a theme token to a real colour
-
-Tesserae's theme values are CSS variables, so a library wanting a concrete hex needs to resolve one:
-
-```csharp
-var hex = Color.FromString(Color.EvalVar(Theme.Secondary.Background)).ToHex();
-```
-
-`Theme.IsDark` is the light/dark switch. If you derive anything from the theme, expose a way to
-recompute it — a host may switch themes at runtime.
-
-### 5.5 Probe the API rather than guessing
-
-The available helpers vary by version. In this one `Raw(HTMLElement)`, `Toggle`, `Label` and
-`element.parentElement` exist and `Checkbox` does not. Rather than guess, write a throwaway file that
-uses the candidates and read the compiler's errors — one build tells you exactly what exists:
-
-```csharp
-internal static class Probe
-{
-    internal static void Try()
-    {
-        IComponent a = Raw(DIV());
-        IComponent b = Checkbox("x");   // error CS0103 → it does not exist
-    }
-}
-```
-
-Delete it afterwards. This is faster and more reliable than reading a decompiled assembly.
-
----
-
-## 6. How to actually verify Transpose work
+## 5. How to actually verify Transpose work
 
 `dotnet build` proves it compiles. It does not prove any of the above.
 
 1. **Read the emitted JavaScript** for anything you were unsure about. Every rule in this document came
    out of doing that. `node --check out/YourAssembly.js` catches emit bugs long before they become
    confusing runtime errors.
-2. **Drive it in a browser.** Serve the build output and use Playwright. Most Transpose/interop failures
-   are runtime-only and many are *silent*.
-3. **A/B against a clean baseline** before believing you broke something. Build the unmodified commit in
+2. **Drive it in a browser.** Serve the build output and use Playwright. Most interop failures are
+   runtime-only and many are *silent* — see [TESSERAE.md §8](TESSERAE.md#8-verifying-ui-work-in-a-browser)
+   for the UI-side traps.
+3. **Probe the compiler instead of guessing** whether an API exists. Write a throwaway file that uses the
+   candidates and read the errors — one build tells you exactly what is there, faster and more reliably
+   than decompiling an assembly. Delete it afterwards.
+4. **A/B against a clean baseline** before believing you broke something. Build the unmodified commit in
    a second worktree and compare — that is how a blank page was traced to a dependency rather than to
    the change in progress.
-4. **Bisect dependency versions by grepping build output**, not by reasoning about changelogs. One
+5. **Bisect dependency versions by grepping build output**, not by reasoning about changelogs. One
    `grep -c` over the emitted JavaScript per candidate version settles it.
-5. **Poll for the thing you are measuring; do not sleep once.** Worker-produced results — diagnostics, a
-   computed diff — arrive well after the edit that caused them, so a read straight after typing sees the
-   previous state. Prefer the library's own "it changed" event over a timeout.
-6. **Be careful what "visible" means.** A popup rendered into a zero-sized host element has a null
-   `offsetParent` while being perfectly on screen; filter on a non-zero `getBoundingClientRect()`
-   instead. A wrong visibility test costs a round of debugging a feature that already worked.
-
----
-
-## 7. The shape that worked
-
-For a library wrapping a big JavaScript component, one arrangement paid off repeatedly:
-
-- **Declare the foreign API** in one place (`src/Interop/`), and the payload types in another
-  (`src/Types/`). Nothing else touches the boundary.
-- **Implement each operation exactly once** against the declared interface, in a class that wraps a
-  *live* instance. Expose that class.
-- **Put buffering in a separate facade.** Callers configure a component long before it is mounted, so the
-  facade records calls and replays them once the instance exists — and again after a remount. Separating
-  "what the operation is" from "when it can run" keeps both simple, and lets sub-parts of a composite
-  (a diff editor's two panes, say) reuse the operations with no extra code.
-- **Distinguish standing configuration from transient acts.** An event subscription or an option should
-  be replayed on remount; focusing or scrolling should be dropped if there is nothing to focus yet.
-  Replaying the second kind at the wrong moment is a real bug.
-- **Centralise whatever every callback needs** — a gate so global registrations answer only for their own
-  instance, and a bag so every handle is released on teardown. Twenty callbacks then cost a few lines
-  each instead of repeating the same bookkeeping twenty times.
