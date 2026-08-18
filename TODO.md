@@ -125,8 +125,9 @@ Not caused by the work above, and recorded in [CLAUDE.md](CLAUDE.md) with the me
   Untouched here; the investigation is a compositing question, not a dispose one.
 
 The Tesserae blocker that stopped the sample rendering while this was first built is **resolved
-upstream**: the pin moved back to a version that is not built as chunked lazy modules, so the
-verification above runs against the repo's own pins rather than a throwaway worktree.
+upstream**: the pin is now **2026.8.69584**, which is not built as chunked lazy modules, so the
+verification above ran against the repo's own pins rather than a throwaway worktree. That pin is load
+bearing - see [CLAUDE.md](CLAUDE.md) for why 69630 and later render a blank page.
 
 ## Deliberately not done
 

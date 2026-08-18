@@ -42,6 +42,33 @@ cd Tesserae.Monaco.Sample/bin/Debug/netstandard2.0/tps/
 dotnet serve --port 5000
 ```
 
+### Don't bump Tesserae past 2026.8.69584 without checking
+
+The pin is **2026.8.69584** in both csproj files, and it is deliberate rather than merely current.
+
+From **2026.8.69630** onwards Tesserae ships as **chunked lazy modules**: its `tss.js` is an ES module
+that only calls `Transpose.Modules.register({...})`, mapping every type to a file under `chunks/tss/`,
+and leaves `tss.UI` as a *stub*. Using such a type is reachable only through the async API
+(`Transpose.Modules.load` / `Activator.CreateInstanceAsync`), but the sample's `Main` calls
+`UI.VStack(...)` synchronously - so it hits the stub, throws `tss.UI.VStack is not a function`, and the
+page renders nothing at all. `"loader": { "type": "Global" }` does not help: that governs what *this*
+project emits, not how a referenced package's shipped resource loads.
+
+Measured with `grep -c 'chunks/' .../tps/tss.js` on the sample's build output:
+
+| Tesserae | `tss.js` | Sample |
+|---|---|---|
+| **2026.8.69584** (pinned) | plain classic script | renders |
+| 2026.8.69625 | plain classic script | renders |
+| 2026.8.69630 | chunked ES module, 533 chunk refs | blank page |
+| 2026.8.69636 | chunked ES module | blank page |
+
+`Transpose.Core` and `Transpose.Build.Target` have no 26.8 builds, so there is no newer runtime to pair
+with the chunked output; only `Transpose.BCL` moves independently, which is the normal skew noted below.
+Bumping Tesserae past 69584 therefore needs the sample taught to await `Transpose.Modules.Load` before
+touching `UI` - a Tesserae/Transpose question rather than a Monaco one. Until then a blank page after a
+Tesserae bump is this, not your own regression.
+
 ## Monaco is bundled, not vendored
 
 Nothing Monaco-related is committed. `Tesserae.Monaco/assets/` is gitignored and regenerated from the
