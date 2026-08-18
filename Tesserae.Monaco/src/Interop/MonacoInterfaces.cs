@@ -1,4 +1,5 @@
 using System;
+using System.Threading.Tasks;
 using Tesserae;
 using Transpose;
 using static Transpose.Core.dom;
@@ -44,6 +45,12 @@ namespace Tesserae.Monaco
         IJsDisposable onDidChangeModelDecorations(Action listener);
         IJsDisposable addAction(EditorAction action);
 
+        /// <summary>
+        /// Looks up one of Monaco's built-in actions by id, e.g. <c>editor.action.formatDocument</c>.
+        /// Returns <c>null</c> when the editor has no such action.
+        /// </summary>
+        IEditorAction getAction(string id);
+
         /// <summary>The vertical offset of a line, in pixels.</summary>
         double getTopForLineNumber(int lineNumber);
 
@@ -55,6 +62,18 @@ namespace Tesserae.Monaco
         /// </summary>
         [Name("getOption")]
         double getNumberOption(int optionId);
+    }
+
+    /// <summary>One of the editor's actions, as handed back by <c>getAction</c>.</summary>
+    [External]
+    [Convention(Notation.None)]
+    public interface IEditorAction
+    {
+        string id    { get; }
+        string label { get; }
+
+        /// <summary>Runs the action. The promise resolves once it has finished.</summary>
+        IPromise run();
     }
 
     /// <summary>Monaco's <c>IStandaloneDiffEditor</c>.</summary>

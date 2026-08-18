@@ -21,7 +21,9 @@ Tesserae.Monaco/               the package
   src/Types/                   [ObjectLiteral] interop types, CodeDiagnostic, CodeContext, LanguageDefinition
   build/bundle-monaco.mjs      esbuild: Monaco's ESM build -> the scripts we ship
   buildTransitive/*.targets     copies the bundle into a consuming app's output
-Tesserae.Monaco.Sample/        C# stub app, one section per feature
+Tesserae.Monaco.Sample/        the sample gallery - a sidebar of features, one page each
+  src/App.cs                   sidebar, routing, reflection-based page discovery
+  src/Samples/                 one ISample per feature, plus the shared page furniture
 ```
 
 ## Build
@@ -200,7 +202,7 @@ These were learned the hard way in Mosaik; don't simplify them away.
   disposal, each mount leaks a provider bound to a dead model.
 - **Suggest/hover popups need the shared body-mounted overflow host** (`fixedOverflowWidgets` +
   `overflowWidgetsDomNode`), or they are clipped by any `overflow: hidden` ancestor — a modal, a panel,
-  a split view. The sample's "Inside a modal" section exists to catch regressions here.
+  a split view. The sample's **Modal** page exists to catch regressions here.
 - **The hover provider honours Monaco's cancellation token.** Monaco cancels a hover as soon as the
   pointer moves; resolving late flashes a stale tooltip over the wrong symbol.
 - **Monaco 0.56 requires `insertText` and `range` on a completion item.** 0.52 tolerated their absence;
@@ -209,6 +211,51 @@ These were learned the hard way in Mosaik; don't simplify them away.
 - **A diff editor's two models are ours to dispose.** Monaco does not dispose models handed to
   `setModel`, so `DiffViewer` disposes them itself — the inline versions in Mosaik leak one pair per
   render.
+
+## The sample gallery
+
+`Tesserae.Monaco.Sample` is shaped like Tesserae's own sample gallery, and deliberately so — anyone who
+has seen one can read the other. A sidebar lists the features by group; each is a page of its own with
+a route (`#/view/Code%20Editor`), so a page can be linked to, opened in its own tab, or loaded straight
+into a browser check.
+
+**Adding a page is adding a class.** There is no list to keep in sync: `App.cs` finds every `ISample`
+implementation by reflection and reads its `[SampleDetails]` for the group, the order inside it and the
+sidebar icon. The class name is the page name and the route — `CompletionAndHoverSample` becomes
+"Completion and Hover" — so name it after the feature and drop the `Sample` suffix mentally.
+
+```csharp
+[SampleDetails(Group = "Editors", Order = 4, Icon = UIcons.FileCode)]
+public class MyFeatureSample : IComponent, ISample
+{
+    private readonly IComponent _content;
+
+    public MyFeatureSample()
+    {
+        _content = SectionStack().Secondary()
+           .SampleTitle(typeof(MyFeatureSample), UIcons.FileCode, "One line on what this shows")
+           .FlatSection(...)   // Overview / Best Practices / Usage, as Card(...).SetTitle(...)
+           .SeeAlso(typeof(CodeEditorSample));
+    }
+
+    public HTMLElement Render() => _content.Render();
+}
+```
+
+Two things this depends on, both easy to break:
+
+- **Reflection has to be emitted inline.** `tps.json` carries `"reflection": { "disabled": false,
+  "target": "inline" }`. With the metadata in a separate `.meta.js` the discovery finds nothing and the
+  sidebar comes up empty.
+- **Pages are built lazily and torn down on navigation.** `Defer` builds the page when it is opened, so
+  one visit creates one page's editors rather than all eleven at startup — and leaving a page unmounts
+  them. That is a feature: it exercises the components' disposal on every click.
+
+`MonacoEditor.ApplyTheme()` alone is not enough when the theme changes at runtime. The editor
+background is baked into the theme *definition*, which is derived from the Tesserae colours in force
+when `DefineThemes()` last ran — so applying without redefining leaves a dark editor painted light.
+Call `DefineThemes()` then `ApplyTheme()`, which is what the sidebar's sun/moon button and the
+Languages and Themes page both do.
 
 ## Verifying changes
 
@@ -221,28 +268,38 @@ dotnet build Tesserae.Monaco.Sample/Tesserae.Monaco.Sample.csproj
 python3 -m http.server 5002 --directory Tesserae.Monaco.Sample/bin/Debug/netstandard2.0/tps
 ```
 
-Then check, with the console clean throughout: an editor renders and highlights; completion opens and
-**inserts** on accept; hover shows documentation on a real mouse hover; the Format Document keybinding
-applies the formatter (**Ctrl+Shift+I** on Linux — see above); a TODO squiggles about a second after
-typing stops; the diff shows both panes; the custom `greet` language colours its keywords; and the
-suggest popup is not clipped inside the modal.
+The gallery gives every feature its own page and its own route, so a check goes straight to what it is
+measuring: `#/view/Code%20Editor`, `#/view/Completion%20and%20Hover`, `#/view/Diagnostics`, and so on —
+the route is the sidebar label with spaces percent-encoded. Loading a page directly is also the cheapest
+way to isolate a failure, since only that page's editors exist.
+
+Then check, with the console clean throughout: an editor renders and highlights (Code Editor);
+completion opens and **inserts** on accept, and hover shows documentation on a real mouse hover
+(Completion and Hover); the Format Document keybinding applies the formatter — **Ctrl+Shift+I** on
+Linux, see above — (Formatting); a TODO squiggles about a second after typing stops (Diagnostics); the
+diff shows both panes (Diff Viewer); the custom `greet` language colours its keywords (Custom
+Language); and the suggest popup is not clipped inside the modal (Modal).
 
 Two of those double as worker checks, which nothing else covers: the diff's decorations come from the
-editor worker, and the `json` viewer produces a marker once its content is invalid. **The sample's own
-JSON is valid**, so an empty marker list there is the correct result rather than a broken worker —
-break the model first (`getModel().setValue('{ "name": , }')`), then wait for a marker owned by
-`json`.
+editor worker, and the `json` editor produces a marker once its content is invalid. **The sample's own
+JSON is valid**, so an empty marker list there is the correct result rather than a broken worker — the
+Diagnostics page has a "Break the JSON" button for exactly this, and then a marker owned by `json`
+should arrive.
+
+Navigating between pages is itself a check the old single-page sample could not make: every page is
+built when it is opened and disposed when it is left, so a leak or a bad teardown shows up as a console
+error while walking the sidebar. That is how the diff editor's `TextModel got disposed before
+DiffEditorWidget model got reset` was found.
 
 Note Playwright's Chromium refuses some ports (5060 is "unsafe"); 5000-5002 are fine.
 
 Two habits that save a wasted round of debugging when driving this page with Playwright:
 
-- **Address editors by DOM order, not by content.** `monaco.editor.getEditors()` returns them in
-  creation order and includes the diff editor's two inner editors, and several sections seed the *same*
-  sample text — so "the editor containing TODO" finds the Code editor sample, which has no validator,
-  rather than the Diagnostics one. Sorting on `compareDocumentPosition` gives the stable order
-  `0` Code editor, `1` Code viewer, `2`/`3` diff original/modified, `4` Completion+hover,
-  `5` Formatting, `6` Diagnostics, `7` Custom language, `8` Auto height.
+- **Open the page you are measuring, then take `getEditors()[0]`.** One page holds one or two editors
+  now, so there is no ambiguity left to resolve — the trap this replaced was picking an editor out of
+  nine on a single page by its content, and finding a different section that seeded the same text.
+  Where a page has two (Code Viewer, Auto Height, Diagnostics) they are in DOM order, and the diff
+  editor still reports its two inner editors.
 - **Read the page only after the thing you are measuring has settled.** The diff's decorations arrive
   from the diff worker and the `greet` tokens after `RegisterLanguage` flushes; sampling immediately
   after load reports zero of either and looks like a real regression. Poll instead of sleeping once.
@@ -255,7 +312,7 @@ start it in the background and poll the port rather than waiting for the process
 
 ## Open bug: closing a modal that contains an editor hangs the page
 
-**Not fixed.** Reproduce with the sample's "Inside a modal" section: open it, then close it. The main
+**Not fixed.** Reproduce on the sample's **Modal** page: open the modal, then close it. The main
 thread locks up hard enough that Chromium kills the tab (Playwright reports `Target page, context or
 browser has been closed`). Opening is fine, and the modal can stay open indefinitely.
 
@@ -328,7 +385,7 @@ Suppressing the animation removes it completely. With
 `*, *::before, *::after { animation: none !important; transition: none !important; }` injected before
 opening, rAF runs at ~60fps, the editor lays out at its real 956x556, the suggest popup opens and is
 unclipped, and input and screenshots work - so the editor inside the modal is otherwise entirely
-healthy. That is also how to verify the "Inside a modal" section at all; without it the check cannot
+healthy. That is also how to verify the Modal page at all; without it the check cannot
 get a frame to measure and every assertion times out for the wrong reason.
 
 Controls, each in its own fresh browser, all of which keep producing frames - so it is neither the
