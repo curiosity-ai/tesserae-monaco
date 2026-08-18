@@ -37,7 +37,19 @@ dotnet build Tesserae.Monaco.slnx
 ```
 
 The first build runs `npm install && npm run bundle` in `Tesserae.Monaco/` via the `BundleMonaco`
-MSBuild target, so node is a prerequisite. To see the sample:
+MSBuild target, so node is a prerequisite.
+
+`Tesserae.Monaco/.npmrc` sets `min-release-age=7`, so `npm install` only resolves versions published
+more than a week ago — a supply-chain cooldown, giving a compromised release time to be caught before
+it reaches this build. It needs **npm >= 11.10.0** (the setting landed there; absent in 11.9.0). Older
+npm accepts the key and ignores it silently — no warning, no resolution change — so an old client
+builds as before rather than failing. It only affects resolution: `npm ci` installs the exact versions
+in `package-lock.json`, and `monaco-editor` is pinned exactly, so the window really only governs
+esbuild's caret range and the transitive tree. One sharp edge: when the window blocks a fix
+`npm audit fix` wants, npm keeps the vulnerable version, warns, and exits non-zero — add that package
+to `min-release-age-exclude[]` rather than dropping the window.
+
+To see the sample:
 
 ```bash
 cd Tesserae.Monaco.Sample/bin/Debug/netstandard2.0/tps/
