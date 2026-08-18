@@ -354,95 +354,67 @@ so a Debug-only pass does not prove the minified resource set is wired up.
 Serve the sample with `dotnet serve`. It is a long-running server that does not exit on its own, so
 start it in the background and poll the port rather than waiting for the process to finish.
 
-## Open bug: closing a modal that contains an editor hangs the page
+## Fixed: opening a modal with an editor in it froze the page
 
-**Not fixed.** Reproduce on the sample's **Modal** page: open the modal, then close it. The main
-thread locks up hard enough that Chromium kills the tab (Playwright reports `Target page, context or
-browser has been closed`). Opening is fine, and the modal can stay open indefinitely.
+**Fixed.** The sample's "Inside a modal" section used to wedge the whole page - `requestAnimationFrame`
+stopped firing, `document.timeline` stopped advancing, and every keystroke, click and screenshot hung
+waiting for a frame that never came, until Chromium killed the tab. It read as a crash on *close*
+because that is when a user notices, but the stall started at **open**, and the main thread stayed idle
+and responsive throughout: `page.evaluate` answered instantly the whole time.
 
-What is established, each from a clean single-browser run:
+The cause is not this package's teardown, not Tesserae's `Modal`, and not a race in the usual sense:
 
-| Case | Result |
-|---|---|
-| Plain Tesserae modal, no editor - open then close | fine (`modals: 1 -> 0`) |
-| Modal with editor - open, held open 5s+ | fine, stays responsive |
-| Modal with editor - close via Escape | hang, tab killed |
-| Modal with editor - close by detaching the layer from the DOM | hang |
+- Monaco sizes its scroll layer, `.lines-content`, to **16,777,216 x 16,777,216 px** - measured on the
+  stalled page.
+- Chromium rasters a layer that is running a composited transform animation over its whole subtree
+  rather than the part in view, and picks the raster scale from the animation.
+- Tesserae's `tss-modal-animation` starts at `transform: scale(0)` - a **singular** matrix. With a
+  16.7-million-pixel layer inside it, the raster work never converges and the renderer stops producing
+  frames for the entire page.
 
-So it is the editor's teardown - not Tesserae's `Modal`, not Escape or focus handling, and not the
-open path.
-
-Ruled out by measurement, not inspection:
-
-- **ResizeObserver / MutationObserver feedback.** Both constructors were wrapped to count callbacks;
-  neither reached 400 before the hang.
-- **DOM thrash.** Counters on `removeChild` / `appendChild` / `insertBefore` / `remove` /
-  `createElement` / `setAttribute` / `querySelectorAll` / `getBoundingClientRect` - none reached 3000.
-- **`monaco.editor.dispose()`.** Skipping it entirely still hangs.
-- **`ref dynamic` mis-emission** in `DisposeProvider`. The emitted JS is correct
-  (`provider.v.dispose()`).
-- **Tesserae's `DomObserver`.** `CheckUnmounted` is bounded; nothing loops.
-
-Approaches already tried that did **not** fix it - don't repeat them:
-
-1. Replacing the hand-rolled `ResizeObserver -> layout()` with Monaco's own `automaticLayout`. (Worth
-   doing on its own merits - a hand-rolled observer calling `layout()` does loop on its own output,
-   because Monaco's layout writes sizes back into the subtree being observed - but it is not this bug.)
-2. Deferring the provider disposal to a macrotask via `setTimeout(..., 0)`.
-3. Removing per-editor provider registration altogether, in favour of one registration per language
-   dispatching through a model-keyed `WeakMap`. Architecturally nicer, still hangs.
-
-A four-way bisect appeared to show "skip provider disposal -> survives", which is what motivated 2
-and 3. **That result was noise**: all four cases shared one browser, so a crashed page poisoned the
-later ones, and the run's own "skip both -> hang" row contradicted it. Give each case its own browser
-instance.
-
-The combination never cleanly tested is **no provider teardown AND no `editor.dispose()`**, each in a
-fresh browser, repeated. If that still hangs, the loop is in the Modal-close path interacting with
-Monaco's DOM rather than in this package's dispose, and the investigation moves to the Tesserae side.
-
-One measurement trap worth knowing: `getBoundingClientRect()` reflects ancestor transforms, so during
-the modal's open animation the editor and every ancestor read `height: 0` even though Monaco had
-correctly written `height: 496px`. That is not a sizing bug - don't chase it.
-
-### It is a rendering stall, not a main-thread lockup
-
-Measured while re-verifying the sample. This reframes everything above, and explains why every
-main-thread hypothesis in the "ruled out" list came back clean: **the loop is not on the main thread.**
-
-With the modal open, the main thread still answers `page.evaluate` instantly, while:
-
-- `requestAnimationFrame` never fires - **0 ticks in 2 wall-clock seconds** (~120 before opening),
-- `document.timeline.currentTime` does not advance at all,
-- the modal's own `tss-modal-animate` animation sits at `playState: "running", currentTime: 0`, so the
-  layer stays at the `0%` keyframe (`transform: scale(0)`) and the editor reads 0x0 forever - the
-  "measurement trap" above, except it never resolves,
-- every synthetic keystroke, mouse move and `page.screenshot` times out, because each waits on a frame
-  the renderer never produces. This is almost certainly what "Chromium kills the tab" looked like.
-
-So the table row "open, held open 5s+ - fine, stays responsive" is not wrong, it just measured the
-wrong thing: the page answers script while rendering nothing. The stall therefore begins at **open**,
-which makes the close path a symptom rather than the cause, and moves the investigation to compositing
-the animated modal layer with Monaco's layers inside it.
-
-Suppressing the animation removes it completely. With
-`*, *::before, *::after { animation: none !important; transition: none !important; }` injected before
-opening, rAF runs at ~60fps, the editor lays out at its real 956x556, the suggest popup opens and is
-unclipped, and input and screenshots work - so the editor inside the modal is otherwise entirely
-healthy. That is also how to verify the Modal page at all; without it the check cannot
-get a frame to measure and every assertion times out for the wrong reason.
-
-Controls, each in its own fresh browser, all of which keep producing frames - so it is neither the
-animation alone nor Monaco alone, but the two composited together:
+Bisected in a blank page with a fresh browser per case, so none of it depends on the sample:
 
 | Case | Frames |
 |---|---|
-| Blank page, `tss-modal-animation` on a plain div | fine (~88 ticks/1.5s, animation completes) |
-| Sample page with Monaco loaded, same animation on a plain div, modal never opened | fine |
-| Blank page, a bare `monaco.editor.create`, same animation on a plain div | fine |
-| Sample page, modal with an editor opened, animation live | **0 ticks, timeline frozen** |
+| `scale(0)` -> `scale(1)` on a div containing a Monaco editor | **stall** |
+| ...`scale(0.001)` start | **stall** |
+| ...`scale(0.01)`, `0.05`, `0.5` start | fine |
+| opacity-only, `translateY`, `scale(1)`->`1.05`->`1` | fine |
+| `transform: scale(0)` **static**, no animation | fine |
+| the animation with a *static clone* of the editor's DOM inside | fine |
+| the animation over a plain div, a `will-change: transform` div, a `<canvas>` | fine |
 
-Next step, given the above: keep `editor.dispose()` and the provider teardown out of it for now and
-look at why the animated layer never gets a frame - e.g. whether Monaco's `will-change`/`transform`
-layers inside an animating ancestor are what wedges the compositor, and whether Tesserae's 0.3s
-`tss-modal-animation` can be applied to a wrapper that does not contain the editor's own layers.
+The last two rows are what rule out "Monaco's CSS" and "big DOM": the identical markup, not driven by
+Monaco, does not stall.
+
+Fixed on both sides:
+
+- **This package** waits for ancestor animations before creating the editor
+  (`MonacoComponent.WaitForAncestorAnimationsAsync`). One frame is enough - the animation is out of the
+  dangerous scale range by its second frame - but waiting for it to end also means Monaco's font
+  measurement reads a container whose `getBoundingClientRect` is not scaled. Bounded on both sides: an
+  animation that never ends (`endTime` of `Infinity` - a spinner, a shimmer) is ignored, and the loop
+  gives up after a second, so a pathological ancestor delays the editor rather than withholding it. This
+  is the fix that matters here, because the Tesserae pin cannot move (see above), so a fix in Tesserae's
+  stylesheet does not reach this sample.
+- **Tesserae** starts `tss-modal-animation` at `scale(0.05)` instead of `scale(0)`
+  (`Tesserae/tps/assets/css/tss.modal.css`), which fixes it for every modal content with a large scroll
+  layer, not just Monaco's. Verified independently: patching only the stylesheet, with the wait removed,
+  also fixes the sample.
+
+Verified with the wait in place and Tesserae's original `scale(0)` still in the CSS: three
+open/interact/close rounds, ~60 frames during each open, the editor laying out at its real size, the
+suggest popup open and unclipped inside the modal, the modal closing and its editor disposed, and a
+clean console. Same in a Release build.
+
+Two things worth keeping from the investigation:
+
+- **A frozen page is not necessarily a busy main thread.** Ask `page.evaluate` for a
+  `requestAnimationFrame` count and `document.timeline.currentTime` before assuming a loop in your own
+  code: if script answers instantly while both are frozen, nothing on the main thread is looping and
+  every main-thread hypothesis - observer feedback, DOM thrash, a dispose loop - is a dead end. That
+  mistake cost this bug several rounds of ruling out innocent code.
+- **`getBoundingClientRect()` reflects ancestor transforms.** During a modal's open animation the editor
+  and every ancestor read `height: 0` even though Monaco had correctly written `height: 496px`. That is
+  not a sizing bug - don't chase it. It stops being visible at all now that the editor is built after
+  the animation.

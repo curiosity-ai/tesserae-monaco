@@ -84,6 +84,13 @@ namespace Tesserae.Monaco
             // A second mount signal for an editor that already exists would create a duplicate.
             if (Instance != null) return;
 
+            await WaitForAncestorAnimationsAsync();
+
+            // Waiting yielded to the browser, so re-check both of the above.
+            if (_disposed || !_container.IsMounted()) return;
+
+            if (Instance != null) return;
+
             Instance = Create(_container);
 
             if (Instance is null) return;
@@ -99,6 +106,70 @@ namespace Tesserae.Monaco
 
             AfterCreate();
         }
+
+        /// <summary>
+        /// Holds the editor back until no ancestor is mid-animation.
+        ///
+        /// Monaco sizes its scroll layer (<c>.lines-content</c>) to 16,777,216 x 16,777,216 px, and
+        /// Chromium rasters an animating layer's whole subtree rather than the part in view. A layer
+        /// that big inside an ancestor running a transform animation that starts near zero scale -
+        /// Tesserae's <c>tss-modal-animation</c> starts at <c>scale(0)</c> - makes the raster work
+        /// unbounded, and the renderer stops producing frames <b>for the whole page</b>: rAF never
+        /// fires again, <c>document.timeline</c> stops, and every screenshot, keystroke and click
+        /// hangs waiting for a frame that never comes. The main thread stays responsive throughout,
+        /// which is what makes it look like a crash rather than a stall. Chromium eventually kills
+        /// the tab.
+        ///
+        /// Creating the editor one frame later is enough - measured: the stall only happens while the
+        /// ancestor's scale is under ~0.01, and the animation has climbed out of that range by its
+        /// second frame. Waiting for the animation to finish outright also gets Monaco a container
+        /// whose <c>getBoundingClientRect</c> is not scaled, which is what its font measurement reads.
+        ///
+        /// Bounded on both sides: only an animation that ends within <see cref="MAX_ANIMATION_WAIT_MS"/>
+        /// is waited for - an infinite one (a spinner, a shimmer) reports <c>Infinity</c> and is
+        /// ignored - and the loop itself gives up at the same limit, so an ancestor that keeps
+        /// restarting its animation delays the editor rather than withholding it.
+        /// </summary>
+        private async Task WaitForAncestorAnimationsAsync()
+        {
+            for (var waited = 0; waited < MAX_ANIMATION_WAIT_MS && HasAnimatingAncestor(); waited += ANIMATION_POLL_MS)
+            {
+                await Task.Delay(ANIMATION_POLL_MS);
+            }
+        }
+
+        private bool HasAnimatingAncestor()
+        {
+            var animations = JsDocumentAnimations.getAnimations();
+
+            if (animations is null) return false;
+
+            foreach (var animation in animations)
+            {
+                if (animation.playState != "running") continue;
+
+                var effect = animation.effect;
+
+                if (effect is null) continue;
+
+                var target = effect.target;
+
+                // contains() answers true for the element itself, which is what we want: the container
+                // is as much of a problem animating itself as an ancestor animating it.
+                if (target is null || !target.contains(_container)) continue;
+
+                // An animation that never ends would hold the editor back for good; one that ends
+                // beyond the limit would be cut short by the loop anyway.
+                if (!(effect.getComputedTiming().endTime < MAX_ANIMATION_WAIT_MS)) continue;
+
+                return true;
+            }
+
+            return false;
+        }
+
+        private const int ANIMATION_POLL_MS      = 16;
+        private const int MAX_ANIMATION_WAIT_MS  = 1000;
 
         // Leaving the DOM tears the editor down but keeps the component usable: the mount observer is
         // re-armed, so being added back rebuilds the editor and replays the configuration. Without the

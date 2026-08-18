@@ -119,10 +119,13 @@ the result more than the list did:
 
 ## Open
 
-Not caused by the work above, and recorded in [CLAUDE.md](CLAUDE.md) with the measurements.
+Nothing outstanding. The one entry that lived here is now fixed:
 
-- **Closing a modal containing an editor stalls rendering** — and the stall actually begins at *open*.
-  Untouched here; the investigation is a compositing question, not a dispose one.
+- [x] **Opening a modal containing an editor stalled rendering** — a compositing question, as suspected,
+      and not a dispose one. Monaco's 16.7-million-pixel scroll layer inside an ancestor animating from
+      `transform: scale(0)` makes Chromium's raster work unbounded and the renderer stops producing
+      frames for the whole page. The editor is now built after ancestor animations finish, and Tesserae's
+      modal keyframes no longer start at a zero scale. Measurements in [CLAUDE.md](CLAUDE.md).
 
 The Tesserae blocker that stopped the sample rendering while this was first built is **resolved
 upstream**: the pin is now **2026.8.69584**, which is not built as chunked lazy modules, so the
