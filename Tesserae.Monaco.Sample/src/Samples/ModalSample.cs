@@ -5,7 +5,7 @@ using static Tesserae.Monaco.Sample.SamplesHelper;
 
 namespace Tesserae.Monaco.Sample
 {
-    [SampleDetails(Group = "Runtime and hosting", Order = 2, Icon = UIcons.WindowMaximize)]
+    [SampleDetails(Group = "Runtime and hosting", Order = 5, Icon = UIcons.WindowMaximize)]
     public class ModalSample : IComponent, ISample
     {
         private readonly IComponent _content;

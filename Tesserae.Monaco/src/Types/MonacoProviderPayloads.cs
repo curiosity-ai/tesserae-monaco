@@ -184,8 +184,13 @@ namespace Tesserae.Monaco
         /// <summary>Must resolve to an <see cref="InlineCompletionList"/>.</summary>
         public Func<ITextModel, Position, object> provideInlineCompletions;
 
-        /// <summary>Monaco calls this when the suggestions are no longer needed.</summary>
-        public Action<object> freeInlineCompletions;
+        /// <summary>
+        /// Monaco calls this, <b>unguarded</b>, once a suggestion list is no longer referenced - so a
+        /// provider without it throws <c>disposeInlineCompletions is not a function</c> the moment ghost
+        /// text has been shown. It was called <c>freeInlineCompletions</c> in earlier Monaco versions;
+        /// 0.56 renamed it and passes the list plus a reason.
+        /// </summary>
+        public Action<object, object> disposeInlineCompletions;
     }
 
     // ---------------------------------------------------------------------------------------------

@@ -4,7 +4,7 @@ using static Tesserae.Monaco.Sample.SamplesHelper;
 
 namespace Tesserae.Monaco.Sample
 {
-    [SampleDetails(Group = "Editors", Order = 3, Icon = UIcons.Expand)]
+    [SampleDetails(Group = "Editors", Order = 4, Icon = UIcons.Expand)]
     public class AutoHeightSample : IComponent, ISample
     {
         private readonly IComponent _content;

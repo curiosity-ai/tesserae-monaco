@@ -7,7 +7,7 @@ using static Tesserae.Monaco.Sample.SamplesHelper;
 
 namespace Tesserae.Monaco.Sample
 {
-    [SampleDetails(Group = "Language services", Order = 2, Icon = UIcons.Bug)]
+    [SampleDetails(Group = "Language services", Order = 4, Icon = UIcons.Bug)]
     public class DiagnosticsSample : IComponent, ISample
     {
         private readonly IComponent _content;

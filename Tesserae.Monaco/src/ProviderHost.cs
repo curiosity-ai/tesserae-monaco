@@ -572,7 +572,9 @@ namespace Tesserae.Monaco
                 provideInlineCompletions = (model, position) =>
                     OwnsModel(model) ? MonacoEditor.AsPromise(BuildInlineCompletionsAsync(handler, model, position)) : null,
 
-                freeInlineCompletions = _ => { }
+                // Monaco calls this without checking that it exists, so it has to be here even though
+                // there is nothing of ours to release.
+                disposeInlineCompletions = (list, reason) => { }
             }));
         }
 
