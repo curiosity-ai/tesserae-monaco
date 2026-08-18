@@ -27,10 +27,7 @@ namespace Tesserae.Monaco.Sample
                         SampleSubTitle("Try it"),
                         TextBlock("Open the modal and press Ctrl+Space on the last line. The suggest list must be fully visible, including the part that falls outside the modal's box."),
                         HStack().WS().PT(8).Children(
-                            Button("Open editor in a modal").SetIcon(UIcons.WindowMaximize).OnClick(OpenModal)),
-                        Banner("Known issue: on this build the page stops producing frames while a modal containing an editor is open - Tesserae's 0.3s modal animation and Monaco's compositing layers wedge each other. The editor itself is healthy; suppressing the animation removes the stall entirely. See the repository's CLAUDE.md for the full measurement.")
-                           .Warning()
-                           .MT(16)
+                            Button("Open editor in a modal").SetIcon(UIcons.WindowMaximize).OnClick(OpenModal))
                     )).SetTitle("Usage")))
                .SeeAlso(typeof(CompletionAndHoverSample), typeof(AutoHeightSample), typeof(EditorOptionsSample));
         }
