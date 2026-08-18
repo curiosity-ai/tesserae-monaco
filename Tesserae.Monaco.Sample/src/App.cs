@@ -1,371 +1,215 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
+using Transpose.Core;
 using Tesserae;
-using Tesserae.Monaco;
 using static Transpose.Core.dom;
 using static Tesserae.UI;
 
 namespace Tesserae.Monaco.Sample
 {
     /// <summary>
-    /// A stub app exercising each Tesserae.Monaco feature so it can be eyeballed in a browser.
+    /// A gallery app exercising each Tesserae.Monaco feature so it can be eyeballed in a browser,
+    /// shaped like Tesserae's own sample gallery: a sidebar of pages on the left, one page per
+    /// feature on the right, and a route per page so any of them can be linked to or opened in its
+    /// own tab.
     ///
-    /// Every language service here is deliberately fake and client-side - a fixed completion list, a
-    /// hover that echoes the word under the cursor, a formatter that trims whitespace, a validator
-    /// that flags TODOs. The package ships no language intelligence of its own, so this is also what
-    /// the wiring looks like from a host app's point of view: swap these delegates for calls to your
-    /// own backend and nothing else changes.
+    /// Every language service in these pages is deliberately fake and client-side - a fixed
+    /// completion list, a hover that echoes the word under the cursor, a formatter that trims
+    /// whitespace, a validator that flags TODOs. The package ships no language intelligence of its
+    /// own, so this is also what the wiring looks like from a host app's point of view: swap these
+    /// delegates for calls to your own backend and nothing else changes.
     /// </summary>
     internal static class App
     {
-        private const string SAMPLE_CODE = @"using System;
-
-public class Greeter
-{
-    // TODO: make the greeting configurable
-    public string Greet(string name)
-    {
-        return $""Hello, {name}!"";
-    }
-}";
-
-        private const string SAMPLE_CODE_CHANGED = @"using System;
-
-public class Greeter
-{
-    private readonly string _greeting;
-
-    public Greeter(string greeting = ""Hello"")
-    {
-        _greeting = greeting;
-    }
-
-    public string Greet(string name)
-    {
-        return $""{_greeting}, {name}!"";
-    }
-}";
-
-        private const string SAMPLE_JSON = @"{
-  ""name"": ""tesserae.monaco"",
-  ""embedded"": true,
-  ""languages"": [""csharp"", ""json"", ""typescript""]
-}";
+        private const string _sidebarOpenStateKey = "tss-monaco-sidebar-open-close";
 
         private static void Main()
         {
-            document.body.style.overflow = "auto";
+            document.body.style.overflow = "hidden";
 
-            // Language-service configuration has to happen before the first editor mounts. It is queued
-            // until Monaco loads, so calling it from here is safe.
-            AdvancedSamples.ConfigureServices();
-
-            // One child list, built up front: Children(...) does not append to a stack that has already
-            // been given some, so adding the second half in a loop silently rendered nothing.
-            var sections = new List<IComponent>
+            // Ensure the viewport meta tag is present so that mobile browsers use the device width
+            // instead of rendering at a desktop width and scaling down.
+            if (document.head.querySelector("meta[name='viewport']") is null)
             {
-                TextBlock("Tesserae.Monaco").Bold().XLarge(),
-                TextBlock("Monaco editor, viewer and diff components for Tesserae. Every sample below is self-contained C#.")
-                   .Secondary()
-                   .PB(16.px()),
+                var viewportMeta = document.createElement("meta");
+                viewportMeta["name"]    = "viewport";
+                viewportMeta["content"] = "width=device-width, initial-scale=1.0, maximum-scale=5.0";
+                document.head.appendChild(viewportMeta);
+            }
 
-                Section("Code editor", "Editable, C# highlighting, word wrap. Alt+Z (or the context menu) toggles wrapping.", EditorSample()),
-                Section("Code viewer", "Read-only: highlighting and selection, no editing affordances.", ViewerSample()),
-                Section("Diff viewer", "Two documents compared. Toggle between side-by-side and inline.", DiffSample()),
-                Section("Completion and hover", "Ctrl+Space for the suggest list; hover a word for documentation.", CompletionAndHoverSample()),
-                Section("Formatting", "Shift+Alt+F formats the document, Ctrl+K Ctrl+F the selection (Ctrl+Shift+I on Linux).", FormattingSample()),
-                Section("Diagnostics", "Squiggles from a validator that runs as you type - flags any TODO.", DiagnosticsSample()),
-                Section("Custom language", "A tiny Monarch-tokenized language registered from C#.", CustomLanguageSample()),
-                Section("Auto height", "Grows to fit its content instead of scrolling.", AutoHeightSample()),
-                Section("Inside a modal", "Proves the suggest popup escapes a clipping ancestor.", ModalSample())
-            };
+            // Adds/removes the tss-mobile class on body whenever the viewport is 768px or narrower.
+            Theme.EnableMobileDetection(breakpoint: 768);
 
-            // The second half of the sample - decorations, widgets, the rest of the providers, models,
-            // events, commands, the language services and the diff editor's own API.
-            sections.AddRange(AdvancedSamples.Sections());
+            var allSidebarItems     = new List<ISidebarItem>();
+            var sampleToSidebarItem = new Dictionary<SamplePage, ISidebarItem>();
 
-            var content = VStack().WS().P(16.px()).Children(sections.ToArray());
-
-            document.body.appendChild(content.Render());
-        }
-
-        private static IComponent Section(string title, string description, IComponent body)
-        {
-            return VStack().WS().PB(24.px()).Children(
-                TextBlock(title).Bold().Medium(),
-                TextBlock(description).Small().Secondary().PB(8.px()),
-                body
-            );
-        }
-
-        private static IComponent EditorSample()
-        {
-            var editor = MonacoEditor.Editor()
-               .SetLanguage("csharp")
-               .SetText(SAMPLE_CODE)
-               .WordWrap();
-
-            var status = TextBlock("unchanged").Small().Secondary();
-
-            editor.OnChanged(() => status.Text = $"{editor.Text.Length} characters");
-
-            return VStack().WS().Children(
-                editor.WS().H(220.px()),
-                HStack().WS().PT(4.px()).Children(
-                    Button("Go to line 5").OnClick(() => editor.RevealLine(5).SetPosition(new Position { lineNumber = 5, column = 1 }).Focus()),
-                    Button("Read-only").OnClick(() => editor.ReadOnly()),
-                    Button("Editable").OnClick(() => editor.ReadOnly(false)),
-                    status.PL(8.px())
-                )
-            );
-        }
-
-        private static IComponent ViewerSample()
-        {
-            var viewer = MonacoEditor.Viewer()
-               .SetLanguage("json")
-               .SetText(SAMPLE_JSON);
-
-            return viewer.WS().H(140.px());
-        }
-
-        private static IComponent DiffSample()
-        {
-            var diff = MonacoEditor.Diff()
-               .SetLanguage("csharp")
-               .SetContent(SAMPLE_CODE, SAMPLE_CODE_CHANGED);
-
-            var sideBySide = true;
-
-            var toggle = Button("Show inline");
-
-            toggle.OnClick(() =>
+            void SelectSidebar(ISidebarItem toSelect)
             {
-                sideBySide = !sideBySide;
-                diff.SideBySide(sideBySide);
-                toggle.SetText(sideBySide ? "Show inline" : "Show side by side");
+                allSidebarItems.ForEach(i => i.IsSelected = i == toSelect);
+            }
+
+            var currentPage = new SettableObservable<SamplePage>(null);
+
+            currentPage.Observe(selected =>
+            {
+                if (selected is object && sampleToSidebarItem.TryGetValue(selected, out var item))
+                {
+                    SelectSidebar(item);
+                }
             });
 
-            return VStack().WS().Children(
-                diff.WS().H(260.px()),
-                HStack().WS().PT(4.px()).Children(
-                    toggle,
-                    Button("Next change").OnClick(() => diff.GoToNextDifference()),
-                    Button("Previous change").OnClick(() => diff.GoToPreviousDifference())
-                )
-            );
-        }
+            var sidebar = Sidebar();
 
-        private static IComponent CompletionAndHoverSample()
-        {
-            // A fixed list stands in for whatever a real backend would return.
-            var symbols = new Dictionary<string, string>
+            // On mobile we use navbar mode: horizontal bar + full-screen sliding drawer. Evaluated
+            // once at startup; the CSS (tss-mobile class) handles the visual switch on resize.
+            if (Theme.IsMobileMode)
             {
-                { "Greet",      "Returns a greeting for the given name." },
-                { "Greeter",    "A configurable greeter." },
-                { "Console",    "The system console." },
-                { "WriteLine",  "Writes a line of text to the console." }
-            };
+                sidebar.AsNavbar();
+            }
 
-            var editor = MonacoEditor.Editor()
-               .SetLanguage("csharp")
-               .SetText("// Ctrl+Space here, or hover \"Greet\" below\nvar greeter = new Greeter();\ngreeter.Greet(\"world\");\n");
+            sidebar.AddHeader(new SidebarText("header", "Tesserae.Monaco", "TSS", textSize: TextSize.XLarge, textWeight: TextWeight.Bold));
 
-            editor.OnCompletion(context =>
+            var searchBox = new SidebarSearchBox("search", "Search...");
+            searchBox.OnSearch(term => sidebar.Search(term));
+            sidebar.AddHeader(searchBox);
+
+            sidebar.AddHeader(new SidebarButton("SOURCE_CODE", UIcons.CodeBranch, "Source Code",
+                    new SidebarCommand(UIcons.ArrowUpRightFromSquare).Tooltip("Open repository on GitHub")
+                       .OnClick(() => window.open("https://github.com/curiosity-ai/tesserae-monaco", "_blank")))
+               .CommandsAlwaysVisible()
+               .OnClick(() => window.open("https://github.com/curiosity-ai/tesserae-monaco", "_blank")));
+
+            // A page is only built when it is opened, so a single editor is created per visit rather
+            // than eleven at startup - which is also what a host app does with Monaco.
+            var contentArea = Defer(currentPage, async page => page is null
+                ? (IComponent)CenteredCardWithBackground(Message("Tesserae.Monaco", "Monaco editor, viewer and diff components for Tesserae. Pick a feature on the left.").Icon(UIcons.FileCode))
+                : VStack().S().ScrollY().Children((await page.ContentGenerator()).WS().MinHeight(100.percent())));
+
+            // On mobile the sidebar is a fixed top navbar, so the layout is vertical (sidebar then
+            // content). On desktop it is horizontal (sidebar left, content right).
+            Stack pageContent;
+
+            if (Theme.IsMobileMode)
             {
-                var items = new List<CompletionItem>();
+                pageContent = VStack().Class("tss-page-layout").S().Children(sidebar.WS(), contentArea.WS().H(1).Grow());
+            }
+            else
+            {
+                pageContent = HStack().Class("tss-page-layout").S().Children(sidebar.HS(), contentArea.HS().W(1).Grow());
+            }
 
-                foreach (var symbol in symbols)
+            MountToBody(pageContent);
+
+            // Important: reflection only works here because the metadata is emitted inline with the
+            // JavaScript rather than into a separate .meta.js file - i.e. tps.json needs
+            //     "reflection": { "disabled": false, "target": "inline" }
+            var samples = typeof(ISample).Assembly.GetTypes()
+               .Where(t => typeof(ISample).IsAssignableFrom(t) && !t.IsInterface)
+               .Select(sampleType =>
                 {
-                    items.Add(new CompletionItem
+                    var details = sampleType.GetCustomAttributes(typeof(SampleDetailsAttribute), true).FirstOrDefault() as SampleDetailsAttribute;
+                    var group   = details is object ? details.Group : "Others";
+                    var order   = details is object ? details.Order : 0;
+                    var icon    = details is object ? details.Icon : UIcons.Circle;
+
+                    return new SamplePage(sampleType.Name, SamplePage.FormatName(sampleType), group, order, icon,
+                        async () => await Activator.CreateInstanceAsync(sampleType) as IComponent);
+                })
+               .ToDictionary(s => s.Name, s => s);
+
+            var openClose = new SidebarCommand(UIcons.AngleLeft).Tooltip("Close Sidebar");
+
+            // In mobile/navbar mode the drawer always starts closed (the hamburger opens it). On
+            // desktop, restore the last open/closed preference.
+            if (!Theme.IsMobileMode)
+            {
+                var sidebarOpenState = bool.TryParse(localStorage.getItem(_sidebarOpenStateKey), out var v) ? v : true;
+                sidebar.Closed(!sidebarOpenState);
+            }
+
+            openClose.OnClick(() =>
+            {
+                sidebar.Toggle();
+
+                if (sidebar.IsClosed)
+                {
+                    openClose.SetIcon(UIcons.AngleRight).Tooltip("Open Sidebar");
+                    localStorage.setItem(_sidebarOpenStateKey, false.ToString());
+                }
+                else
+                {
+                    openClose.SetIcon(UIcons.AngleLeft).Tooltip("Close Sidebar");
+                    localStorage.setItem(_sidebarOpenStateKey, true.ToString());
+                }
+            });
+
+            var lightDark = new SidebarCommand(Theme.IsDark ? UIcons.Moon : UIcons.Sun).Tooltip(Theme.IsDark ? "Dark Mode" : "Light Mode");
+
+            lightDark.OnClick(() =>
+            {
+                if (Theme.IsDark)
+                {
+                    Theme.Light();
+                    lightDark.SetIcon(UIcons.Sun).Tooltip("Light Mode");
+                }
+                else
+                {
+                    Theme.Dark();
+                    lightDark.SetIcon(UIcons.Moon).Tooltip("Dark Mode");
+                }
+
+                // Monaco keeps its own theme registry and does not watch Tesserae's, so a theme
+                // change has to be handed across. Both calls are needed: DefineThemes() re-derives
+                // the editor colours from the Tesserae theme that is now active, and ApplyTheme()
+                // switches every live editor to the one that matches it.
+                MonacoEditor.DefineThemes();
+                MonacoEditor.ApplyTheme();
+            });
+
+            sidebar.AddFooter(new SidebarCommands("CONFIG", lightDark, openClose));
+
+            var groupIndex = 0;
+
+            foreach (var group in samples.Values.GroupBy(s => s.Group).OrderBy(g => g.Key))
+            {
+                sidebar.AddContent(new SidebarSeparator(group.Key + groupIndex++, group.Key));
+
+                var itemIndex = 0;
+
+                foreach (var item in group.OrderBy(s => s.Order).ThenBy(s => s.Name.ToLower()))
+                {
+                    var sidebarItem = new SidebarButton(item.Name + itemIndex++, item.Icon, item.Name,
+                        new SidebarCommand(UIcons.ArrowUpRightFromSquare).Tooltip("Open in new tab").OnClick(() => window.open($"#/view/{item.Name}", "_blank")));
+
+                    sidebarItem.OnClick(() =>
                     {
-                        label         = symbol.Key,
-                        kind          = CompletionItemKind.Method,
-                        detail        = symbol.Value,
-                        documentation = new MarkdownString { value = symbol.Value, isTrusted = true }
+                        // Push updates the URL without reloading, so the page has a route of its own
+                        // to link to, and the browser's back button walks the pages visited.
+                        Router.Push($"#/view/{item.Name}");
+
+                        currentPage.Value = item;
                     });
+
+                    sidebar.AddContent(sidebarItem);
+                    allSidebarItems.Add(sidebarItem);
+                    sampleToSidebarItem[item] = sidebarItem;
                 }
+            }
 
-                return Task.FromResult(items.ToArray());
-            });
+            Router.Register("home", "/", _ => currentPage.Value = null);
 
-            editor.OnHover(context =>
+            foreach (var kv in samples)
             {
-                if (context.Word is object && symbols.TryGetValue(context.Word, out var documentation))
-                {
-                    return Task.FromResult($"**{context.Word}**\n\n{documentation}");
-                }
+                Router.Register($"#/view/{kv.Key.Replace(" ", "%20")}", _ => currentPage.Value = kv.Value);
+            }
 
-                // Null means "no hover here", which is the common case.
-                return Task.FromResult<string>(null);
-            });
+            Router.Initialize();
 
-            return editor.WS().H(160.px());
-        }
-
-        private static IComponent FormattingSample()
-        {
-            var editor = MonacoEditor.Editor()
-               .SetLanguage("csharp")
-               .SetText("public   class    Messy {   \n\n\n\n    public int X {get;set;}    \n}   \n");
-
-            // A real host would call its server's formatter here; this only proves the pathway.
-            editor.OnFormat(code =>
-            {
-                var lines  = (code ?? "").Replace("\r\n", "\n").Split('\n');
-                var result = new List<string>();
-                var blanks = 0;
-
-                foreach (var line in lines)
-                {
-                    var trimmed = line.TrimEnd();
-
-                    if (trimmed.Length == 0)
-                    {
-                        blanks++;
-                        if (blanks > 1) continue;
-                    }
-                    else
-                    {
-                        blanks = 0;
-                    }
-
-                    result.Add(trimmed);
-                }
-
-                return Task.FromResult(string.Join("\n", result.ToArray()));
-            });
-
-            return VStack().WS().Children(
-                editor.WS().H(160.px()),
-                HStack().WS().PT(4.px()).Children(
-                    TextBlock("Press Shift+Alt+F, or right-click and pick Format Document.").Small().Secondary()
-                )
-            );
-        }
-
-        private static IComponent DiagnosticsSample()
-        {
-            var editor = MonacoEditor.Editor()
-               .SetLanguage("csharp")
-               .SetText(SAMPLE_CODE);
-
-            // Stands in for a server-side compile; the debounce and staleness handling are the
-            // component's job, so a real validator looks exactly like this.
-            editor.ValidateAsYouType(code =>
-            {
-                var diagnostics = new List<CodeDiagnostic>();
-                var lines       = (code ?? "").Replace("\r\n", "\n").Split('\n');
-
-                for (var i = 0; i < lines.Length; i++)
-                {
-                    var index = lines[i].IndexOf("TODO", StringComparison.Ordinal);
-
-                    if (index < 0) continue;
-
-                    diagnostics.Add(new CodeDiagnostic(
-                        startLine:      i,
-                        startCharacter: index,
-                        endLine:        i,
-                        endCharacter:   index + "TODO".Length,
-                        message:        "Unresolved TODO.",
-                        severity:       MarkerSeverity.Warning));
-                }
-
-                return Task.FromResult<ReadOnlyArray<CodeDiagnostic>>(diagnostics.ToArray());
-            });
-
-            return VStack().WS().Children(
-                editor.WS().H(200.px()),
-                TextBlock("Type TODO on any line - the squiggle appears about a second after you stop typing.").Small().Secondary().PT(4.px())
-            );
-        }
-
-        private static IComponent CustomLanguageSample()
-        {
-            var greetLanguage = new LanguageDefinition
-            {
-                Id         = "greet",
-                Aliases    = new[] { "Greet" },
-                Extensions = new[] { ".greet" },
-
-                // Monaco's Monarch tokenizer, written as an anonymous object mirroring the JS shape.
-                Tokenizer = new
-                {
-                    tokenizer = new
-                    {
-                        root = new object[]
-                        {
-                            new object[] { "#.*$",                     "comment" },
-                            new object[] { "\\b(greet|from|to)\\b",    "keyword" },
-                            new object[] { "\"[^\"]*\"",               "string"  },
-                            new object[] { "\\b\\d+\\b",               "number"  }
-                        }
-                    }
-                },
-
-                Configuration = new
-                {
-                    comments = new { lineComment = "#" },
-                    brackets = new object[] { new[] { "(", ")" } }
-                },
-
-                TokenColors = new[]
-                {
-                    new TokenColor("keyword", "c586c0", "bold"),
-                    new TokenColor("string",  "ce9178"),
-                    new TokenColor("comment", "6a9955", "italic"),
-                    new TokenColor("number",  "b5cea8")
-                },
-
-                // Without these, Monaco never triggers completion on ':' - it is not a word character.
-                CompletionTriggerCharacters = new[] { ":" }
-            };
-
-            var editor = MonacoEditor.Editor()
-               .SetLanguage(greetLanguage)
-               .SetText("# a tiny made-up language\ngreet \"world\" from 1 to 10\n");
-
-            editor.OnCompletion(context => Task.FromResult(new[]
-            {
-                new CompletionItem { label = "greet", kind = CompletionItemKind.Keyword },
-                new CompletionItem { label = "from",  kind = CompletionItemKind.Keyword },
-                new CompletionItem { label = "to",    kind = CompletionItemKind.Keyword }
-            }));
-
-            return editor.WS().H(140.px());
-        }
-
-        private static IComponent AutoHeightSample()
-        {
-            var viewer = MonacoEditor.Viewer(autoHeight: true)
-               .SetLanguage("json")
-               .SetText(SAMPLE_JSON);
-
-            return viewer.WS();
-        }
-
-        private static IComponent ModalSample()
-        {
-            return Button("Open editor in a modal").OnClick(() =>
-            {
-                var editor = MonacoEditor.Editor()
-                   .SetLanguage("csharp")
-                   .SetText("// Ctrl+Space - the suggest popup must not be clipped by the modal\nvar x = Gr\n");
-
-                editor.OnCompletion(context => Task.FromResult(new[]
-                {
-                    new CompletionItem { label = "Greeter", kind = CompletionItemKind.Class },
-                    new CompletionItem { label = "Greet",   kind = CompletionItemKind.Method }
-                }));
-
-                Modal("Editor in a modal")
-                   .W(70.vw())
-                   .H(60.vh())
-                   .Content(editor.WS().HS())
-                   .Show();
-            });
+            // Forcibly match the current route at first load: the routes were only just registered,
+            // and we want them matched against the current URL without changing it.
+            Router.Refresh(onDone: Router.ForceMatchCurrent);
         }
     }
 }

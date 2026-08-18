@@ -18,7 +18,7 @@ var editor = MonacoEditor.Editor()
 | Project | What it is |
 |---|---|
 | [`Tesserae.Monaco/`](Tesserae.Monaco/) | The package — `CodeEditor`, `CodeViewer`, `DiffViewer`. See its [README](Tesserae.Monaco/README.md) for the full API. |
-| [`Tesserae.Monaco.Sample/`](Tesserae.Monaco.Sample/) | A C# stub app with one section per feature, for trying things in a browser. |
+| [`Tesserae.Monaco.Sample/`](Tesserae.Monaco.Sample/) | A C# sample gallery — a sidebar of features, one page each, for trying things in a browser. |
 
 The package depends on **Tesserae only**. It ships no language intelligence of its own — completion,
 hover, signature help, quick fixes, navigation, symbols, formatting and diagnostics are all delegates you

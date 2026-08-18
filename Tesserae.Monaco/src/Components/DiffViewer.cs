@@ -470,6 +470,15 @@ namespace Tesserae.Monaco
 
         private void DisposeModels()
         {
+            // Monaco does not dispose models handed to setModel, so releasing them is ours to do -
+            // but the widget has to let go of them first. Disposing a model still attached to the
+            // diff editor throws "TextModel got disposed before DiffEditorWidget model got reset"
+            // out of Monaco's own teardown, which is what leaving this page used to log.
+            if (Instance != null && (_originalModel != null || _modifiedModel != null))
+            {
+                Editor.setModel(null);
+            }
+
             if (_originalModel != null)
             {
                 _originalModel.Dispose();
