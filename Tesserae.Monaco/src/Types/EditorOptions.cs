@@ -12,8 +12,8 @@ namespace Tesserae.Monaco
     /// untouched: <c>new EditorOptions { readOnly = true }</c> is exactly <c>{ readOnly: true }</c>.
     ///
     /// A subset of Monaco's options - the ones this package sets, plus the ones a host is likely to
-    /// want. For anything else, <c>((dynamic)options).someOption = value</c> still works, since this
-    /// is a plain JavaScript object at runtime.
+    /// want. For anything else, a component's <c>SetRawOption(name, value)</c> sets it by name; that is
+    /// the one place a JavaScript option name is still a string.
     /// </summary>
     [ObjectLiteral]
     public class EditorOptions
@@ -49,6 +49,21 @@ namespace Tesserae.Monaco
         public string      wrappingIndent;
         public bool        scrollBeyondLastLine;
 
+        public string      cursorStyle;
+        public string      cursorBlinking;
+        public bool        smoothScrolling;
+        public bool        domReadOnly;
+        public string      ariaLabel;
+        public string      accessibilitySupport;
+        public bool        stickyTabStops;
+        public int[]       rulers;
+
+        /// <summary>Text shown when the document is empty.</summary>
+        public string      placeholder;
+
+        /// <summary>Markdown shown when the user types into a read-only editor, instead of nothing happening.</summary>
+        public MarkdownString readOnlyMessage;
+
         public string      snippetSuggestions;
         public double      suggestFontSize;
         public string      acceptSuggestionOnEnter;
@@ -56,11 +71,16 @@ namespace Tesserae.Monaco
 
         /// <summary>
         /// Monaco also accepts a per-context object here; this declares the boolean form, which is
-        /// the common one. Reach the object form through the <c>dynamic</c> escape hatch.
+        /// the common one. Reach the object form through <c>SetRawOption</c>.
         /// </summary>
         public bool        quickSuggestions;
 
+        public double      quickSuggestionsDelay;
+
         public MinimapOptions                 minimap;
+        public StickyScrollOptions            stickyScroll;
+        public GuidesOptions                  guides;
+        public UnicodeHighlightOptions        unicodeHighlight;
         public ScrollbarOptions               scrollbar;
         public SuggestOptions                 suggest;
         public InlineSuggestOptions           inlineSuggest;
@@ -88,6 +108,7 @@ namespace Tesserae.Monaco
         public bool        ignoreTrimWhitespace;
         public bool        renderIndicators;
         public bool        renderOverviewRuler;
+        public bool        renderMarginRevertIcon;
         public bool        enableSplitViewResizing;
         public string      diffWordWrap;
         public double      maxComputationTime;
@@ -100,9 +121,32 @@ namespace Tesserae.Monaco
         public MinimapOptions                 minimap;
         public ScrollbarOptions               scrollbar;
         public BracketPairColorizationOptions bracketPairColorization;
+        public HideUnchangedRegionsOptions    hideUnchangedRegions;
+        public DiffExperimentalOptions        experimental;
 
         public bool        fixedOverflowWidgets;
         public HTMLElement overflowWidgetsDomNode;
+    }
+
+    /// <summary>
+    /// Monaco's <c>hideUnchangedRegions</c> settings - collapsing long identical runs to a few lines of
+    /// context with a band to expand them.
+    /// </summary>
+    [ObjectLiteral]
+    public class HideUnchangedRegionsOptions
+    {
+        public bool enabled;
+        public int  contextLineCount;
+        public int  minimumLineCount;
+        public int  revealLineCount;
+    }
+
+    /// <summary>The diff editor's experimental settings. <c>showMoves</c> draws moved blocks as moves.</summary>
+    [ObjectLiteral]
+    public class DiffExperimentalOptions
+    {
+        public bool showMoves;
+        public bool showEmptyDecorations;
     }
 
     /// <summary>Monaco's <c>ITextModelUpdateOptions</c>.</summary>
@@ -163,6 +207,36 @@ namespace Tesserae.Monaco
         public bool enabled;
     }
 
+    /// <summary>Monaco's <c>IEditorStickyScrollOptions</c> - the enclosing scope pinned to the top.</summary>
+    [ObjectLiteral]
+    public class StickyScrollOptions
+    {
+        public bool   enabled;
+        public int    maxLineCount;
+
+        /// <summary><c>"outlineModel"</c>, <c>"foldingProviderModel"</c> or <c>"indentationModel"</c>.</summary>
+        public string defaultModel;
+    }
+
+    /// <summary>Monaco's <c>IGuidesOptions</c> - the indentation and bracket guide lines.</summary>
+    [ObjectLiteral]
+    public class GuidesOptions
+    {
+        public bool indentation;
+        public bool highlightActiveIndentation;
+        public bool bracketPairs;
+        public bool bracketPairsHorizontal;
+    }
+
+    /// <summary>Monaco's <c>IUnicodeHighlightOptions</c> - flagging confusable and invisible characters.</summary>
+    [ObjectLiteral]
+    public class UnicodeHighlightOptions
+    {
+        public bool ambiguousCharacters;
+        public bool invisibleCharacters;
+        public bool nonBasicASCII;
+    }
+
     [ObjectLiteral]
     public class PaddingOptions
     {
@@ -200,6 +274,14 @@ namespace Tesserae.Monaco
         public string baseTheme;
 
         public bool        inherit;
+
+        /// <summary>
+        /// Whether a semantic-tokens provider's output is coloured by the rules below. Monaco's editor
+        /// option defaults to <c>"configuredByTheme"</c>, so a theme that leaves this unset means a
+        /// registered provider is never asked at all.
+        /// </summary>
+        public bool        semanticHighlighting;
+
         public ThemeRule[] rules;
 
         /// <summary>

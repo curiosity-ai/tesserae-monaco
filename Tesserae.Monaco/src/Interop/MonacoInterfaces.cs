@@ -1,4 +1,5 @@
 using System;
+using System.Threading.Tasks;
 using Tesserae;
 using Transpose;
 using static Transpose.Core.dom;
@@ -47,6 +48,116 @@ namespace Tesserae.Monaco
         /// <summary>The vertical offset of a line, in pixels.</summary>
         double getTopForLineNumber(int lineNumber);
 
+        void setModel(ITextModel model);
+
+        /// <summary>Applies edits as one undoable step, moving the caret as a user edit would.</summary>
+        void executeEdits(string source, ReadOnlyArray<TextEdit> edits);
+
+        /// <summary>Closes the current undo step, so later edits undo separately.</summary>
+        void pushUndoStop();
+
+        /// <summary>
+        /// Runs a command by id. Reaches more than <c>getAction</c> does - Monaco registers the
+        /// navigation commands as keybinding rules rather than editor actions - at the cost of not
+        /// reporting whether the id matched.
+        /// </summary>
+        void trigger(string source, string handlerId, object payload);
+
+        /// <summary>The editor action with this id, or null. Only editor actions, not every command.</summary>
+        IEditorAction getAction(string id);
+
+        /// <summary>Caret, selections, scroll offset and folding state. Opaque - hand it back unchanged.</summary>
+        IViewState saveViewState();
+
+        void restoreViewState(IViewState state);
+
+        TextSelection   getSelection();
+        TextSelection[] getSelections();
+
+        /// <summary>
+        /// Monaco accepts either an <c>IRange</c> or an <c>ISelection</c> here, and one declaration
+        /// cannot claim both - a second one with the same <c>[Name]</c> is emitted as
+        /// <c>setSelection$1</c> and stops matching Monaco. The typed overloads live on the C# side.
+        /// </summary>
+        void setSelection(object rangeOrSelection);
+
+        void setSelections(ReadOnlyArray<TextSelection> selections);
+
+        void revealLine(int lineNumber);
+        void revealLineInCenterIfOutsideViewport(int lineNumber);
+        void revealLineNearTop(int lineNumber);
+        void revealPosition(Position position);
+        void revealPositionInCenter(Position position);
+        void revealRange(TextRange range);
+        void revealRangeInCenter(TextRange range);
+        void revealRangeInCenterIfOutsideViewport(TextRange range);
+        void revealRangeAtTop(TextRange range);
+
+        double getScrollTop();
+        void   setScrollTop(double scrollTop);
+        double getScrollLeft();
+        void   setScrollLeft(double scrollLeft);
+        double getScrollHeight();
+
+        /// <summary>The height the content needs, in pixels - what to size a container to.</summary>
+        double getContentHeight();
+
+        double getContentWidth();
+
+        bool hasTextFocus();
+
+        /// <summary>
+        /// A decoration set Monaco keeps tracked across edits. Pass null for an empty one: Monaco
+        /// only applies the argument when it is truthy.
+        /// </summary>
+        IEditorDecorationsCollection createDecorationsCollection(ReadOnlyArray<TextDecoration> decorations);
+
+        void addContentWidget(ContentWidgetDescriptor widget);
+        void layoutContentWidget(ContentWidgetDescriptor widget);
+        void removeContentWidget(ContentWidgetDescriptor widget);
+        void addOverlayWidget(OverlayWidgetDescriptor widget);
+        void removeOverlayWidget(OverlayWidgetDescriptor widget);
+
+        /// <summary>Opens or closes bands of space between lines, through the accessor it hands the callback.</summary>
+        void changeViewZones(Action<IViewZoneAccessor> callback);
+
+        /// <summary>Binds a keybinding to a handler with no menu entry. Returns the command id, or null.</summary>
+        string addCommand(int keybinding, Action handler, string context);
+
+        /// <summary>A named boolean this editor's actions can be gated on.</summary>
+        IContextKey createContextKey(string key, bool defaultValue);
+
+        IJsDisposable onDidFocusEditorText(Action listener);
+        IJsDisposable onDidBlurEditorText(Action listener);
+        IJsDisposable onDidFocusEditorWidget(Action listener);
+        IJsDisposable onDidBlurEditorWidget(Action listener);
+        IJsDisposable onKeyDown(Action<IKeyboardEvent> listener);
+        IJsDisposable onKeyUp(Action<IKeyboardEvent> listener);
+        IJsDisposable onMouseDown(Action<IEditorMouseEvent> listener);
+        IJsDisposable onMouseUp(Action<IEditorMouseEvent> listener);
+        IJsDisposable onMouseMove(Action<IEditorMouseEvent> listener);
+        IJsDisposable onMouseLeave(Action<IEditorMouseEvent> listener);
+        IJsDisposable onContextMenu(Action<IEditorMouseEvent> listener);
+        IJsDisposable onDidPaste(Action<IPasteEvent> listener);
+        IJsDisposable onDidScrollChange(Action<IScrollEvent> listener);
+        IJsDisposable onDidChangeCursorPosition(Action<ICursorPositionChangedEvent> listener);
+        IJsDisposable onDidChangeCursorSelection(Action<ICursorSelectionChangedEvent> listener);
+        IJsDisposable onDidChangeModel(Action listener);
+        IJsDisposable onDidChangeModelLanguage(Action<ILanguageChangedEvent> listener);
+        IJsDisposable onDidChangeConfiguration(Action listener);
+        IJsDisposable onDidLayoutChange(Action listener);
+        IJsDisposable onDidContentSizeChange(Action<IContentSizeChangedEvent> listener);
+        IJsDisposable onDidAttemptReadOnlyEdit(Action listener);
+        IJsDisposable onDidDispose(Action listener);
+
+        /// <summary>
+        /// The typed content event, alongside the argument-less <see cref="onDidChangeModelContent"/>
+        /// the package already used. Declared under its own C# name because two declarations cannot
+        /// share a <c>[Name]</c>.
+        /// </summary>
+        [Name("onDidChangeModelContent")]
+        IJsDisposable onDidChangeModelContentDetailed(Action<IContentChangedEvent> listener);
+
         /// <summary>
         /// Reads an option by its <see cref="IEditorOptionIds"/> id. Monaco's <c>getOption</c> is
         /// heterogeneous - each id has its own value type - and one C# declaration can only claim
@@ -70,6 +181,33 @@ namespace Tesserae.Monaco
 
         IStandaloneCodeEditor getOriginalEditor();
         IStandaloneCodeEditor getModifiedEditor();
+
+        /// <summary>
+        /// Fires when the diff has been recomputed - which happens on a worker, well after the text
+        /// changed. The only correct moment to read <see cref="getLineChanges"/>.
+        /// </summary>
+        IJsDisposable onDidUpdateDiff(Action listener);
+
+        /// <summary>
+        /// The changed blocks, as line ranges on both sides. Empty until the worker has run. An end line
+        /// of 0 on a side means the block does not exist there: that is Monaco's encoding for a pure
+        /// insertion or deletion.
+        /// </summary>
+        LineChange[] getLineChanges();
+
+        /// <summary>The full diff result, whose <c>identical</c> flag honours <c>ignoreTrimWhitespace</c>.</summary>
+        IDiffComputationResult getDiffComputationResult();
+    }
+
+    /// <summary>What the diff worker came back with, matching Monaco's <c>IDiffComputationResult</c>.</summary>
+    [External]
+    [Convention(Notation.None)]
+    public interface IDiffComputationResult
+    {
+        bool identical { get; }
+
+        /// <summary>True when the diff gave up early - see <c>MaxComputationTime</c>.</summary>
+        bool quitEarly { get; }
     }
 
     /// <summary>Monaco's <c>ITextModel</c> - the document behind an editor.</summary>
@@ -85,6 +223,38 @@ namespace Tesserae.Monaco
         int              getLineCount();
         void             updateOptions(TextModelOptions options);
         void             dispose();
+
+        /// <summary>The model's URI. What the TypeScript service resolves imports by, and what a JSON schema is matched against.</summary>
+        IUri             uri { get; }
+
+        string           getLanguageId();
+
+        /// <summary>Increases on every change - the cheapest way to discard a stale async result.</summary>
+        int              getVersionId();
+
+        string           getLineContent(int lineNumber);
+        int              getOffsetAt(Position position);
+        Position         getPositionAt(int offset);
+
+        /// <summary>
+        /// Monaco's signature is
+        /// <c>(searchString, searchOnlyEditableRange, isRegex, matchCase, wordSeparators, captureMatches, limitResultCount)</c>.
+        /// <paramref name="wordSeparators"/> is null for a substring match, or the separator set for a
+        /// whole-word one.
+        /// </summary>
+        IFindMatch[]     findMatches(string searchString, bool searchOnlyEditableRange, bool isRegex, bool matchCase, string wordSeparators, bool captureMatches, int limitResultCount);
+
+        /// <summary>Applies edits without resetting the undo stack. The computer may return null.</summary>
+        void             pushEditOperations(ReadOnlyArray<TextSelection> beforeCursorState, ReadOnlyArray<TextEdit> editOperations, Func<object, object> cursorStateComputer);
+
+        void             pushStackElement();
+        void             undo();
+        void             redo();
+
+        /// <summary>Normalises line endings. 0 is LF, 1 is CRLF.</summary>
+        void             setEOL(int eol);
+
+        IJsDisposable    onDidChangeContent(Action<IContentChangedEvent> listener);
     }
 
     /// <summary>Monaco's <c>IWordAtPosition</c>, or null when the caret isn't on a word.</summary>
@@ -125,7 +295,42 @@ namespace Tesserae.Monaco
     {
         IStandaloneCodeEditor create(HTMLElement container, EditorOptions options);
         IStandaloneDiffEditor createDiffEditor(HTMLElement container, DiffEditorOptions options);
-        ITextModel            createModel(string value, string language);
+
+        /// <summary>
+        /// Creates a document. <paramref name="uri"/> may be null, which Monaco treats as "invent one" -
+        /// declared as three parameters rather than two overloads, since overloads cannot share a
+        /// <c>[Name]</c>.
+        /// </summary>
+        ITextModel            createModel(string value, string language, IUri uri);
+
+        /// <summary>The model registered for a URI, or null. Creating a second model for a taken URI throws.</summary>
+        ITextModel            getModel(IUri uri);
+
+        ITextModel[]          getModels();
+
+        /// <summary>Every editor on the page in creation order, including a diff editor's two inner ones.</summary>
+        IStandaloneCodeEditor[] getEditors();
+
+        /// <summary>Markers matching a filter - pass an empty filter for every marker on the page.</summary>
+        CodeMarker[]          getModelMarkers(MarkerFilter filter);
+
+        /// <summary>
+        /// Fires when markers change on any model - including asynchronously, when one of Monaco's own
+        /// workers finishes. The only way to see a worker's diagnostics: they arrive well after the edit.
+        /// </summary>
+        IJsDisposable         onDidChangeMarkers(Action listener);
+
+        /// <summary>Syntax-highlights a string to HTML, with no editor instance involved.</summary>
+        IPromise              colorize(string text, string languageId, ColorizeOptions options);
+
+        /// <summary>Highlights the code already inside an element, in place.</summary>
+        void                  colorizeElement(HTMLElement element, ColorizeElementOptions options);
+
+        /// <summary>Registers a command a code lens (or any other command reference) can name.</summary>
+        IJsDisposable         registerCommand(string id, Action<object, object> handler);
+
+        /// <summary>A Monaco-managed worker running the host's own module.</summary>
+        object                createWebWorker(WebWorkerOptions options);
 
         void setModelLanguage(ITextModel model, string mimeTypeOrLanguageId);
 
@@ -157,6 +362,9 @@ namespace Tesserae.Monaco
         int fontSize { get; }
         int readOnly { get; }
         int wordWrap { get; }
+        int lineNumbers { get; }
+        int glyphMargin { get; }
+        int minimap { get; }
     }
 
     /// <summary><c>monaco.languages</c>.</summary>
@@ -172,6 +380,39 @@ namespace Tesserae.Monaco
         IJsDisposable registerHoverProvider(string languageId, HoverProvider provider);
         IJsDisposable registerDocumentFormattingEditProvider(string languageId, DocumentFormattingEditProvider provider);
         IJsDisposable registerDocumentRangeFormattingEditProvider(string languageId, DocumentRangeFormattingEditProvider provider);
+
+        IJsDisposable registerSignatureHelpProvider(string languageId, SignatureHelpProvider provider);
+        IJsDisposable registerCodeActionProvider(string languageId, CodeActionProvider provider);
+        IJsDisposable registerDefinitionProvider(string languageId, DefinitionProvider provider);
+        IJsDisposable registerDeclarationProvider(string languageId, DeclarationProvider provider);
+        IJsDisposable registerTypeDefinitionProvider(string languageId, TypeDefinitionProvider provider);
+        IJsDisposable registerImplementationProvider(string languageId, ImplementationProvider provider);
+        IJsDisposable registerReferenceProvider(string languageId, ReferenceProvider provider);
+        IJsDisposable registerDocumentHighlightProvider(string languageId, DocumentHighlightProvider provider);
+        IJsDisposable registerDocumentSymbolProvider(string languageId, DocumentSymbolProvider provider);
+        IJsDisposable registerRenameProvider(string languageId, RenameProvider provider);
+        IJsDisposable registerInlayHintsProvider(string languageId, InlayHintsProvider provider);
+        IJsDisposable registerCodeLensProvider(string languageId, CodeLensProvider provider);
+        IJsDisposable registerFoldingRangeProvider(string languageId, FoldingRangeProvider provider);
+        IJsDisposable registerSelectionRangeProvider(string languageId, SelectionRangeProvider provider);
+        IJsDisposable registerLinkProvider(string languageId, LinkProvider provider);
+        IJsDisposable registerColorProvider(string languageId, ColorProvider provider);
+        IJsDisposable registerDocumentSemanticTokensProvider(string languageId, DocumentSemanticTokensProvider provider);
+        IJsDisposable registerOnTypeFormattingEditProvider(string languageId, OnTypeFormattingEditProvider provider);
+        IJsDisposable registerLinkedEditingRangeProvider(string languageId, LinkedEditingRangeProvider provider);
+        IJsDisposable registerInlineCompletionsProvider(string languageId, InlineCompletionsProvider provider);
+
+        /// <summary>The bundled JSON language service. See <c>MonacoEditor.ConfigureJson</c>.</summary>
+        IJsonApi       json { get; }
+
+        /// <summary>The bundled TypeScript and JavaScript language service.</summary>
+        ITypeScriptApi typescript { get; }
+
+        /// <summary>The bundled CSS, SCSS and LESS language service.</summary>
+        ICssApi        css { get; }
+
+        /// <summary>The bundled HTML, Handlebars and Razor language service.</summary>
+        IHtmlApi       html { get; }
 
         LanguageInfo[] getLanguages();
     }

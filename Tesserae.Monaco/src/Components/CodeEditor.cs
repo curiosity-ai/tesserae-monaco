@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Transpose;
@@ -17,28 +18,27 @@ namespace Tesserae.Monaco
     /// <see cref="MonacoEditor.Editor(bool)"/>.
     ///
     /// Monaco's provider registry is global per language, but the callbacks below are scoped to this
-    /// instance: each one checks that the model it was handed belongs to this editor before doing
-    /// any work, and every registration is disposed when the component leaves the DOM. That is what
-    /// lets two editors share a language while answering completions differently.
+    /// instance: <see cref="ProviderHost"/> gates each one on the model it was handed and disposes every
+    /// registration when the component is torn down. That is what lets two editors share a language
+    /// while answering differently.
+    ///
+    /// Everything shared with <see cref="CodeViewer"/> - text, selections, decorations, widgets, events,
+    /// actions, options - comes from <see cref="MonacoTextComponent{T}"/>.
     /// </summary>
     [Transpose.Name("tssm.CodeEditor")]
-    public sealed class CodeEditor : MonacoComponent
+    public sealed class CodeEditor : MonacoTextComponent<CodeEditor>
     {
         private const int    HOVER_REQUEST_DELAY_MS = 250;
         private const int    VALIDATION_DEBOUNCE_MS = 1_000;
-        private const string MARKER_OWNER           = "tss-monaco";
         private const string FORMATTER_DISPLAY_NAME = "Tesserae.Monaco";
 
         private readonly bool _autoHeight;
 
-        private string _text     = "";
-        private string _language = "";
-        private bool   _readOnly;
-        private bool   _wordWrap;
+        // Provider registrations, deferred until the editor exists and a ProviderHost can gate them.
+        private readonly List<Action<ProviderHost>> _providers = new List<Action<ProviderHost>>();
 
         private Action                _onChanged;
         private Action                _onBeforeCreate;
-        private Action<CodeEditor>    _onRendered;
         private Action<EditorOptions> _configureOptions;
 
         private Func<ITextModel, Position, IPromise>                     _onCompletion;
@@ -48,128 +48,14 @@ namespace Tesserae.Monaco
         private Func<string, Task<ReadOnlyArray<CodeDiagnostic>>>        _validator;
         private bool                                                     _validateImmediately;
 
-        // The live provider registrations, disposed with the component.
-        private IJsDisposable _completionProvider;
-        private IJsDisposable _hoverProvider;
-        private IJsDisposable _formattingProvider;
-        private IJsDisposable _rangeFormattingProvider;
-
         private double _validationTimeoutId;
+
+        protected override CodeEditor Self => this;
 
         internal CodeEditor(bool autoHeight)
         {
             _autoHeight = autoHeight;
         }
-
-        /// <summary>The editor's content. Reads straight from the live model once mounted.</summary>
-        public string Text
-        {
-            get => Editor is null ? _text : Editor.getValue();
-            set
-            {
-                _text = value ?? "";
-
-                Editor?.setValue(_text);
-            }
-        }
-
-        /// <summary>
-        /// Sets the content, skipping the write when it is unchanged - which matters because
-        /// <c>setValue</c> resets the undo stack and the caret.
-        /// </summary>
-        public CodeEditor SetText(string text)
-        {
-            if (Text != text) Text = text;
-
-            return this;
-        }
-
-        /// <summary>The one-based caret position, or null before mount.</summary>
-        public Position GetPosition() => Editor?.getPosition();
-
-        /// <summary>Moves the caret.</summary>
-        public CodeEditor SetPosition(Position position)
-        {
-            if (position != null) Editor?.setPosition(position);
-
-            return this;
-        }
-
-        /// <summary>Scrolls <paramref name="lineNumber"/> into the middle of the viewport.</summary>
-        public CodeEditor RevealLine(int lineNumber)
-        {
-            Editor?.revealLineInCenter(lineNumber);
-
-            return this;
-        }
-
-        /// <summary>Gives the editor keyboard focus.</summary>
-        public CodeEditor Focus()
-        {
-            Editor?.focus();
-
-            return this;
-        }
-
-        /// <summary>Sets the language by Monaco language id (<c>"csharp"</c>, <c>"json"</c>, …).</summary>
-        public CodeEditor SetLanguage(string language)
-        {
-            _language = language ?? "";
-
-            var model = Editor?.getModel();
-
-            if (model != null)
-            {
-                MonacoApi.editor.setModelLanguage(model, _language);
-            }
-
-            return this;
-        }
-
-        /// <summary>Registers <paramref name="language"/> if needed, then selects it.</summary>
-        public CodeEditor SetLanguage(LanguageDefinition language)
-        {
-            MonacoEditor.RegisterLanguage(language);
-
-            return SetLanguage(language?.Id);
-        }
-
-        /// <summary>Picks the language from a file extension, if Monaco knows one for it.</summary>
-        public CodeEditor SetLanguageByExtension(string extension)
-        {
-            if (MonacoEditor.TryGetLanguageIdForExtension(extension, out var languageId))
-            {
-                SetLanguage(languageId);
-            }
-
-            return this;
-        }
-
-        /// <summary>Makes the editor read-only.</summary>
-        public CodeEditor ReadOnly(bool readOnly = true)
-        {
-            _readOnly = readOnly;
-
-            Editor?.updateOptions(new EditorOptions { readOnly = readOnly });
-
-            return this;
-        }
-
-        /// <summary>Soft-wraps long lines instead of scrolling horizontally.</summary>
-        public CodeEditor WordWrap(bool wordWrap = true)
-        {
-            _wordWrap = wordWrap;
-
-            Editor?.updateOptions(new EditorOptions { wordWrap = wordWrap ? "on" : "off" });
-
-            return this;
-        }
-
-        /// <summary>
-        /// Whether lines are currently wrapped. Tracks the editor's own state, so it stays correct
-        /// after the user toggles wrapping from the context menu.
-        /// </summary>
-        public bool IsWordWrapped => _wordWrap;
 
         /// <summary>
         /// Adds a callback for content changes. Callbacks accumulate rather than replace, so
@@ -208,19 +94,10 @@ namespace Tesserae.Monaco
             return this;
         }
 
-        /// <summary>Runs once the underlying editor exists.</summary>
-        public CodeEditor OnRendered(Action<CodeEditor> onRendered)
-        {
-            _onRendered = onRendered;
-
-            return this;
-        }
-
         /// <summary>
-        /// Adjusts the Monaco construction options before creation - the escape hatch for options
-        /// this wrapper doesn't surface. <see cref="EditorOptions"/> covers the common ones; it is a
-        /// plain JavaScript object at runtime, so <c>((dynamic)options).someOption = value</c>
-        /// reaches the rest.
+        /// Adjusts the Monaco construction options before creation, after the typed setters have run - so
+        /// a caller here always wins. <see cref="EditorOptions"/> covers the common options; for one it
+        /// does not declare, reach for <c>SetRawOption</c>, which names it in one place instead.
         /// </summary>
         public CodeEditor Options(Action<EditorOptions> configureOptions)
         {
@@ -228,9 +105,6 @@ namespace Tesserae.Monaco
 
             return this;
         }
-
-        /// <summary>The underlying Monaco editor, or null before mount.</summary>
-        public IStandaloneCodeEditor Editor => (IStandaloneCodeEditor)Instance;
 
         #region Completion
 
@@ -303,6 +177,20 @@ namespace Tesserae.Monaco
             return this;
         }
 
+        /// <summary>
+        /// Ghost-text suggestions ahead of the caret, accepted with Tab - what an AI completion looks
+        /// like. Distinct from <see cref="OnCompletion"/>, which is a list the user picks from.
+        ///
+        /// The editor already turns Monaco's inline-suggest UI on, so a provider here is all that is
+        /// needed for it to appear.
+        /// </summary>
+        public CodeEditor OnInlineCompletion(Func<CodeContext, Task<InlineCompletion[]>> handler)
+        {
+            if (handler is object) _providers.Add(host => host.RegisterInlineCompletions(handler));
+
+            return this;
+        }
+
         #endregion
 
         #region Hover
@@ -370,6 +258,17 @@ namespace Tesserae.Monaco
             return this;
         }
 
+        /// <summary>
+        /// Reformats as the user types one of <paramref name="triggerCharacters"/> - closing a brace
+        /// re-indenting its own line being the usual case.
+        /// </summary>
+        public CodeEditor OnTypeFormat(Func<CodeContext, string, Task<TextEdit[]>> handler, string[] triggerCharacters = null)
+        {
+            if (handler is object) _providers.Add(host => host.RegisterOnTypeFormatting(handler, triggerCharacters));
+
+            return this;
+        }
+
         private async Task<object> FormatWholeModelAsync(ITextModel model)
         {
             try
@@ -416,39 +315,224 @@ namespace Tesserae.Monaco
 
         #endregion
 
-        #region Diagnostics
+        #region Signature help
 
         /// <summary>
-        /// Replaces the editor's squiggles. Coordinates are Monaco's own, i.e. one-based; pass
-        /// an empty array to clear.
+        /// Parameter hints, shown while the caret is inside an argument list. Monaco highlights the
+        /// active parameter by matching <see cref="ParameterInformation.label"/> as a substring of the
+        /// signature's own label, so the two have to agree exactly.
         /// </summary>
-        public CodeEditor SetMarkers(ReadOnlyArray<CodeMarker> markers)
+        public CodeEditor OnSignatureHelp(
+            Func<CodeContext, Task<SignatureHelp>> handler,
+            string[]                               triggerCharacters   = null,
+            string[]                               retriggerCharacters = null)
         {
-            if (Editor is null) return this;
+            if (handler is object) _providers.Add(host => host.RegisterSignatureHelp(handler, triggerCharacters, retriggerCharacters));
 
-            MonacoApi.editor.setModelMarkers(Editor.getModel(), MARKER_OWNER, markers);
+            return this;
+        }
+
+        #endregion
+        #region Code actions
+
+        /// <summary>
+        /// Quick fixes and refactorings, offered through the lightbulb and Ctrl+. - the other half of
+        /// <see cref="MonacoTextComponent{T}.SetDiagnostics"/>, which can report a problem but not
+        /// offer to fix it.
+        ///
+        /// Filter on the context's markers to offer a fix only for a problem you actually reported.
+        /// </summary>
+        public CodeEditor OnCodeActions(Func<CodeActionContext, Task<CodeAction[]>> handler, string[] kinds = null)
+        {
+            if (handler is object) _providers.Add(host => host.RegisterCodeActions(handler, kinds));
+
+            return this;
+        }
+
+        #endregion
+        #region Navigation
+
+        /// <summary>Go to definition (F12), and the Ctrl+click peek.</summary>
+        public CodeEditor OnDefinition(Func<CodeContext, Task<CodeLocation[]>> handler)
+        {
+            if (handler is object) _providers.Add(host => host.RegisterDefinition(handler));
+
+            return this;
+        }
+
+        /// <summary>Go to declaration, where a language separates it from the definition.</summary>
+        public CodeEditor OnDeclaration(Func<CodeContext, Task<CodeLocation[]>> handler)
+        {
+            if (handler is object) _providers.Add(host => host.RegisterDeclaration(handler));
+
+            return this;
+        }
+
+        /// <summary>Go to type definition.</summary>
+        public CodeEditor OnTypeDefinition(Func<CodeContext, Task<CodeLocation[]>> handler)
+        {
+            if (handler is object) _providers.Add(host => host.RegisterTypeDefinition(handler));
+
+            return this;
+        }
+
+        /// <summary>Go to implementation.</summary>
+        public CodeEditor OnImplementation(Func<CodeContext, Task<CodeLocation[]>> handler)
+        {
+            if (handler is object) _providers.Add(host => host.RegisterImplementation(handler));
+
+            return this;
+        }
+
+        /// <summary>Find all references (Shift+F12), listed in the peek view.</summary>
+        public CodeEditor OnReferences(Func<CodeContext, Task<CodeLocation[]>> handler)
+        {
+            if (handler is object) _providers.Add(host => host.RegisterReferences(handler));
 
             return this;
         }
 
         /// <summary>
-        /// Replaces the editor's squiggles from zero-based <see cref="CodeDiagnostic"/>s, as a
-        /// compiler usually reports them.
+        /// Highlights the other occurrences of the symbol under the caret. Needs
+        /// <c>OccurrencesHighlight("singleFile")</c>, which is the editor's default.
         /// </summary>
-        public CodeEditor SetDiagnostics(ReadOnlyArray<CodeDiagnostic> diagnostics)
+        public CodeEditor OnDocumentHighlights(Func<CodeContext, Task<DocumentHighlight[]>> handler)
         {
-            var markers = new CodeMarker[diagnostics.Length];
+            if (handler is object) _providers.Add(host => host.RegisterDocumentHighlights(handler));
 
-            for (var i = 0; i < diagnostics.Length; i++)
-            {
-                markers[i] = diagnostics[i].ToMarker();
-            }
-
-            return SetMarkers(markers);
+            return this;
         }
 
-        /// <summary>Clears every squiggle.</summary>
-        public CodeEditor ClearMarkers() => SetMarkers(new CodeMarker[0]);
+        #endregion
+        #region Symbols and rename
+
+        /// <summary>
+        /// The outline: what Ctrl+Shift+O lists and what the sticky-scroll header is built from. A
+        /// symbol's <see cref="DocumentSymbol.selectionRange"/> is where the caret lands, and defaults
+        /// to its full range when unset.
+        /// </summary>
+        public CodeEditor OnDocumentSymbols(Func<string, Task<DocumentSymbol[]>> handler)
+        {
+            if (handler is object) _providers.Add(host => host.RegisterDocumentSymbols(handler));
+
+            return this;
+        }
+
+        /// <summary>
+        /// Rename symbol (F2). The handler receives the caret context and the new name, and returns
+        /// every edit the rename implies. Returning nothing tells Monaco the symbol cannot be renamed.
+        /// </summary>
+        public CodeEditor OnRename(Func<CodeContext, string, Task<TextEdit[]>> handler)
+        {
+            if (handler is object) _providers.Add(host => host.RegisterRename(handler));
+
+            return this;
+        }
+
+        #endregion
+        #region Inlay hints, code lenses, folding, links, colours, semantic tokens
+
+        /// <summary>
+        /// Read-only annotations painted between the code - an inferred type, a parameter name. The
+        /// handler is given the whole text and the visible range, so it can answer for just what is
+        /// on screen.
+        /// </summary>
+        public CodeEditor OnInlayHints(Func<string, TextRange, Task<InlayHint[]>> handler)
+        {
+            if (handler is object) _providers.Add(host => host.RegisterInlayHints(handler));
+
+            return this;
+        }
+
+        /// <summary>
+        /// Clickable annotations above a line - "3 references", "run test". <paramref name="onClick"/>
+        /// receives the item the user clicked.
+        /// </summary>
+        public CodeEditor OnCodeLenses(Func<string, Task<CodeLensItem[]>> handler, Action<CodeLensItem> onClick = null)
+        {
+            if (handler is object) _providers.Add(host => host.RegisterCodeLenses(handler, onClick));
+
+            return this;
+        }
+
+        /// <summary>
+        /// Custom foldable regions, replacing Monaco's indentation-based guess. Needs
+        /// <c>Folding(true)</c>, which is Monaco's default.
+        /// </summary>
+        public CodeEditor OnFoldingRanges(Func<string, Task<FoldingRange[]>> handler)
+        {
+            if (handler is object) _providers.Add(host => host.RegisterFoldingRanges(handler));
+
+            return this;
+        }
+
+        /// <summary>
+        /// Smart-expand ranges (Shift+Alt+Right): the ranges around the caret from smallest to largest,
+        /// which Monaco steps outwards through.
+        /// </summary>
+        public CodeEditor OnSelectionRanges(Func<CodeContext, Task<TextRange[]>> handler)
+        {
+            if (handler is object) _providers.Add(host => host.RegisterSelectionRanges(handler));
+
+            return this;
+        }
+
+        /// <summary>Clickable links in the text. Needs <c>Links(true)</c>, which is Monaco's default.</summary>
+        public CodeEditor OnDocumentLinks(Func<string, Task<DocumentLink[]>> handler)
+        {
+            if (handler is object) _providers.Add(host => host.RegisterDocumentLinks(handler));
+
+            return this;
+        }
+
+        /// <summary>
+        /// Colour swatches with an inline picker. <paramref name="format"/> decides what the picker
+        /// writes back; left null it produces a CSS hex literal.
+        /// </summary>
+        public CodeEditor OnColors(Func<string, Task<ColorInformation[]>> handler, Func<ColorValue, string> format = null)
+        {
+            if (handler is object) _providers.Add(host => host.RegisterColors(handler, format));
+
+            return this;
+        }
+
+        /// <summary>
+        /// Server-driven highlighting layered over the Monarch tokenizer. The legend's type names are
+        /// what a theme's rules match, so they should line up with the token names used in
+        /// <see cref="LanguageDefinition.TokenColors"/> - a type with no matching theme rule is coloured
+        /// like ordinary text. Build the packed data with <see cref="SemanticTokenBuilder"/>.
+        ///
+        /// Semantic highlighting is switched on for this editor as a side effect; Monaco otherwise leaves
+        /// it to the theme and never asks the provider.
+        /// </summary>
+        public CodeEditor OnSemanticTokens(SemanticTokensLegend legend, Func<string, Task<SemanticTokens>> handler)
+        {
+            if (handler is null || legend is null) return this;
+
+            _providers.Add(host => host.RegisterSemanticTokens(legend, handler));
+
+            // Monaco leaves semantic highlighting to the theme, and a standalone theme that says nothing
+            // leaves it off - so a provider registered without this is simply never asked. Registering
+            // one is unambiguous about wanting it.
+            SemanticHighlighting();
+
+            return this;
+        }
+
+        /// <summary>
+        /// Ranges that should be edited together, such as an HTML tag and its closing tag. Fewer than
+        /// two ranges is treated as "nothing to link".
+        /// </summary>
+        public CodeEditor OnLinkedEditing(Func<CodeContext, Task<TextRange[]>> handler)
+        {
+            if (handler is object) _providers.Add(host => host.RegisterLinkedEditing(handler));
+
+            return this;
+        }
+
+        #endregion
+
+        #region Diagnostics
 
         /// <summary>
         /// Validates the content as the user types and shows the results as squiggles.
@@ -491,8 +575,8 @@ namespace Tesserae.Monaco
         {
             var diagnostics = await _validator(code);
 
-            // Discard a stale result: the editor may have been disposed, or the text moved on.
-            if (Editor is null || Text != code) return;
+            // Discard a stale result: the editor may have been torn down, or the text moved on.
+            if (Surface is null || Text != code) return;
 
             if (diagnostics is object && diagnostics.Length > 0)
             {
@@ -506,7 +590,7 @@ namespace Tesserae.Monaco
         {
             _onBeforeCreate?.Invoke();
 
-            var options = BuildBaseOptions(_language, _text, _readOnly, _wordWrap, _autoHeight);
+            var options = BuildBaseOptions(InitialLanguage, InitialText, InitialReadOnly, InitialWordWrap, _autoHeight);
 
             options.snippetSuggestions = "bottom";
             options.suggest            = new SuggestOptions { preview = true };
@@ -514,31 +598,39 @@ namespace Tesserae.Monaco
             options.inlineSuggest      = new InlineSuggestOptions { enabled = true, showToolbar = "always" };
             options.hover              = new HoverOptions { enabled = true, sticky = true, delay = HOVER_REQUEST_DELAY_MS, hidingDelay = 300 };
 
-            _configureOptions?.Invoke(options);
-
-            ApplyOverflowWidgetsHost(options);
+            FinishOptions(options, OptionSetters, _configureOptions);
 
             var editor = MonacoApi.editor.create(container, options);
 
             editor.onDidChangeModelContent(() => _onChanged?.Invoke());
-            editor.getModel().updateOptions(new TextModelOptions { tabSize = 4, insertSpaces = true });
 
             return editor;
         }
 
         protected override void AfterCreate()
         {
-            var editor   = Editor;
-            var language = string.IsNullOrWhiteSpace(_language) ? "plaintext" : _language;
+            // Binds the shared surface and replays everything configured before mount - options, events,
+            // actions, widgets, decorations and the saved view state.
+            BindSurface();
 
-            RegisterCompletionProvider(editor, language);
-            RegisterHoverProvider(editor, language);
-            RegisterFormattingProviders(editor, language);
+            var editor   = Editor;
+            var language = string.IsNullOrWhiteSpace(InitialLanguage) ? "plaintext" : InitialLanguage;
+            var host     = new ProviderHost(editor, language, Disposables);
+
+            RegisterCompletionProvider(host, editor);
+            RegisterHoverProvider(host, editor);
+            RegisterFormattingProviders(host, editor);
+
+            foreach (var register in _providers)
+            {
+                register(host);
+            }
+
             AddWordWrapAction(editor);
 
             if (_autoHeight) EnableAutoHeight();
 
-            _onRendered?.Invoke(this);
+            RaiseRendered();
 
             if (_validator is object && _validateImmediately)
             {
@@ -546,29 +638,29 @@ namespace Tesserae.Monaco
             }
         }
 
-        private void RegisterCompletionProvider(IStandaloneCodeEditor editor, string language)
+        private void RegisterCompletionProvider(ProviderHost host, IStandaloneCodeEditor editor)
         {
             if (_onCompletion is null && _onResolveCompletion is null) return;
 
-            _completionProvider = MonacoApi.languages.registerCompletionItemProvider(language, new CompletionItemProvider
+            host.Keep(MonacoApi.languages.registerCompletionItemProvider(host.Language, new CompletionItemProvider
             {
                 // Monaco asks every provider registered for the language; answering only for our own
                 // model is what keeps two editors on the same language independent.
                 provideCompletionItems = (model, position) =>
-                    editor.getModel() != model ? null : _onCompletion?.Invoke(model, position),
+                    host.OwnsModel(model) ? _onCompletion?.Invoke(model, position) : null,
 
                 resolveCompletionItem = (item, token) => _onResolveCompletion?.Invoke(item, token) ?? item
-            });
+            }));
         }
 
-        private void RegisterHoverProvider(IStandaloneCodeEditor editor, string language)
+        private void RegisterHoverProvider(ProviderHost host, IStandaloneCodeEditor editor)
         {
             if (_onHover is null) return;
 
-            _hoverProvider = MonacoApi.languages.registerHoverProvider(language, new HoverProvider
+            host.Keep(MonacoApi.languages.registerHoverProvider(host.Language, new HoverProvider
             {
                 provideHover = (model, position, token) => MonacoEditor.AsPromise(ProvideHoverAsync(editor, model, position, token))
-            });
+            }));
         }
 
         /// <summary>
@@ -650,25 +742,25 @@ namespace Tesserae.Monaco
 
         private static bool IsCancelled(ICancellationToken token) => token != null && token.isCancellationRequested;
 
-        private void RegisterFormattingProviders(IStandaloneCodeEditor editor, string language)
+        private void RegisterFormattingProviders(ProviderHost host, IStandaloneCodeEditor editor)
         {
             if (_onFormat is null) return;
 
-            _formattingProvider = MonacoApi.languages.registerDocumentFormattingEditProvider(language, new DocumentFormattingEditProvider
+            host.Keep(MonacoApi.languages.registerDocumentFormattingEditProvider(host.Language, new DocumentFormattingEditProvider
             {
                 displayName = FORMATTER_DISPLAY_NAME,
 
                 provideDocumentFormattingEdits = (model, formattingOptions, token) =>
-                    editor.getModel() != model ? null : MonacoEditor.AsPromise(FormatWholeModelAsync(model))
-            });
+                    host.OwnsModel(model) ? MonacoEditor.AsPromise(FormatWholeModelAsync(model)) : null
+            }));
 
-            _rangeFormattingProvider = MonacoApi.languages.registerDocumentRangeFormattingEditProvider(language, new DocumentRangeFormattingEditProvider
+            host.Keep(MonacoApi.languages.registerDocumentRangeFormattingEditProvider(host.Language, new DocumentRangeFormattingEditProvider
             {
                 displayName = FORMATTER_DISPLAY_NAME,
 
                 provideDocumentRangeFormattingEdits = (model, range, formattingOptions, token) =>
-                    editor.getModel() != model ? null : MonacoEditor.AsPromise(FormatRangeAsync(model, range))
-            });
+                    host.OwnsModel(model) ? MonacoEditor.AsPromise(FormatRangeAsync(model, range)) : null
+            }));
         }
 
         // Word wrap is a per-editor view preference, so it belongs on the editor's own context menu
@@ -683,7 +775,7 @@ namespace Tesserae.Monaco
                 contextMenuGroupId = "view",
                 contextMenuOrder   = 1.5,
                 keybindings        = new[] { MonacoApi.KeyMod.Alt | MonacoApi.KeyCode.KeyZ },
-                run                = _ => WordWrap(!_wordWrap)
+                run                = _ => WordWrap(!IsWordWrapped)
             });
         }
 
@@ -691,21 +783,11 @@ namespace Tesserae.Monaco
         {
             clearTimeout(_validationTimeoutId);
 
-            // Language providers are registered globally, so disposing the editor does not remove
-            // them - they have to be released explicitly or each mount leaks another provider that
-            // answers for a model that no longer exists.
-            DisposeProvider(ref _completionProvider);
-            DisposeProvider(ref _hoverProvider);
-            DisposeProvider(ref _formattingProvider);
-            DisposeProvider(ref _rangeFormattingProvider);
-        }
-
-        private static void DisposeProvider(ref IJsDisposable provider)
-        {
-            if (provider is null) return;
-
-            provider.dispose();
-            provider = null;
+            // Captures the text and the user's place in it, then drops the surface. Every provider
+            // registration and event subscription is released by the base class's DisposableBag:
+            // Monaco's provider registry is global, so disposing the editor does not remove them and
+            // each mount would otherwise leak one bound to a dead model.
+            UnbindSurface();
         }
     }
 }

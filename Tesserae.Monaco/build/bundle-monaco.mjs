@@ -122,7 +122,33 @@ const prelude = `(function () {
 })();
 `;
 
-await writeFile(join(outDir, 'monaco.js'), prelude + editorJs);
+/**
+ * Puts the bundled language services where Monaco's own documentation says they are.
+ *
+ * `esm/vs/editor/editor.main.js` exports them as **top-level** names - `json`, `typescript`, `css`,
+ * `html` - so with globalName: 'monaco' they land on `monaco.json`, not `monaco.languages.json`. The
+ * AMD build put them under `monaco.languages`, every Monaco doc and sample still says
+ * `monaco.languages.json.jsonDefaults`, and a host reaching for the documented path gets
+ * "Cannot read properties of undefined". Aliasing costs nothing - `monaco.languages` is a plain
+ * object here, not a frozen module namespace - and keeps the C# side written against the documented
+ * shape rather than against this bundle's accident.
+ *
+ * Without this the workers still load and still validate; only the configuration API is unreachable,
+ * which is a quiet failure worth not shipping.
+ */
+const epilogue = `
+;(function () {
+  if (typeof monaco === 'undefined' || !monaco || !monaco.languages) { return; }
+
+  ['json', 'typescript', 'css', 'html'].forEach(function (name) {
+    if (monaco[name] && !monaco.languages[name]) {
+      try { monaco.languages[name] = monaco[name]; } catch (e) { /* frozen namespace: leave it */ }
+    }
+  });
+})();
+`;
+
+await writeFile(join(outDir, 'monaco.js'), prelude + editorJs + epilogue);
 
 // Workers are classic (non-module) scripts: MonacoEnvironment.getWorkerUrl hands back a URL that
 // Monaco loads as a plain Worker, so each one has to be a standalone IIFE with no imports left.

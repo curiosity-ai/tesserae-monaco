@@ -46,28 +46,77 @@ measure itself against.
 Pass `autoHeight: true` to grow the component to fit its content instead of scrolling vertically (the
 parent has to be able to grow too).
 
-### `CodeEditor`
+### How the wrapper reaches Monaco
+
+Monaco is **declared, not scripted**. `src/Interop/` describes the global `monaco` object with
+`[External]` interfaces and `src/Types/` the `[ObjectLiteral]` payloads that cross the boundary, so a
+call site compiles straight to the JavaScript it names and a wrong name or argument is a build error.
+Nothing is emitted for an `[External]` type.
+
+Two consequences worth knowing if you extend it:
+
+- `as` and `is` do not work on an `[External]` interface — a type test needs runtime metadata that is
+  never emitted for one, so it throws rather than answering. Use a direct cast.
+- The same goes for a BCL generic over one: `List<IJsDisposable>` fails to construct. `DisposableBag`
+  holds release closures for exactly this reason.
+
+### Shared editor API
+
+`CodeEditor` and `CodeViewer` share everything below, and each returns its own type so a chain can mix
+shared and specific calls. All of it is safe to call **before** the component is mounted: standing
+configuration (options, events, actions, widgets) is recorded and replayed, and transient acts
+(focusing, revealing) are dropped rather than replayed at the wrong moment.
 
 | Area | Members |
 |---|---|
-| Content | `Text`, `SetText`, `GetPosition`, `SetPosition`, `RevealLine`, `Focus` |
+| Content | `Text`, `SetText`, `ApplyEdits`, `PushUndoStop`, `Undo`, `Redo`, `LineCount`, `VersionId`, `GetLineContent`, `GetValueInRange`, `GetOffsetAt`, `GetPositionAt`, `GetWordAt`, `FindMatches`, `Indentation`, `EndOfLine` |
 | Language | `SetLanguage(string)`, `SetLanguage(LanguageDefinition)`, `SetLanguageByExtension` |
-| Appearance | `ReadOnly`, `WordWrap`, `IsWordWrapped`, `Options(o => …)` |
-| Events | `OnChanged`, `OnBeforeCreate`, `OnRendered` |
-| Completion | `OnCompletion(ctx => Task<CompletionItem[]>)`, `OnCompletionRaw`, `OnResolveCompletion` |
+| Models | `Model`, `SetModel`, `SaveViewState`, `RestoreViewState` |
+| Selection | `GetPosition`, `SetPosition`, `GetSelection(s)`, `SetSelection(s)`, `GetSelectedText`, `SelectAll` |
+| Scrolling | `RevealLine`, `EnsureLineVisible`, `RevealLineInCenter[IfOutsideViewport]`, `RevealLineNearTop`, `RevealPosition[InCenter]`, `RevealRange…`, `Get/SetScrollTop`, `Get/SetScrollLeft`, `GetScrollHeight`, `GetContentHeight`, `GetContentWidth` |
+| Decorations | `Decorate`, `ClearDecorations`, `GetDecorationRanges`, `CreateDecorations` |
+| Widgets | `AddContentWidget`, `LayoutContentWidget`, `RemoveContentWidget`, `AddOverlayWidget`, `RemoveOverlayWidget`, `AddViewZone`, `RemoveViewZone` |
+| Markers | `SetMarkers`, `SetDiagnostics`, `ClearMarkers`, `GetMarkers`, `OnMarkersChanged` |
+| Commands | `AddAction`, `AddCommand`, `CreateContextKey`, `Trigger`, `RunAction`, `IsActionSupported` |
+| Built-ins | `Format`, `FormatSelection`, `ShowFind`, `ShowReplace`, `ToggleLineComment`, `ShowSuggestions`, `GoToDefinition`, `ShowReferences`, `StartRename`, `ShowOutline`, `ShowQuickFixes`, `ShowParameterHints` |
+| Events | `OnFocused`, `OnBlurred`, `OnWidgetFocused/Blurred`, `OnKeyDown/Up`, `OnMouseDown/Up/Move/Leave`, `OnContextMenu`, `OnPaste`, `OnScrollChanged`, `OnCursorPositionChanged`, `OnSelectionChanged`, `OnContentChanged`, `OnModelChanged`, `OnLanguageChanged`, `OnConfigurationChanged`, `OnLayoutChanged`, `OnContentSizeChanged`, `OnAttemptReadOnlyEdit`, `OnEditorDisposed`, `OnRendered` |
+| Options | `ReadOnly`, `WordWrap`, `Minimap`, `LineNumbers`, `GlyphMargin`, `Folding`, `StickyScroll`, `IndentGuides`, `Rulers`, `RenderWhitespace`, `RenderControlCharacters`, `RenderLineHighlight`, `OccurrencesHighlight`, `FontSize`, `FontFamily`, `LineHeight`, `LetterSpacing`, `FontLigatures`, `CursorStyle`, `CursorBlinking`, `Padding`, `Placeholder`, `ReadOnlyMessage`, `DomReadOnly`, `Links`, `MouseWheelZoom`, `SmoothScrolling`, `UnicodeHighlight`, `ScrollBeyondLastLine`, `BracketPairColorization`, `ContextMenu`, `QuickSuggestions`, `QuickSuggestionsDelay`, `AcceptSuggestionOnEnter`, `TabCompletion`, `SemanticHighlighting`, `AriaLabel`, `AccessibilitySupport`, `Theme`, `AutomaticLayout`, `SetOption(name, value)` |
+| Escape hatch | `Surface` — an `EditorSurface` over the live editor; `Editor` — the declared `IStandaloneCodeEditor`; `SetRawOption(name, value)` for an option `EditorOptions` does not name; `Options(o => …)`, `Layout()`, `Dispose()` |
+
+**`Trigger` vs `RunAction`.** `Trigger(id)` reaches everything, including commands Monaco binds by
+keybinding rule; `RunAction(id)` only sees the editor's own actions but tells you whether the id
+matched. The navigation commands are keybinding rules, so `RunAction("editor.action.revealDefinition")`
+returns false while `Trigger` on the same id works — hence the `GoToDefinition()` shorthands above.
+
+A component is **remountable**: leaving the DOM disposes the editor (the alternative leaks one per
+detach) but the component re-arms, so being re-added rebuilds it and replays the configuration, text
+and view state. `Dispose()` is the one-way door.
+
+### `CodeEditor`
+
+Everything above, plus the language providers. The package ships **no** language intelligence — every
+one of these is a delegate you supply.
+
+| Area | Members |
+|---|---|
+| Completion | `OnCompletion(ctx => Task<CompletionItem[]>)`, `OnCompletionRaw`, `OnResolveCompletion`, `OnInlineCompletion` |
 | Hover | `OnHover(ctx => Task<string>)`, `OnHoverRaw` |
-| Formatting | `OnFormat(code => Task<string>)` — enables Shift+Alt+F and Ctrl+K Ctrl+F |
-| Diagnostics | `SetMarkers`, `SetDiagnostics`, `ClearMarkers`, `ValidateAsYouType`, `Validate` |
-| Escape hatch | `Editor` — the underlying Monaco `IStandaloneCodeEditor`; `Layout()`, `Dispose()` |
+| Signatures | `OnSignatureHelp` |
+| Fixes | `OnCodeActions` |
+| Navigation | `OnDefinition`, `OnDeclaration`, `OnTypeDefinition`, `OnImplementation`, `OnReferences`, `OnDocumentHighlights` |
+| Symbols | `OnDocumentSymbols`, `OnRename` |
+| Formatting | `OnFormat(code => Task<string>)`, `OnTypeFormat` |
+| Annotations | `OnInlayHints`, `OnCodeLenses`, `OnFoldingRanges`, `OnSelectionRanges`, `OnDocumentLinks`, `OnColors`, `OnSemanticTokens`, `OnLinkedEditing` |
+| Diagnostics | `ValidateAsYouType`, `Validate` (plus the shared marker members) |
+| Lifecycle | `OnChanged`, `OnBeforeCreate` |
 
-`OnCompletion` and `OnHover` hand you a `CodeContext` (the full text, the text up to the caret, the
-caret `Offset`, the `Position`, and the `Word`/`WordRange` under the cursor). The `…Raw` variants take
-Monaco's `(ITextModel model, Position position)` directly when you need more control.
+`OnCompletion`, `OnHover` and the navigation providers hand you a `CodeContext` (the full text, the
+text up to the caret, the caret `Offset`, the `Position`, and the `Word`/`WordRange` under the cursor)
+so you never touch `dynamic`. The `…Raw` variants take Monaco's `(model, position)` directly.
 
-Monaco itself is typed too: `Editor` is an `IStandaloneCodeEditor`, `Options(o => …)` hands you an
-`EditorOptions`, and `MonacoApi.editor` / `MonacoApi.languages` are declarations of the global
-`monaco` object — so calling into Monaco directly is checked at build time rather than written as a
-script string. See [Talking to Monaco directly](#talking-to-monaco-directly).
+Monaco's provider registry is global per language, so every callback is gated on its own model — two
+editors on `csharp` answer independently — and every registration is released when the component is
+torn down.
 
 ```csharp
 var editor = MonacoEditor.Editor()
@@ -79,6 +128,8 @@ var editor = MonacoEditor.Editor()
     })
     .OnHover(async ctx => $"**{ctx.Word}** — offset {ctx.Offset}")
     .OnFormat(async code => await MyServer.FormatAsync(code))
+    .OnCodeActions(async ctx => await MyServer.GetFixesAsync(ctx.Text, ctx.Markers))
+    .OnDefinition(async ctx => await MyServer.FindDefinitionAsync(ctx.Offset))
     .ValidateAsYouType(async code => await MyServer.GetErrorsAsync(code));
 ```
 
@@ -86,16 +137,55 @@ var editor = MonacoEditor.Editor()
 of quiet, then discards the result if the text moved on while it was in flight — so a server-backed
 validator is neither hammered nor able to squiggle stale code.
 
+Two Monaco requirements the wrapper handles rather than passing on: injected text (`before`/`after` on
+a decoration) needs `showIfCollapsed` when its range is empty, which `Decoration.InlineNote` sets; and
+semantic highlighting is off unless the theme opts in, which `OnSemanticTokens` arranges.
+
+### Several documents in one editor
+
+`CodeModel` is a document independent of any editor. Create one per file, `SetModel` to switch, and
+save/restore the view state per document so each keeps its caret, scroll and folding.
+
+```csharp
+var main  = MonacoEditor.CreateModel(mainSource, "typescript", "file:///src/main.ts");
+var utils = MonacoEditor.CreateModel(utilSource, "typescript", "file:///src/utils.ts");
+
+editor.SetModel(main);
+// … later
+var mainState = editor.SaveViewState();
+editor.SetModel(utils).RestoreViewState(utilsState);
+```
+
+The URI is not decoration: Monaco's bundled TypeScript service resolves imports by it, and a JSON
+schema is matched against it. Models you create are yours to `Dispose()`.
+
+Use `ApplyEdits` rather than assigning `Text` when the change should be undoable and leave the caret
+alone — assigning `Text` calls `setValue`, which resets both.
+
 ### `DiffViewer`
 
 | Area | Members |
 |---|---|
-| Content | `Original`, `Modified`, `SetOriginal`, `SetModified`, `SetContent` |
-| Language | `SetLanguage(string)`, `SetLanguage(LanguageDefinition)`, `SetLanguageByExtension` |
-| Layout | `SideBySide`, `Inline` |
-| Comparison | `IgnoreTrimWhitespace`, `RenderIndicators`, `Editable` |
+| Content | `Original`, `Modified`, `SetOriginal`, `SetModified`, `SetContent`, `OriginalModel`, `ModifiedModel` |
+| Language | `SetLanguage(string)`, `SetLanguage(LanguageDefinition)`, `SetLanguageByExtension`, `SetOriginalLanguage` |
+| Layout | `SideBySide`, `Inline`, `HideUnchangedRegions`, `RenderOverviewRuler`, `Minimap`, `FontSize`, `DiffWordWrap` |
+| Comparison | `IgnoreTrimWhitespace`, `RenderIndicators`, `ShowMoves`, `MaxComputationTime`, `Editable`, `OriginalEditable`, `RenderMarginRevertIcon` |
+| Results | `GetLineChanges`, `ChangeCount`, `IsIdentical`, `OnDiffUpdated` |
 | Navigation | `GoToNextDifference`, `GoToPreviousDifference` |
-| Escape hatch | `Editor` — the raw Monaco `IStandaloneDiffEditor` |
+| Sides | `OriginalSide`, `ModifiedSide` — an `EditorSurface` each, for decorating or subscribing to one pane |
+| Escape hatch | `Editor` — the declared `IStandaloneDiffEditor`; `SetRawOption(name, value)`, `Options(o => …)` |
+
+The diff is computed on a worker, so read `ChangeCount` or `GetLineChanges` from `OnDiffUpdated` —
+reading straight after setting the content gets the previous diff, or none.
+
+```csharp
+var diff = MonacoEditor.Diff()
+    .SetLanguage("csharp")
+    .SetContent(before, after)
+    .HideUnchangedRegions()      // collapse long identical runs
+    .ShowMoves()                 // draw moved blocks as moves
+    .OnDiffUpdated(() => label.Text = $"{diff.ChangeCount} changed blocks");
+```
 
 ### Custom languages
 
@@ -126,6 +216,40 @@ The components follow the active Tesserae theme: `MonacoEditor.LIGHT_THEME` / `D
 from `Theme.Secondary.Background` when Monaco loads. After toggling the Tesserae theme at runtime, call
 `MonacoEditor.DefineThemes()` then `MonacoEditor.ApplyTheme()`.
 
+| Member | Purpose |
+|---|---|
+| `MonacoEditor.ThemeColors` | Monaco's theme colour ids — selection, gutter, scrollbar, diff, bracket colours. Only `editor.background` is set by default. |
+| `MonacoEditor.AddTokenColors(…)` | Syntax colours for a **built-in** language's tokens, and for the token types a semantic-tokens provider emits. `LanguageDefinition.TokenColors` only covers its own language. |
+| `MonacoEditor.LightBase` / `DarkBase` | What the two themes inherit from — set to `"hc-light"` / `"hc-black"` for high contrast. |
+| `MonacoEditor.DefineTheme(name, base, rules, colors)` | A theme of your own, for `ApplyTheme(name)` or a component's `Theme(…)`. |
+
+### Bundled language services
+
+The JSON, TypeScript, CSS and HTML workers ship with the package. They validate syntax out of the box;
+these turn them into real language services. All are safe to call before Monaco has loaded.
+
+```csharp
+MonacoEditor.ConfigureJson(schemas: new[]
+{
+    new JsonSchema("https://myapp/config.schema.json", new[] { "*" }, new
+    {
+        type = "object",
+        required = new[] { "name" },
+        properties = new { name = new { type = "string" } }
+    })
+});
+
+MonacoEditor.ConfigureTypeScript(target: ScriptTarget.ES2020, strict: true, lib: new[] { "es2020", "dom" });
+MonacoEditor.AddTypeScriptLib("declare namespace myApp { function log(m: string): void; }", "file:///myapp.d.ts");
+```
+
+`ConfigureJson` is what turns a JSON editor from a syntax check into schema validation, with completion
+and hover for the properties the schema describes. `AddTypeScriptLib` is how a script the user writes
+gets completion against the host's own API.
+
+Read the results back with `GetMarkers()` / `OnMarkersChanged` — a worker's diagnostics arrive well
+after the edit, so polling after typing reads the previous state.
+
 ### Global configuration
 
 | Member | Purpose |
@@ -136,41 +260,16 @@ from `Theme.Secondary.Background` when Monaco loads. After toggling the Tesserae
 | `MonacoEditor.GetLanguageIds()` / `TryGetLanguageIdForExtension` | Monaco's language registry. |
 | `MonacoEditor.OnRenderedMarkdown` | Called with each markdown block Monaco renders in a hover or completion-details popup — for binding behaviour to links in backend-supplied documentation. |
 | `MonacoEditor.HTML_MARKER` / `EscapeHtml` | Opt a hover or completion detail into raw HTML rendering. Escape untrusted parts first. |
+| `MonacoEditor.WhenLoaded(action)` | Runs `action` once `monaco.*` is safe to touch — immediately if it already is, queued otherwise. The safe way to make any global Monaco call from application code, since most configuration happens while components are being built. |
+| `MonacoEditor.CreateModel` / `GetModel` / `GetModels` / `GetEditors` | Documents and editors Monaco currently holds. |
+| `MonacoEditor.GetMarkers` / `OnMarkersChanged` | Every squiggle on the page, the host's own and the workers'. |
+| `MonacoEditor.Colorize` / `ColorizeAsync` / `ColorizeElement` | Syntax-highlighted HTML with no editor instance — much cheaper than a `CodeViewer` for a snippet nobody will interact with. |
+| `MonacoEditor.CreateWebWorker` | A Monaco-managed worker running your own module. |
+| `MonacoEditor.ToPlainObject` | A structured-clone-safe copy, for a whole object graph crossing to a worker. For a plain array, `Script.ToArray` is the cheaper fix — a Transpose array carries a `$type` **function**, which `postMessage` refuses. |
+| `MonacoEditor.SetLocale` | Translations for Monaco's own UI strings. Must run before the first editor is built. |
 
 Suggest and hover popups render into a single shared, body-mounted host, so they are not clipped when
 an editor sits inside a modal, a panel or a split view.
-
-### Talking to Monaco directly
-
-Everything the package does to Monaco goes through declarations rather than script strings, and those
-declarations are public — so anything the wrapper does not surface is still typed:
-
-```csharp
-var editor = MonacoEditor.Editor().OnRendered(e =>
-{
-    IStandaloneCodeEditor monaco = e.Editor;
-
-    monaco.addAction(new EditorAction
-    {
-        id          = "myapp.save",
-        label       = "Save",
-        keybindings = new[] { MonacoApi.KeyMod.CtrlCmd | MonacoApi.KeyCode.KeyS },
-        run         = _ => Save(e.Text)
-    });
-});
-```
-
-| Declaration | What it is |
-|---|---|
-| `MonacoApi.editor`, `MonacoApi.languages` | The global `monaco.editor` / `monaco.languages` namespaces |
-| `MonacoApi.KeyMod`, `MonacoApi.KeyCode` | Keybinding constants |
-| `IStandaloneCodeEditor`, `IStandaloneDiffEditor`, `ITextModel` | The editor and model objects |
-| `EditorOptions`, `DiffEditorOptions`, `TextModelOptions` | Construction and `updateOptions` payloads |
-| `CompletionItemProvider`, `HoverProvider`, `DocumentFormattingEditProvider` | Language providers, written as ordinary C# |
-
-The option types only cover the commonly used subset of Monaco's options. They are plain JavaScript
-objects at runtime, so `((dynamic)options).someOtherOption = value` reaches the rest — or add the
-field to the declaration, which costs nothing at runtime.
 
 ## Which Monaco, and how it is built
 

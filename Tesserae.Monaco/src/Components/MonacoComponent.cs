@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using Transpose;
 using Tesserae;
@@ -17,6 +18,12 @@ namespace Tesserae.Monaco
     /// point is captured in fields and applied when the editor is created; everything configured
     /// afterwards is forwarded to the live instance. Each component's property setters follow that
     /// same "field if not created yet, otherwise forward" shape.
+    ///
+    /// A component is <b>remountable</b>. Leaving the DOM tears the editor down - the alternative leaks
+    /// an editor per detach - but the component re-arms itself, so being added back builds a new editor
+    /// and replays everything that was configured. That is what a component moved between containers, or
+    /// inside a parent that detaches rather than hides, needs. <see cref="Dispose"/> is the one-way door:
+    /// it opts out of that and releases the component for good.
     /// </summary>
     public abstract class MonacoComponent : IComponent, ISpecialCaseStyling
     {
@@ -27,6 +34,14 @@ namespace Tesserae.Monaco
 
         /// <summary>The live Monaco instance, or null until the component has been mounted.</summary>
         protected IEditor Instance { get; private set; }
+
+        /// <summary>
+        /// Monaco disposables owned by this component - event subscriptions, provider registrations,
+        /// actions - released together on teardown. Monaco hands one back from nearly every <c>on...</c>
+        /// and <c>register...</c> call, and disposing the editor does not release the ones that live on a
+        /// global registry.
+        /// </summary>
+        protected DisposableBag Disposables { get; } = new DisposableBag();
 
         protected MonacoComponent()
         {
@@ -48,18 +63,26 @@ namespace Tesserae.Monaco
             if (!_mountRequested)
             {
                 _mountRequested = true;
-                DomObserver.WhenMounted(_container, () => MountAsync().FireAndForget());
+                ArmMountObserver();
             }
 
             return _container;
+        }
+
+        private void ArmMountObserver()
+        {
+            DomObserver.WhenMounted(_container, () => MountAsync().FireAndForget());
         }
 
         private async Task MountAsync()
         {
             await MonacoEditor.LoadAsync();
 
-            // The component can be discarded again while Monaco is still loading.
+            // The component can be discarded again, or torn down and remounted, while Monaco loads.
             if (_disposed || !_container.IsMounted()) return;
+
+            // A second mount signal for an editor that already exists would create a duplicate.
+            if (Instance != null) return;
 
             Instance = Create(_container);
 
@@ -72,9 +95,39 @@ namespace Tesserae.Monaco
             _resizeObserver = new ResizeObserver((_, __) => Layout());
             _resizeObserver.observe(_container);
 
-            DomObserver.WhenRemoved(_container, Dispose);
+            DomObserver.WhenRemoved(_container, HandleRemoved);
 
             AfterCreate();
+        }
+
+        // Leaving the DOM tears the editor down but keeps the component usable: the mount observer is
+        // re-armed, so being added back rebuilds the editor and replays the configuration. Without the
+        // teardown a detached editor leaks; without the re-arm the component silently renders an empty
+        // container ever after.
+        private void HandleRemoved()
+        {
+            if (_disposed) return;
+
+            Teardown();
+            ArmMountObserver();
+        }
+
+        private void Teardown()
+        {
+            if (Instance is null) return;
+
+            BeforeDispose();
+
+            Disposables.DisposeAll();
+
+            if (_resizeObserver != null)
+            {
+                _resizeObserver.disconnect();
+                _resizeObserver = null;
+            }
+
+            Instance.dispose();
+            Instance = null;
         }
 
         /// <summary>Creates the underlying Monaco instance for <paramref name="container"/>.</summary>
@@ -83,7 +136,10 @@ namespace Tesserae.Monaco
         /// <summary>Called once the instance exists, for per-component wiring.</summary>
         protected virtual void AfterCreate() { }
 
-        /// <summary>Called when the component leaves the DOM, for per-component cleanup.</summary>
+        /// <summary>
+        /// Called before the Monaco instance is torn down - on leaving the DOM as well as on
+        /// <see cref="Dispose"/>. Capture anything that should survive a remount here.
+        /// </summary>
         protected virtual void BeforeDispose() { }
 
         /// <summary>
@@ -96,8 +152,9 @@ namespace Tesserae.Monaco
         }
 
         /// <summary>
-        /// Disposes the Monaco instance and stops observing the container. Called automatically when
-        /// the component is removed from the DOM.
+        /// Releases the component for good: tears the editor down and stops it being rebuilt if the
+        /// container is mounted again. Leaving the DOM does <b>not</b> call this - it tears down and
+        /// re-arms - so call it explicitly when a component is genuinely finished with.
         /// </summary>
         public void Dispose()
         {
@@ -105,20 +162,11 @@ namespace Tesserae.Monaco
 
             _disposed = true;
 
-            BeforeDispose();
-
-            if (_resizeObserver != null)
-            {
-                _resizeObserver.disconnect();
-                _resizeObserver = null;
-            }
-
-            if (Instance != null)
-            {
-                Instance.dispose();
-                Instance = null;
-            }
+            Teardown();
         }
+
+        /// <summary>Whether <see cref="Dispose"/> has been called.</summary>
+        public bool IsDisposed => _disposed;
 
         /// <summary>
         /// The default editor options shared by the editor and viewer - the font stack, the theme
@@ -169,6 +217,28 @@ namespace Tesserae.Monaco
             }
         }
 
+        /// <summary>
+        /// Layers the three sources of options in the one order that works: the typed setters over the
+        /// defaults, the raw <c>Options(...)</c> callback over those - so a caller can always win - and the
+        /// shared overflow host last, since it has to see the final value of <c>fixedOverflowWidgets</c>.
+        /// </summary>
+        protected EditorOptions FinishOptions(EditorOptions options, IEnumerable<Action<EditorOptions>> typedSetters, Action<EditorOptions> configureOptions)
+        {
+            if (typedSetters != null)
+            {
+                foreach (var set in typedSetters)
+                {
+                    set(options);
+                }
+            }
+
+            configureOptions?.Invoke(options);
+
+            ApplyOverflowWidgetsHost(options);
+
+            return options;
+        }
+
         /// <summary>The diff editor's equivalent of <see cref="ApplyOverflowWidgetsHost(EditorOptions)"/>.</summary>
         protected static void ApplyOverflowWidgetsHost(DiffEditorOptions options)
         {
@@ -179,44 +249,42 @@ namespace Tesserae.Monaco
         }
 
         /// <summary>
-        /// Grows the container to fit the content, so the editor never scrolls vertically. Monaco has
-        /// no built-in option for this; the height is recomputed whenever the rendered line count
-        /// changes (typing, and - via the animation frame - folding).
+        /// Grows the container to fit the content, so the editor never scrolls vertically.
+        ///
+        /// Driven by Monaco's own <c>onDidContentSizeChange</c>: it fires for anything that changes the
+        /// content's height - typing, wrapping, folding, a view zone opening - which is both cheaper and
+        /// more complete than watching decorations and deriving a height from the line count.
         /// </summary>
         protected void EnableAutoHeight()
         {
-            var editor = (IStandaloneCodeEditor)Instance;
+            if (Instance is null) return;
 
-            if (editor is null) return;
+            // A direct cast rather than `as`: a type test against an [External] interface has no metadata
+            // to test against, and throws instead of answering false.
+            var editor = (IStandaloneCodeEditor)Instance;
 
             var previousHeight = 0d;
 
-            void UpdateHeight()
+            void Apply()
             {
-                var editorElement = editor.getDomNode();
+                var node = editor.getDomNode();
 
-                if (editorElement is null) return;
+                if (node is null) return;
 
-                var lineHeight = editor.getNumberOption(MonacoApi.editor.EditorOption.lineHeight);
-                var model      = editor.getModel();
-                var lineCount  = model is null ? 1 : model.getLineCount();
-                var height     = editor.getTopForLineNumber(lineCount + 1) + lineHeight;
+                var height = editor.getContentHeight();
 
                 if (previousHeight == height) return;
 
-                previousHeight             = height;
-                editorElement.style.height = height + "px";
+                previousHeight    = height;
+                node.style.height = height + "px";
 
                 editor.layout();
             }
 
-            editor.onDidChangeModelDecorations(() =>
-            {
-                UpdateHeight();
-                window.requestAnimationFrame(_ => UpdateHeight());
-            });
+            Disposables.Add(editor.onDidContentSizeChange(_ => Apply()));
 
-            UpdateHeight();
+            Apply();
         }
+
     }
 }

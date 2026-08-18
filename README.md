@@ -21,8 +21,15 @@ var editor = MonacoEditor.Editor()
 | [`Tesserae.Monaco.Sample/`](Tesserae.Monaco.Sample/) | A C# stub app with one section per feature, for trying things in a browser. |
 
 The package depends on **Tesserae only**. It ships no language intelligence of its own — completion,
-hover, formatting and diagnostics are delegates you supply, so the same components work against a
-server-side compiler, a client-side analyser, or a static word list.
+hover, signature help, quick fixes, navigation, symbols, formatting and diagnostics are all delegates you
+supply, so the same components work against a server-side compiler, a client-side analyser, or a static
+word list.
+
+Beyond the providers: decorations and glyph-margin icons, content/overlay widgets and view zones,
+multi-document hosting with per-document view state, the editor events, actions and keybindings, typed
+options, and configuration for Monaco's bundled JSON/TypeScript/CSS/HTML services. Monaco itself is
+reached through typed `[External]` declarations rather than script strings. See the package
+[README](Tesserae.Monaco/README.md) for the full surface.
 
 ## Building
 

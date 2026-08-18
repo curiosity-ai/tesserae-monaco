@@ -146,6 +146,26 @@ Rules learned wiring that up, each confirmed by reading the emitted JS:
   the model and position from the original request are not repeated. Typing the provider is what
   surfaced that; the four-parameter version had been silently receiving the item as its `model`.
 
+### Extending the typed interop
+
+Two rules fall out of `[External]` types having **no emitted metadata**, both learned by crashing into
+them:
+
+- **`as` and `is` do not work on an `[External]` interface.** They compile to a runtime type test, which
+  reads `constructor` off metadata that was never emitted, so it throws rather than answering false.
+  `Instance as IStandaloneCodeEditor` took out every editor's `AfterCreate` with
+  `Cannot read properties of undefined (reading 'constructor')`. Use a direct cast, which emits nothing.
+- **A BCL generic over one cannot be constructed.** `List<IJsDisposable>` fails the same way, inside
+  `genericName`. `DisposableBag` holds `List<Action>` of release closures instead.
+
+Beyond that: two declarations cannot share a `[Name]` (the second is emitted with a `$1` suffix and
+stops matching Monaco), which is why `getOption` is wrapped once as `getNumberOption` and
+`setSelection` takes `object` rather than having a range and a selection overload. And a C# array still
+needs `Script.ToArray` before it crosses to a worker — Transpose stamps a `$type` **function** onto
+typed arrays, and `postMessage` refuses the whole value with a `DataCloneError` that quotes a function
+body and names nothing useful. `MonacoEditor.ToPlainObject` is the JSON round trip for a whole object
+graph, which anonymous types need too.
+
 ## Other Transpose gotchas
 
 - **A void `Script.Write` in an expression-bodied lambda emits `return <js>`**, which is a syntax
@@ -210,6 +230,27 @@ These were learned the hard way in Mosaik; don't simplify them away.
   `setModel`, so `DiffViewer` disposes them itself — the inline versions in Mosaik leak one pair per
   render.
 
+- **0.56 puts the language services at the top level, not under `languages`.**
+  `esm/vs/editor/editor.main.js` exports `json`, `typescript`, `css` and `html` as top-level names, so
+  with `globalName: 'monaco'` they land on `monaco.json`, not the `monaco.languages.json` that every
+  Monaco doc and sample names. The bundle's epilogue aliases them across; without it the workers still
+  load and still validate and only the *configuration* API is missing, which is a quiet failure.
+- **Injected text needs `showIfCollapsed`.** A decoration's `before`/`after` renders nothing when its
+  range is empty — which an insertion point always is — because Monaco treats an empty range as
+  collapsed. Measured: identical raw-Monaco decorations render with the flag and not without it, on both
+  the collection and `model.deltaDecorations` paths. `Decoration.InlineNote` sets it. For annotations a
+  backend produces, `OnInlayHints` is the better route: Monaco owns placement and refresh.
+- **Semantic highlighting is off unless the theme opts in.** Monaco's `semanticHighlighting.enabled`
+  defaults to `"configuredByTheme"`, and a standalone theme that says nothing means the provider is
+  never even asked. `DefineThemes` sets `semanticHighlighting: true` on the theme data and
+  `OnSemanticTokens` sets the editor option, so registering a provider is enough. A token type still
+  needs a theme rule to look different — `AddTokenColors` is how a semantic type gets one.
+- **`trigger` and `getAction` reach different registries.** Monaco registers go-to-definition and
+  find-all-references as keybinding-rule commands rather than editor actions, so
+  `getAction("editor.action.revealDefinition")` is null while `trigger` on the same id works and moves
+  the caret. `Trigger` is therefore the right default; `RunAction` exists for when you want to know
+  whether the id matched. `getSupportedActions()` lists 136 ids and none of the navigation ones.
+
 ## Verifying changes
 
 `dotnet build` proves it compiles, not that it works. Monaco failures are almost all runtime, so drive
@@ -234,6 +275,30 @@ break the model first (`getModel().setValue('{ "name": , }')`), then wait for a 
 `json`.
 
 Note Playwright's Chromium refuses some ports (5060 is "unsafe"); 5000-5002 are fine.
+
+Four habits that each save a wasted round of debugging when driving this page with Playwright:
+
+- **Address editors by DOM order, not by content.** `monaco.editor.getEditors()` returns them in
+  creation order and includes the diff editor's two inner editors, and several sections seed the *same*
+  sample text — so "the editor containing TODO" finds the Code editor sample, which has no validator,
+  rather than the Diagnostics one. Sorting on `compareDocumentPosition` gives the stable order
+  `0` Code editor, `1` Code viewer, `2`/`3` diff original/modified, `4` Completion+hover,
+  `5` Formatting, `6` Diagnostics, `7` Custom language, `8` Auto height, `9` Decorations, `10` Widgets,
+  `11` Signature help/quick fixes/ghost text, `12` Navigation, `13` Hints/lenses/folding/links/colours,
+  `14` Semantic tokens, `15` Several documents, `16` Events, `17` Actions, `18` JSON schema,
+  `19` TypeScript, `20`/`21` diff-extras original/modified, `22` Remount, `23` Typed options — 24 in all.
+- **A popup's `offsetParent` is null, so it is not a visibility test.** Suggest, hover and
+  parameter-hints widgets render into the shared body-mounted overflow host, which is `position:
+  absolute; width: 0; height: 0` — so `offsetParent` is null even while the widget is on screen and
+  populated. Filter on a non-zero `getBoundingClientRect()` instead. This cost a round of "signature
+  help is broken" when the widget was in fact showing the right content.
+- **Inlay hints and code lenses only render for an editor that is actually in view**, and hints often
+  need a focus before Monaco asks the provider. Scroll the editor in and focus it before asserting, or a
+  working provider reads as a dead one.
+- **Read the page only after the thing you are measuring has settled.** The diff's decorations arrive
+  from the diff worker and the `greet` tokens after `RegisterLanguage` flushes; sampling immediately
+  after load reports zero of either and looks like a real regression. Poll instead of sleeping once.
+
 
 Two habits that save a wasted round of debugging when driving this page with Playwright:
 

@@ -25,6 +25,7 @@ namespace Tesserae.Monaco
         private static readonly HashSet<string>        _registeredLanguages = new HashSet<string>();
         private static readonly List<TokenColor>       _tokenColors         = new List<TokenColor>();
         private static readonly List<LanguageDefinition> _pendingLanguages  = new List<LanguageDefinition>();
+        private static readonly List<Action>             _pendingActions    = new List<Action>();
 
         /// <summary>
         /// Where this package's Monaco bundle lives, relative to the page - the folder holding
@@ -102,35 +103,172 @@ namespace Tesserae.Monaco
             _pendingLanguages.Clear();
 
             DefineThemes();
+
+            // Anything else queued while Monaco was still loading - language-service configuration, a
+            // host's own MonacoApi call - runs now, in the order it was requested. One that throws must
+            // not strand the rest, or a single bad schema takes the whole editor down with it.
+            var queued = _pendingActions.ToArray();
+
+            _pendingActions.Clear();
+
+            foreach (var action in queued)
+            {
+                try
+                {
+                    action();
+                }
+                catch (Exception exception)
+                {
+                    console.error("Tesserae.Monaco: a queued Monaco call failed", exception);
+                }
+            }
         }
 
         /// <summary>
-        /// (Re)defines the light and dark editor themes from the current Tesserae theme colours.
-        /// Called automatically once Monaco loads; call it again after switching the Tesserae theme
-        /// at runtime, followed by <see cref="ApplyTheme"/> on the editors that should follow.
+        /// Runs <paramref name="action"/> once <c>monaco.*</c> is safe to touch - immediately if it
+        /// already is, otherwise queued until the load finishes.
+        ///
+        /// This is the safe way to make any global Monaco call from application code, because most
+        /// configuration happens while components are being built in <c>Main</c>, long before the first
+        /// mount triggers the load. Note it does not start the load itself: queued actions run when the
+        /// first component mounts, or on an explicit <see cref="LoadAsync"/>.
+        /// </summary>
+        public static void WhenLoaded(Action action)
+        {
+            if (action is null) return;
+
+            if (IsLoaded)
+            {
+                action();
+                return;
+            }
+
+            _pendingActions.Add(action);
+        }
+
+        /// <summary>
+        /// Colours to apply to both of the package's themes, keyed by Monaco's theme colour ids -
+        /// <c>"editor.selectionBackground"</c>, <c>"editorLineNumber.foreground"</c>,
+        /// <c>"diffEditor.insertedTextBackground"</c>, and the several hundred others.
+        ///
+        /// Only <c>editor.background</c> is set by default, derived from the Tesserae theme. Add to this
+        /// before the first editor is built, or call <see cref="DefineThemes"/> and
+        /// <see cref="ApplyTheme()"/> afterwards to pick up a change.
+        /// </summary>
+        public static Dictionary<string, string> ThemeColors { get; } = new Dictionary<string, string>();
+
+        /// <summary>
+        /// The Monaco theme the package's light theme inherits from. <c>"vs"</c> by default; set it to
+        /// <c>"hc-light"</c> for the high-contrast variant. Must be set before the first editor is built.
+        /// </summary>
+        public static string LightBase { get; set; } = "vs";
+
+        /// <summary>
+        /// The Monaco theme the package's dark theme inherits from. <c>"vs-dark"</c> by default; set it to
+        /// <c>"hc-black"</c> for the high-contrast variant.
+        /// </summary>
+        public static string DarkBase { get; set; } = "vs-dark";
+
+        /// <summary>
+        /// Adds syntax colours for token types produced by a <b>built-in</b> language, or by a
+        /// semantic-tokens provider - the rules on a <see cref="LanguageDefinition"/> only cover the
+        /// language it defines, so this is how a host restyles <c>csharp</c> or colours a semantic type.
+        ///
+        /// Safe to call before Monaco has loaded. Call <see cref="DefineThemes"/> and
+        /// <see cref="ApplyTheme()"/> afterwards if the editors are already up.
+        /// </summary>
+        public static void AddTokenColors(params TokenColor[] tokenColors)
+        {
+            if (tokenColors is null) return;
+
+            foreach (var color in tokenColors)
+            {
+                if (color is object && !string.IsNullOrWhiteSpace(color.Token)) _tokenColors.Add(color);
+            }
+        }
+
+        /// <summary>
+        /// Defines a theme of your own, alongside the package's two. Pass its name to
+        /// <see cref="ApplyTheme(string)"/> or to a component's <c>Theme(...)</c> setter.
+        /// </summary>
+        /// <param name="name">The theme name to register.</param>
+        /// <param name="baseTheme">One of <c>"vs"</c>, <c>"vs-dark"</c>, <c>"hc-light"</c> or <c>"hc-black"</c>.</param>
+        /// <param name="rules">Token colours, or null to inherit the base theme's.</param>
+        /// <param name="colors">Theme colour ids, or null for the base theme's.</param>
+        public static void DefineTheme(string name, string baseTheme, TokenColor[] rules = null, Dictionary<string, string> colors = null)
+        {
+            if (!IsLoaded || string.IsNullOrWhiteSpace(name)) return;
+
+            MonacoApi.editor.defineTheme(name, new StandaloneThemeData
+            {
+                baseTheme            = string.IsNullOrWhiteSpace(baseTheme) ? "vs" : baseTheme,
+                inherit              = true,
+                semanticHighlighting = true,
+                rules                = BuildRules(rules),
+                colors               = BuildColors(colors)
+            });
+        }
+
+        /// <summary>
+        /// (Re)defines the light and dark editor themes from the current Tesserae theme colours, plus
+        /// anything in <see cref="ThemeColors"/> and any token colours registered so far. Called
+        /// automatically once Monaco loads; call it again after switching the Tesserae theme at runtime,
+        /// followed by <see cref="ApplyTheme()"/> on the editors that should follow.
         /// </summary>
         public static void DefineThemes()
         {
             // Monaco wants a plain #rrggbb; the Tesserae token is a CSS var that resolves to rgb(...).
             var background = Color.FromString(Color.EvalVar(Theme.Secondary.Background)).ToHex();
             var rules      = BuildThemeRules();
-            var colors     = new ThemeColors().Set("editor.background", background);
+            var colors     = BuildColors(null);
 
+            // The derived background is a default rather than an override: a host that names
+            // editor.background in ThemeColors meant it.
+            if (!ThemeColors.ContainsKey(EDITOR_BACKGROUND)) colors.Set(EDITOR_BACKGROUND, background);
+
+            // semanticHighlighting: true is what lets the rules above apply to a semantic-tokens
+            // provider's output as well as to Monarch's. Monaco's own default is "configuredByTheme", so a
+            // theme that says nothing means a registered provider is never even asked.
             MonacoApi.editor.defineTheme(LIGHT_THEME, new StandaloneThemeData
             {
-                baseTheme = "vs",
-                inherit   = true,
-                rules     = rules,
-                colors    = colors
+                baseTheme            = LightBase,
+                inherit              = true,
+                semanticHighlighting = true,
+                rules                = rules,
+                colors               = colors
             });
 
             MonacoApi.editor.defineTheme(DARK_THEME, new StandaloneThemeData
             {
-                baseTheme = "vs-dark",
-                inherit   = true,
-                rules     = rules,
-                colors    = colors
+                baseTheme            = DarkBase,
+                inherit              = true,
+                semanticHighlighting = true,
+                rules                = rules,
+                colors               = colors
             });
+        }
+
+        private const string EDITOR_BACKGROUND = "editor.background";
+
+        // The host's theme colour ids, which Monaco reads by name.
+        private static ThemeColors BuildColors(Dictionary<string, string> extra)
+        {
+            var colors = new ThemeColors();
+
+            foreach (var pair in ThemeColors)
+            {
+                if (!string.IsNullOrWhiteSpace(pair.Key)) colors.Set(pair.Key, pair.Value);
+            }
+
+            if (extra is object)
+            {
+                foreach (var pair in extra)
+                {
+                    if (!string.IsNullOrWhiteSpace(pair.Key)) colors.Set(pair.Key, pair.Value);
+                }
+            }
+
+            return colors;
         }
 
         /// <summary>The theme name matching the active Tesserae theme.</summary>
@@ -139,25 +277,47 @@ namespace Tesserae.Monaco
         /// <summary>Switches every editor on the page to the theme matching the active Tesserae theme.</summary>
         public static void ApplyTheme()
         {
-            if (!IsLoaded) return;
+            ApplyTheme(ActiveTheme);
+        }
 
-            MonacoApi.editor.setTheme(ActiveTheme);
+        /// <summary>
+        /// Switches every editor on the page to a named theme. Monaco's theme is global, so this affects
+        /// all of them - use a component's <c>Theme(...)</c> setter for just one.
+        /// </summary>
+        public static void ApplyTheme(string theme)
+        {
+            if (!IsLoaded || string.IsNullOrWhiteSpace(theme)) return;
+
+            MonacoApi.editor.setTheme(theme);
         }
 
         private static ThemeRule[] BuildThemeRules()
         {
+            return BuildRules(_tokenColors.ToArray());
+        }
+
+        // Monaco drops a rule whose fontStyle or background is present but empty, so each is only set
+        // when it has a value - and the leading '#' is stripped, which Monaco requires absent.
+        private static ThemeRule[] BuildRules(TokenColor[] tokenColors)
+        {
             var rules = new List<ThemeRule>();
 
-            foreach (var color in _tokenColors)
+            if (tokenColors is null) return rules.ToArray();
+
+            foreach (var color in tokenColors)
             {
                 if (color is null || string.IsNullOrWhiteSpace(color.Token)) continue;
 
-                rules.Add(new ThemeRule
-                {
-                    token      = color.Token,
-                    foreground = (color.Foreground ?? "").TrimStart('#'),
-                    fontStyle  = color.FontStyle
-                });
+                var rule = new ThemeRule { token = color.Token };
+
+                var foreground = (color.Foreground ?? "").TrimStart('#');
+                var background = (color.Background ?? "").TrimStart('#');
+
+                if (foreground.Length > 0)                       rule.foreground = foreground;
+                if (background.Length > 0)                       rule.background = background;
+                if (!string.IsNullOrWhiteSpace(color.FontStyle)) rule.fontStyle  = color.FontStyle;
+
+                rules.Add(rule);
             }
 
             return rules.ToArray();
@@ -210,9 +370,13 @@ namespace Tesserae.Monaco
                 MonacoApi.languages.setMonarchTokensProvider(language.Id, language.Tokenizer);
             }
 
-            if (language.Configuration is object)
+            // The raw object wins when both are given: it is the escape hatch, so a host that reached for
+            // it meant to override.
+            var configuration = language.Configuration ?? language.Config?.ToMonaco();
+
+            if (configuration is object)
             {
-                MonacoApi.languages.setLanguageConfiguration(language.Id, language.Configuration);
+                MonacoApi.languages.setLanguageConfiguration(language.Id, configuration);
             }
 
             // A provider that returns nothing, registered only so Monaco treats these characters as

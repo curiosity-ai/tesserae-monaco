@@ -57,7 +57,14 @@ public class Greeter
         {
             document.body.style.overflow = "auto";
 
-            var content = VStack().WS().P(16.px()).Children(
+            // Language-service configuration has to happen before the first editor mounts. It is queued
+            // until Monaco loads, so calling it from here is safe.
+            AdvancedSamples.ConfigureServices();
+
+            // One child list, built up front: Children(...) does not append to a stack that has already
+            // been given some, so adding the second half in a loop silently rendered nothing.
+            var sections = new List<IComponent>
+            {
                 TextBlock("Tesserae.Monaco").Bold().XLarge(),
                 TextBlock("Monaco editor, viewer and diff components for Tesserae. Every sample below is self-contained C#.")
                    .Secondary()
@@ -67,12 +74,18 @@ public class Greeter
                 Section("Code viewer", "Read-only: highlighting and selection, no editing affordances.", ViewerSample()),
                 Section("Diff viewer", "Two documents compared. Toggle between side-by-side and inline.", DiffSample()),
                 Section("Completion and hover", "Ctrl+Space for the suggest list; hover a word for documentation.", CompletionAndHoverSample()),
-                Section("Formatting", "Shift+Alt+F formats the document, Ctrl+K Ctrl+F the selection.", FormattingSample()),
+                Section("Formatting", "Shift+Alt+F formats the document, Ctrl+K Ctrl+F the selection (Ctrl+Shift+I on Linux).", FormattingSample()),
                 Section("Diagnostics", "Squiggles from a validator that runs as you type - flags any TODO.", DiagnosticsSample()),
                 Section("Custom language", "A tiny Monarch-tokenized language registered from C#.", CustomLanguageSample()),
                 Section("Auto height", "Grows to fit its content instead of scrolling.", AutoHeightSample()),
                 Section("Inside a modal", "Proves the suggest popup escapes a clipping ancestor.", ModalSample())
-            );
+            };
+
+            // The second half of the sample - decorations, widgets, the rest of the providers, models,
+            // events, commands, the language services and the diff editor's own API.
+            sections.AddRange(AdvancedSamples.Sections());
+
+            var content = VStack().WS().P(16.px()).Children(sections.ToArray());
 
             document.body.appendChild(content.Render());
         }
