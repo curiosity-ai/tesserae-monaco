@@ -24,8 +24,10 @@ namespace Tesserae.Monaco
     [Transpose.Name("tssm.CodeEditor")]
     public sealed class CodeEditor : MonacoComponent
     {
-        private const int HOVER_REQUEST_DELAY_MS = 250;
-        private const int VALIDATION_DEBOUNCE_MS = 1_000;
+        private const int    HOVER_REQUEST_DELAY_MS = 250;
+        private const int    VALIDATION_DEBOUNCE_MS = 1_000;
+        private const string MARKER_OWNER           = "tss-monaco";
+        private const string FORMATTER_DISPLAY_NAME = "Tesserae.Monaco";
 
         private readonly bool _autoHeight;
 
@@ -34,23 +36,23 @@ namespace Tesserae.Monaco
         private bool   _readOnly;
         private bool   _wordWrap;
 
-        private Action                  _onChanged;
-        private Action                  _onBeforeCreate;
-        private Action<CodeEditor>      _onRendered;
-        private Action<dynamic>          _configureOptions;
+        private Action                _onChanged;
+        private Action                _onBeforeCreate;
+        private Action<CodeEditor>    _onRendered;
+        private Action<EditorOptions> _configureOptions;
 
-        private Func<dynamic, dynamic, IPromise>                                  _onCompletion;
-        private Func<dynamic, dynamic, IPromise>                                  _onHover;
-        private Func<dynamic, dynamic, CompletionItem, dynamic, CompletionItem>   _onResolveCompletion;
-        private Func<string, Task<string>>                                        _onFormat;
-        private Func<string, Task<ReadOnlyArray<CodeDiagnostic>>>                 _validator;
-        private bool                                                              _validateImmediately;
+        private Func<ITextModel, Position, IPromise>                     _onCompletion;
+        private Func<ITextModel, Position, IPromise>                     _onHover;
+        private Func<CompletionItem, ICancellationToken, CompletionItem> _onResolveCompletion;
+        private Func<string, Task<string>>                               _onFormat;
+        private Func<string, Task<ReadOnlyArray<CodeDiagnostic>>>        _validator;
+        private bool                                                     _validateImmediately;
 
         // The live provider registrations, disposed with the component.
-        private dynamic _completionProvider;
-        private dynamic _hoverProvider;
-        private dynamic _formattingProvider;
-        private dynamic _rangeFormattingProvider;
+        private IJsDisposable _completionProvider;
+        private IJsDisposable _hoverProvider;
+        private IJsDisposable _formattingProvider;
+        private IJsDisposable _rangeFormattingProvider;
 
         private double _validationTimeoutId;
 
@@ -62,15 +64,12 @@ namespace Tesserae.Monaco
         /// <summary>The editor's content. Reads straight from the live model once mounted.</summary>
         public string Text
         {
-            get => Instance is null ? _text : Script.Write<string>("{0}.getValue()", Instance);
+            get => Editor is null ? _text : Editor.getValue();
             set
             {
                 _text = value ?? "";
 
-                if (Instance is object)
-                {
-                    Script.Write("{0}.setValue({1})", Instance, _text);
-                }
+                Editor?.setValue(_text);
             }
         }
 
@@ -86,15 +85,12 @@ namespace Tesserae.Monaco
         }
 
         /// <summary>The one-based caret position, or null before mount.</summary>
-        public Position GetPosition() => Instance is null ? null : Script.Write<Position>("{0}.getPosition()", Instance);
+        public Position GetPosition() => Editor?.getPosition();
 
         /// <summary>Moves the caret.</summary>
         public CodeEditor SetPosition(Position position)
         {
-            if (Instance is object && position is object)
-            {
-                Script.Write("{0}.setPosition({1})", Instance, position);
-            }
+            if (position != null) Editor?.setPosition(position);
 
             return this;
         }
@@ -102,10 +98,7 @@ namespace Tesserae.Monaco
         /// <summary>Scrolls <paramref name="lineNumber"/> into the middle of the viewport.</summary>
         public CodeEditor RevealLine(int lineNumber)
         {
-            if (Instance is object)
-            {
-                Script.Write("{0}.revealLineInCenter({1})", Instance, lineNumber);
-            }
+            Editor?.revealLineInCenter(lineNumber);
 
             return this;
         }
@@ -113,10 +106,7 @@ namespace Tesserae.Monaco
         /// <summary>Gives the editor keyboard focus.</summary>
         public CodeEditor Focus()
         {
-            if (Instance is object)
-            {
-                Script.Write("{0}.focus()", Instance);
-            }
+            Editor?.focus();
 
             return this;
         }
@@ -126,14 +116,11 @@ namespace Tesserae.Monaco
         {
             _language = language ?? "";
 
-            if (Instance is object)
-            {
-                object model = Script.Write<object>("{0}.getModel()", Instance);
+            var model = Editor?.getModel();
 
-                if (model is object)
-                {
-                    Script.Write("monaco.editor.setModelLanguage({0}, {1})", model, _language);
-                }
+            if (model != null)
+            {
+                MonacoApi.editor.setModelLanguage(model, _language);
             }
 
             return this;
@@ -163,10 +150,7 @@ namespace Tesserae.Monaco
         {
             _readOnly = readOnly;
 
-            if (Instance is object)
-            {
-                Script.Write("{0}.updateOptions({ readOnly: {1} })", Instance, readOnly);
-            }
+            Editor?.updateOptions(new EditorOptions { readOnly = readOnly });
 
             return this;
         }
@@ -176,10 +160,7 @@ namespace Tesserae.Monaco
         {
             _wordWrap = wordWrap;
 
-            if (Instance is object)
-            {
-                Script.Write("{0}.updateOptions({ wordWrap: {1} })", Instance, wordWrap ? "on" : "off");
-            }
+            Editor?.updateOptions(new EditorOptions { wordWrap = wordWrap ? "on" : "off" });
 
             return this;
         }
@@ -236,18 +217,20 @@ namespace Tesserae.Monaco
         }
 
         /// <summary>
-        /// Mutates the raw Monaco <c>IStandaloneEditorConstructionOptions</c> before creation - the
-        /// escape hatch for options this wrapper doesn't surface.
+        /// Adjusts the Monaco construction options before creation - the escape hatch for options
+        /// this wrapper doesn't surface. <see cref="EditorOptions"/> covers the common ones; it is a
+        /// plain JavaScript object at runtime, so <c>((dynamic)options).someOption = value</c>
+        /// reaches the rest.
         /// </summary>
-        public CodeEditor Options(Action<dynamic> configureOptions)
+        public CodeEditor Options(Action<EditorOptions> configureOptions)
         {
             _configureOptions = configureOptions;
 
             return this;
         }
 
-        /// <summary>The raw Monaco <c>IStandaloneCodeEditor</c>, or null before mount.</summary>
-        public object Editor => Instance;
+        /// <summary>The underlying Monaco editor, or null before mount.</summary>
+        public IStandaloneCodeEditor Editor => (IStandaloneCodeEditor)Instance;
 
         #region Completion
 
@@ -268,12 +251,12 @@ namespace Tesserae.Monaco
             return OnCompletionRaw((model, position) => MonacoEditor.AsPromise(BuildCompletionListAsync(onCompletion, model, position)));
         }
 
-        private static async Task<object> BuildCompletionListAsync(Func<CodeContext, Task<CompletionItem[]>> onCompletion, dynamic model, dynamic position)
+        private static async Task<object> BuildCompletionListAsync(Func<CodeContext, Task<CompletionItem[]>> onCompletion, ITextModel model, Position position)
         {
             var context = new CodeContext(model, position);
             var items   = await onCompletion(context);
 
-            if (items is null) return new { suggestions = new CompletionItem[0] };
+            if (items is null) return new CompletionList { suggestions = new CompletionItem[0] };
 
             // Replace the word being typed; with the caret off a word, insert at the caret.
             var range = context.WordRange ?? new TextRange
@@ -290,10 +273,10 @@ namespace Tesserae.Monaco
 
                 if (string.IsNullOrEmpty(item.insertText)) item.insertText = item.label;
 
-                if (Script.Write<bool>("{0}.range == null", item)) item.range = range;
+                if (item.range == null) item.range = range;
             }
 
-            return new { suggestions = items };
+            return new CompletionList { suggestions = items };
         }
 
         /// <summary>
@@ -301,7 +284,7 @@ namespace Tesserae.Monaco
         /// <c>CompletionList</c> yourself. Use <see cref="OnCompletion"/> unless you need to shape the
         /// response beyond a list of items.
         /// </summary>
-        public CodeEditor OnCompletionRaw(Func<dynamic, dynamic, IPromise> onCompletion)
+        public CodeEditor OnCompletionRaw(Func<ITextModel, Position, IPromise> onCompletion)
         {
             _onCompletion = onCompletion;
 
@@ -310,9 +293,10 @@ namespace Tesserae.Monaco
 
         /// <summary>
         /// Fills in the expensive parts of a completion item (documentation, say) only once the user
-        /// highlights it in the suggest list.
+        /// highlights it in the suggest list. Monaco passes the item and a cancellation token, and
+        /// nothing else - it does not repeat the model and position from the original request.
         /// </summary>
-        public CodeEditor OnResolveCompletion(Func<dynamic, dynamic, CompletionItem, dynamic, CompletionItem> onResolveCompletion)
+        public CodeEditor OnResolveCompletion(Func<CompletionItem, ICancellationToken, CompletionItem> onResolveCompletion)
         {
             _onResolveCompletion = onResolveCompletion;
 
@@ -336,7 +320,7 @@ namespace Tesserae.Monaco
             return OnHoverRaw((model, position) => MonacoEditor.AsPromise(BuildHoverAsync(onHover, model, position)));
         }
 
-        private static async Task<object> BuildHoverAsync(Func<CodeContext, Task<string>> onHover, dynamic model, dynamic position)
+        private static async Task<object> BuildHoverAsync(Func<CodeContext, Task<string>> onHover, ITextModel model, Position position)
         {
             var context = new CodeContext(model, position);
 
@@ -360,7 +344,7 @@ namespace Tesserae.Monaco
         /// The unwrapped hover provider: hand back the <c>Promise</c> of a Monaco <c>Hover</c>
         /// yourself, for control over the highlighted range or multiple content sections.
         /// </summary>
-        public CodeEditor OnHoverRaw(Func<dynamic, dynamic, IPromise> onHover)
+        public CodeEditor OnHoverRaw(Func<ITextModel, Position, IPromise> onHover)
         {
             _onHover = onHover;
 
@@ -386,18 +370,16 @@ namespace Tesserae.Monaco
             return this;
         }
 
-        private async Task<object> FormatWholeModelAsync(dynamic model)
+        private async Task<object> FormatWholeModelAsync(ITextModel model)
         {
             try
             {
-                string code      = Script.Write<string>("{0}.getValue()", model);
-                string formatted = await _onFormat(code);
+                var code      = model.getValue();
+                var formatted = await _onFormat(code);
 
                 if (formatted is null || formatted == code) return null;
 
-                dynamic fullRange = Script.Write<dynamic>("{0}.getFullModelRange()", model);
-
-                return Script.Write<object>("[{ range: {0}, text: {1} }]", fullRange, formatted);
+                return PlainEdits(new TextEdit { range = model.getFullModelRange(), text = formatted });
             }
             catch
             {
@@ -405,22 +387,32 @@ namespace Tesserae.Monaco
             }
         }
 
-        private async Task<object> FormatRangeAsync(dynamic model, dynamic range)
+        private async Task<object> FormatRangeAsync(ITextModel model, TextRange range)
         {
             try
             {
-                string code      = Script.Write<string>("{0}.getValueInRange({1})", model, range);
-                string formatted = await _onFormat(code);
+                var code      = model.getValueInRange(range);
+                var formatted = await _onFormat(code);
 
                 if (formatted is null || formatted == code) return null;
 
-                return Script.Write<object>("[{ range: {0}, text: {1} }]", range, formatted);
+                return PlainEdits(new TextEdit { range = range, text = formatted });
             }
             catch
             {
                 return null;
             }
         }
+
+        /// <summary>
+        /// Wraps a formatter's edits in a <b>plain</b> JavaScript array.
+        ///
+        /// Monaco hands the edits to its editor worker to be minimised, so they have to survive
+        /// <c>structuredClone</c> - and a C# array does not. Every typed array carries a
+        /// <c>$type</c> pointing at the Transpose class that describes its element type, which is a
+        /// function, so posting one fails the whole worker message with a <c>DataCloneError</c>.
+        /// </summary>
+        private static TextEdit[] PlainEdits(TextEdit edit) => Script.ToArray(new[] { edit });
 
         #endregion
 
@@ -432,10 +424,9 @@ namespace Tesserae.Monaco
         /// </summary>
         public CodeEditor SetMarkers(ReadOnlyArray<CodeMarker> markers)
         {
-            if (Instance is null) return this;
+            if (Editor is null) return this;
 
-            // ReadOnlyArray<T> is the underlying array at runtime, so this needs no conversion.
-            Script.Write("monaco.editor.setModelMarkers({0}.getModel(), 'tss-monaco', {1})", Instance, markers);
+            MonacoApi.editor.setModelMarkers(Editor.getModel(), MARKER_OWNER, markers);
 
             return this;
         }
@@ -501,7 +492,7 @@ namespace Tesserae.Monaco
             var diagnostics = await _validator(code);
 
             // Discard a stale result: the editor may have been disposed, or the text moved on.
-            if (Instance is null || Text != code) return;
+            if (Editor is null || Text != code) return;
 
             if (diagnostics is object && diagnostics.Length > 0)
             {
@@ -511,35 +502,33 @@ namespace Tesserae.Monaco
 
         #endregion
 
-        protected override object Create(HTMLElement container)
+        protected override IEditor Create(HTMLElement container)
         {
             _onBeforeCreate?.Invoke();
 
-            dynamic options = BuildBaseOptions(_language, _text, _readOnly, _wordWrap, _autoHeight);
+            var options = BuildBaseOptions(_language, _text, _readOnly, _wordWrap, _autoHeight);
 
             options.snippetSuggestions = "bottom";
-            options.suggest            = new { preview = true };
+            options.suggest            = new SuggestOptions { preview = true };
             options.suggestFontSize    = 10;
-            options.inlineSuggest      = new { enabled = true, showToolbar = "always" };
-            options.hover              = new { enabled = true, sticky = true, delay = HOVER_REQUEST_DELAY_MS, hidingDelay = 300 };
+            options.inlineSuggest      = new InlineSuggestOptions { enabled = true, showToolbar = "always" };
+            options.hover              = new HoverOptions { enabled = true, sticky = true, delay = HOVER_REQUEST_DELAY_MS, hidingDelay = 300 };
 
             _configureOptions?.Invoke(options);
 
             ApplyOverflowWidgetsHost(options);
 
-            var editor = Script.Write<object>("monaco.editor.create({0}, {1})", container, options);
+            var editor = MonacoApi.editor.create(container, options);
 
-            Action onChanged = () => _onChanged?.Invoke();
-
-            Script.Write("{0}.onDidChangeModelContent({1})", editor, onChanged);
-            Script.Write("{0}.getModel().updateOptions({ tabSize: 4, insertSpaces: true })", editor);
+            editor.onDidChangeModelContent(() => _onChanged?.Invoke());
+            editor.getModel().updateOptions(new TextModelOptions { tabSize = 4, insertSpaces = true });
 
             return editor;
         }
 
         protected override void AfterCreate()
         {
-            var editor   = Instance;
+            var editor   = Editor;
             var language = string.IsNullOrWhiteSpace(_language) ? "plaintext" : _language;
 
             RegisterCompletionProvider(editor, language);
@@ -557,174 +546,145 @@ namespace Tesserae.Monaco
             }
         }
 
-        private void RegisterCompletionProvider(object editor, string language)
+        private void RegisterCompletionProvider(IStandaloneCodeEditor editor, string language)
         {
             if (_onCompletion is null && _onResolveCompletion is null) return;
 
-            // Monaco asks every provider registered for the language; answering only for our own
-            // model is what keeps two editors on the same language independent.
-            Func<dynamic, dynamic, IPromise> provideCompletionItems = (model, position) =>
+            _completionProvider = MonacoApi.languages.registerCompletionItemProvider(language, new CompletionItemProvider
             {
-                if (Script.Write<bool>("{0}.getModel() != {1}", editor, model)) return null;
+                // Monaco asks every provider registered for the language; answering only for our own
+                // model is what keeps two editors on the same language independent.
+                provideCompletionItems = (model, position) =>
+                    editor.getModel() != model ? null : _onCompletion?.Invoke(model, position),
 
-                return _onCompletion?.Invoke(model, position);
-            };
-
-            Func<dynamic, dynamic, CompletionItem, dynamic, CompletionItem> resolveCompletionItem =
-                (model, position, item, token) => _onResolveCompletion?.Invoke(model, position, item, token) ?? item;
-
-            _completionProvider = Script.Write<dynamic>(
-                @"monaco.languages.registerCompletionItemProvider({0}, {
-                    provideCompletionItems: (model, position) => {1}(model, position),
-                    resolveCompletionItem: (model, position, item, token) => {2}(model, position, item, token)
-                })",
-                language,
-                provideCompletionItems,
-                resolveCompletionItem
-            );
+                resolveCompletionItem = (item, token) => _onResolveCompletion?.Invoke(item, token) ?? item
+            });
         }
 
-        private void RegisterHoverProvider(object editor, string language)
+        private void RegisterHoverProvider(IStandaloneCodeEditor editor, string language)
         {
             if (_onHover is null) return;
 
-            Func<dynamic, dynamic, IPromise> provideHover = (model, position) => _onHover?.Invoke(model, position);
-
-            // Monaco cancels a hover request as soon as the pointer moves on. Honouring the token -
-            // rather than resolving late - is what stops a stale tooltip from flashing up over the
-            // wrong symbol, and stops a rejected provider promise from being logged as an error.
-            _hoverProvider = Script.Write<dynamic>(
-                @"monaco.languages.registerHoverProvider({0}, {
-                    provideHover: (model, position, token) => {
-                        return new Promise((resolve, reject) => {
-                            if ({1}.getModel() != model) { resolve(null); return; }
-
-                            var completed = false;
-                            var cancelRegistration = null;
-
-                            var cleanup = () => {
-                                if (cancelRegistration && cancelRegistration.dispose) {
-                                    cancelRegistration.dispose();
-                                    cancelRegistration = null;
-                                }
-                            };
-
-                            var finish = (value) => {
-                                if (completed) { return; }
-                                completed = true;
-                                cleanup();
-                                resolve(value);
-                            };
-
-                            if (token && token.onCancellationRequested) {
-                                cancelRegistration = token.onCancellationRequested(() => finish(null));
-                            }
-
-                            if (completed || (token && token.isCancellationRequested) || {1}.getModel() != model) {
-                                finish(null);
-                                return;
-                            }
-
-                            try {
-                                var hoverResult = {2}(model, position);
-
-                                if (!hoverResult || typeof hoverResult.then !== 'function') {
-                                    finish(hoverResult || null);
-                                    return;
-                                }
-
-                                hoverResult.then(
-                                    value => {
-                                        if ((token && token.isCancellationRequested) || {1}.getModel() != model) {
-                                            finish(null);
-                                            return;
-                                        }
-                                        finish(value);
-                                    },
-                                    error => {
-                                        cleanup();
-                                        if (completed || (token && token.isCancellationRequested)) { resolve(null); return; }
-                                        completed = true;
-                                        reject(error);
-                                    }
-                                );
-                            } catch(e) {
-                                cleanup();
-                                if (completed || (token && token.isCancellationRequested) || {1}.getModel() != model) { resolve(null); return; }
-                                completed = true;
-                                console.error(e);
-                                reject(e);
-                            }
-                        });
-                    }
-                })",
-                language,
-                editor,
-                provideHover
-            );
+            _hoverProvider = MonacoApi.languages.registerHoverProvider(language, new HoverProvider
+            {
+                provideHover = (model, position, token) => MonacoEditor.AsPromise(ProvideHoverAsync(editor, model, position, token))
+            });
         }
 
-        private void RegisterFormattingProviders(object editor, string language)
+        /// <summary>
+        /// Monaco cancels a hover request as soon as the pointer moves on. Settling on cancellation -
+        /// rather than resolving whenever the provider eventually finishes - is what stops a stale
+        /// tooltip from flashing up over the wrong symbol, and stops a rejected provider promise from
+        /// being logged as an unhandled provider error.
+        /// </summary>
+        private async Task<object> ProvideHoverAsync(IStandaloneCodeEditor editor, ITextModel model, Position position, ICancellationToken token)
+        {
+            if (editor.getModel() != model || IsCancelled(token)) return null;
+
+            // Whichever comes first wins: the provider's answer, or the cancellation.
+            var settled      = new TaskCompletionSource<object>();
+            var registration = token?.onCancellationRequested(() => settled.TrySetResult(null));
+
+            ResolveHover(settled, editor, model, position, token);
+
+            try
+            {
+                return await settled.Task;
+            }
+            finally
+            {
+                registration?.dispose();
+            }
+        }
+
+        private void ResolveHover(
+            TaskCompletionSource<object> settled,
+            IStandaloneCodeEditor        editor,
+            ITextModel                   model,
+            Position                     position,
+            ICancellationToken           token)
+        {
+            IPromise pending;
+
+            try
+            {
+                pending = _onHover?.Invoke(model, position);
+            }
+            catch (Exception exception)
+            {
+                Reject(settled, token, exception);
+                return;
+            }
+
+            if (pending is null)
+            {
+                settled.TrySetResult(null);
+                return;
+            }
+
+            // Then, not await. Awaiting an IPromise is typed as handing back the resolved values as
+            // an array, but the runtime adapter passes a native promise straight through - so the
+            // awaited value is the single resolved value, and reading .Length off it silently
+            // yields nothing at all.
+            pending.Then(
+                new Action<object>(hover => settled.TrySetResult(IsCancelled(token) || editor.getModel() != model ? null : hover)),
+                new Action<object>(error => Reject(settled, token, error)),
+                null);
+        }
+
+        /// <summary>
+        /// Fails the pending hover - unless it was cancelled, in which case there is nothing to
+        /// report: Monaco logs a rejected provider promise as an unhandled provider error, and a
+        /// hover the user has already moved away from is not an error.
+        /// </summary>
+        private static void Reject(TaskCompletionSource<object> settled, ICancellationToken token, object error)
+        {
+            if (IsCancelled(token))
+            {
+                settled.TrySetResult(null);
+                return;
+            }
+
+            settled.TrySetException(error as Exception ?? new Exception("The hover provider failed: " + error));
+        }
+
+        private static bool IsCancelled(ICancellationToken token) => token != null && token.isCancellationRequested;
+
+        private void RegisterFormattingProviders(IStandaloneCodeEditor editor, string language)
         {
             if (_onFormat is null) return;
 
-            Func<dynamic, dynamic, dynamic, IPromise> provideDocumentFormattingEdits = (model, formattingOptions, token) =>
+            _formattingProvider = MonacoApi.languages.registerDocumentFormattingEditProvider(language, new DocumentFormattingEditProvider
             {
-                if (Script.Write<bool>("{0}.getModel() != {1}", editor, model)) return null;
+                displayName = FORMATTER_DISPLAY_NAME,
 
-                return MonacoEditor.AsPromise(FormatWholeModelAsync(model));
-            };
+                provideDocumentFormattingEdits = (model, formattingOptions, token) =>
+                    editor.getModel() != model ? null : MonacoEditor.AsPromise(FormatWholeModelAsync(model))
+            });
 
-            Func<dynamic, dynamic, dynamic, dynamic, IPromise> provideDocumentRangeFormattingEdits = (model, range, formattingOptions, token) =>
+            _rangeFormattingProvider = MonacoApi.languages.registerDocumentRangeFormattingEditProvider(language, new DocumentRangeFormattingEditProvider
             {
-                if (Script.Write<bool>("{0}.getModel() != {1}", editor, model)) return null;
+                displayName = FORMATTER_DISPLAY_NAME,
 
-                return MonacoEditor.AsPromise(FormatRangeAsync(model, range));
-            };
-
-            _formattingProvider = Script.Write<dynamic>(
-                @"monaco.languages.registerDocumentFormattingEditProvider({0}, {
-                    displayName: 'Tesserae.Monaco',
-                    provideDocumentFormattingEdits: async (model, options, token) => await {1}(model, options, token)
-                })",
-                language,
-                provideDocumentFormattingEdits
-            );
-
-            _rangeFormattingProvider = Script.Write<dynamic>(
-                @"monaco.languages.registerDocumentRangeFormattingEditProvider({0}, {
-                    displayName: 'Tesserae.Monaco',
-                    provideDocumentRangeFormattingEdits: async (model, range, options, token) => await {1}(model, range, options, token)
-                })",
-                language,
-                provideDocumentRangeFormattingEdits
-            );
+                provideDocumentRangeFormattingEdits = (model, range, formattingOptions, token) =>
+                    editor.getModel() != model ? null : MonacoEditor.AsPromise(FormatRangeAsync(model, range))
+            });
         }
 
         // Word wrap is a per-editor view preference, so it belongs on the editor's own context menu
-        // rather than in the host application's chrome. Kept in sync with _wordWrap so IsWordWrapped
-        // still answers correctly after the user toggles it here.
-        private void AddWordWrapAction(object editor)
+        // rather than in the host application's chrome. Toggling through WordWrap keeps _wordWrap in
+        // step, so IsWordWrapped still answers correctly after the user flips it here.
+        private void AddWordWrapAction(IStandaloneCodeEditor editor)
         {
-            Action<bool> setWordWrap = wrap => _wordWrap = wrap;
-
-            Script.Write(
-                @"{0}.addAction({
-                    id: 'tssm.toggleWordWrap',
-                    label: 'Toggle Word Wrap',
-                    contextMenuGroupId: 'view',
-                    contextMenuOrder: 1.5,
-                    keybindings: [monaco.KeyMod.Alt | monaco.KeyCode.KeyZ],
-                    run: function(ed) {
-                        var current = ed.getOption(monaco.editor.EditorOption.wordWrap);
-                        var next = (current === 'on') ? 'off' : 'on';
-                        ed.updateOptions({ wordWrap: next });
-                        {1}(next === 'on');
-                    }
-                })",
-                editor,
-                setWordWrap
-            );
+            editor.addAction(new EditorAction
+            {
+                id                 = "tssm.toggleWordWrap",
+                label              = "Toggle Word Wrap",
+                contextMenuGroupId = "view",
+                contextMenuOrder   = 1.5,
+                keybindings        = new[] { MonacoApi.KeyMod.Alt | MonacoApi.KeyCode.KeyZ },
+                run                = _ => WordWrap(!_wordWrap)
+            });
         }
 
         protected override void BeforeDispose()
@@ -740,7 +700,7 @@ namespace Tesserae.Monaco
             DisposeProvider(ref _rangeFormattingProvider);
         }
 
-        private static void DisposeProvider(ref dynamic provider)
+        private static void DisposeProvider(ref IJsDisposable provider)
         {
             if (provider is null) return;
 

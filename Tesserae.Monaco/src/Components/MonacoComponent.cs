@@ -26,7 +26,7 @@ namespace Tesserae.Monaco
         private          bool           _disposed;
 
         /// <summary>The live Monaco instance, or null until the component has been mounted.</summary>
-        protected object Instance { get; private set; }
+        protected IEditor Instance { get; private set; }
 
         protected MonacoComponent()
         {
@@ -66,13 +66,8 @@ namespace Tesserae.Monaco
             if (Instance is null) return;
 
             // Monaco measures character widths eagerly; if a web font lands after that, every
-            // column is off until it re-measures. Note the block body: an expression-bodied lambda
-            // would make Transpose emit `return <script>`, which is a syntax error for a void
-            // Script.Write.
-            document.fonts.ready.then(_ =>
-            {
-                Script.Write("monaco.editor.remeasureFonts()");
-            });
+            // column is off until it re-measures.
+            document.fonts.ready.then(_ => MonacoApi.editor.remeasureFonts());
 
             _resizeObserver = new ResizeObserver((_, __) => Layout());
             _resizeObserver.observe(_container);
@@ -83,7 +78,7 @@ namespace Tesserae.Monaco
         }
 
         /// <summary>Creates the underlying Monaco instance for <paramref name="container"/>.</summary>
-        protected abstract object Create(HTMLElement container);
+        protected abstract IEditor Create(HTMLElement container);
 
         /// <summary>Called once the instance exists, for per-component wiring.</summary>
         protected virtual void AfterCreate() { }
@@ -97,9 +92,7 @@ namespace Tesserae.Monaco
         /// </summary>
         public void Layout()
         {
-            if (Instance is null) return;
-
-            Script.Write("{0}.layout()", Instance);
+            Instance?.layout();
         }
 
         /// <summary>
@@ -114,15 +107,15 @@ namespace Tesserae.Monaco
 
             BeforeDispose();
 
-            if (_resizeObserver is object)
+            if (_resizeObserver != null)
             {
                 _resizeObserver.disconnect();
                 _resizeObserver = null;
             }
 
-            if (Instance is object)
+            if (Instance != null)
             {
-                Script.Write("{0}.dispose()", Instance);
+                Instance.dispose();
                 Instance = null;
             }
         }
@@ -132,19 +125,19 @@ namespace Tesserae.Monaco
         /// derived from Tesserae, and the popup host that lets suggest/hover widgets escape a
         /// clipping ancestor.
         /// </summary>
-        protected dynamic BuildBaseOptions(string language, string value, bool readOnly, bool wordWrap, bool autoHeight)
+        protected EditorOptions BuildBaseOptions(string language, string value, bool readOnly, bool wordWrap, bool autoHeight)
         {
-            dynamic options = new
+            var options = new EditorOptions
             {
                 value                   = value ?? "",
                 language                = language ?? "",
-                readOnly,
+                readOnly                = readOnly,
                 theme                   = MonacoEditor.ActiveTheme,
                 roundedSelection        = false,
-                minimap                 = new { enabled = false },
+                minimap                 = new MinimapOptions { enabled = false },
                 scrollBeyondLastLine    = !autoHeight,
                 fixedOverflowWidgets    = true,
-                bracketPairColorization = new { enabled = true },
+                bracketPairColorization = new BracketPairColorizationOptions { enabled = true },
                 fontFamily              = MONOSPACE_FONT_FAMILY,
                 fontSize                = 12,
                 fontLigatures           = true,
@@ -155,7 +148,7 @@ namespace Tesserae.Monaco
             // With auto-height there is nothing to scroll to, so let the wheel keep scrolling the page.
             if (autoHeight)
             {
-                options.scrollbar = new { alwaysConsumeMouseWheel = false };
+                options.scrollbar = new ScrollbarOptions { alwaysConsumeMouseWheel = false };
             }
 
             return options;
@@ -168,9 +161,18 @@ namespace Tesserae.Monaco
         /// <c>fixedOverflowWidgets</c> on. Kept separate from <see cref="BuildBaseOptions"/> so it
         /// runs after any caller-supplied option overrides.
         /// </summary>
-        protected static void ApplyOverflowWidgetsHost(dynamic options)
+        protected static void ApplyOverflowWidgetsHost(EditorOptions options)
         {
-            if (Script.Write<bool>("!!{0}.fixedOverflowWidgets", options))
+            if (options.fixedOverflowWidgets)
+            {
+                options.overflowWidgetsDomNode = MonacoEditor.GetOverflowWidgetsHost();
+            }
+        }
+
+        /// <summary>The diff editor's equivalent of <see cref="ApplyOverflowWidgetsHost(EditorOptions)"/>.</summary>
+        protected static void ApplyOverflowWidgetsHost(DiffEditorOptions options)
+        {
+            if (options.fixedOverflowWidgets)
             {
                 options.overflowWidgetsDomNode = MonacoEditor.GetOverflowWidgetsHost();
             }
@@ -183,35 +185,38 @@ namespace Tesserae.Monaco
         /// </summary>
         protected void EnableAutoHeight()
         {
-            if (Instance is null) return;
+            var editor = (IStandaloneCodeEditor)Instance;
 
-            Script.Write(
-                @"(function(edt) {
-                    var prevHeight = 0;
+            if (editor is null) return;
 
-                    var updateEditorHeight = function () {
-                        var editorElement = edt.getDomNode();
-                        if (!editorElement) { return; }
-                        var lineHeight = edt.getOption(monaco.editor.EditorOption.lineHeight);
-                        var lineCount = edt.getModel() == null ? 1 : edt.getModel().getLineCount();
-                        var height = edt.getTopForLineNumber(lineCount + 1) + lineHeight;
+            var previousHeight = 0d;
 
-                        if (prevHeight !== height) {
-                            prevHeight = height;
-                            editorElement.style.height = height + 'px';
-                            edt.layout();
-                        }
-                    };
+            void UpdateHeight()
+            {
+                var editorElement = editor.getDomNode();
 
-                    edt.onDidChangeModelDecorations(function () {
-                        updateEditorHeight();
-                        requestAnimationFrame(updateEditorHeight);
-                    });
+                if (editorElement is null) return;
 
-                    updateEditorHeight();
-                })({0})",
-                Instance
-            );
+                var lineHeight = editor.getNumberOption(MonacoApi.editor.EditorOption.lineHeight);
+                var model      = editor.getModel();
+                var lineCount  = model is null ? 1 : model.getLineCount();
+                var height     = editor.getTopForLineNumber(lineCount + 1) + lineHeight;
+
+                if (previousHeight == height) return;
+
+                previousHeight             = height;
+                editorElement.style.height = height + "px";
+
+                editor.layout();
+            }
+
+            editor.onDidChangeModelDecorations(() =>
+            {
+                UpdateHeight();
+                window.requestAnimationFrame(_ => UpdateHeight());
+            });
+
+            UpdateHeight();
         }
     }
 }

@@ -52,7 +52,7 @@ namespace Tesserae.Monaco
         /// <summary>
         /// True once Monaco has finished loading and <c>monaco.*</c> is safe to call.
         /// </summary>
-        public static bool IsLoaded => Script.Write<bool>("typeof monaco !== 'undefined' && !!monaco.editor");
+        public static bool IsLoaded => JsWindow.monaco != null && JsWindow.monaco.editor != null;
 
         /// <summary>
         /// Loads Monaco, at most once per page. Every component awaits this before creating its
@@ -76,7 +76,7 @@ namespace Tesserae.Monaco
         /// <c>/some/path/</c>, honours a <c>&lt;base href&gt;</c>, and passes an already-absolute
         /// <see cref="AssetsPath"/> (a CDN) straight through.
         /// </summary>
-        private static string BaseUrl => Script.Write<string>("new URL({0}, document.baseURI).href.replace(/\\/$/, '')", _assetsPath);
+        private static string BaseUrl => new URL(_assetsPath, document.baseURI).href.TrimEnd('/');
 
         private static async Task LoadCoreAsync()
         {
@@ -114,15 +114,23 @@ namespace Tesserae.Monaco
             // Monaco wants a plain #rrggbb; the Tesserae token is a CSS var that resolves to rgb(...).
             var background = Color.FromString(Color.EvalVar(Theme.Secondary.Background)).ToHex();
             var rules      = BuildThemeRules();
+            var colors     = new ThemeColors().Set("editor.background", background);
 
-            Script.Write(
-                @"monaco.editor.defineTheme({0}, { base: 'vs',      inherit: true, rules: {2}, colors: { 'editor.background': {1} } });
-                  monaco.editor.defineTheme({3}, { base: 'vs-dark', inherit: true, rules: {2}, colors: { 'editor.background': {1} } });",
-                LIGHT_THEME,
-                background,
-                rules,
-                DARK_THEME
-            );
+            MonacoApi.editor.defineTheme(LIGHT_THEME, new StandaloneThemeData
+            {
+                baseTheme = "vs",
+                inherit   = true,
+                rules     = rules,
+                colors    = colors
+            });
+
+            MonacoApi.editor.defineTheme(DARK_THEME, new StandaloneThemeData
+            {
+                baseTheme = "vs-dark",
+                inherit   = true,
+                rules     = rules,
+                colors    = colors
+            });
         }
 
         /// <summary>The theme name matching the active Tesserae theme.</summary>
@@ -133,27 +141,26 @@ namespace Tesserae.Monaco
         {
             if (!IsLoaded) return;
 
-            Script.Write("monaco.editor.setTheme({0})", ActiveTheme);
+            MonacoApi.editor.setTheme(ActiveTheme);
         }
 
-        private static object BuildThemeRules()
+        private static ThemeRule[] BuildThemeRules()
         {
-            var rules = Script.Write<object>("[]");
+            var rules = new List<ThemeRule>();
 
             foreach (var color in _tokenColors)
             {
                 if (color is null || string.IsNullOrWhiteSpace(color.Token)) continue;
 
-                Script.Write(
-                    @"{0}.push({ token: {1}, foreground: {2}, fontStyle: {3} })",
-                    rules,
-                    color.Token,
-                    (color.Foreground ?? "").TrimStart('#'),
-                    color.FontStyle
-                );
+                rules.Add(new ThemeRule
+                {
+                    token      = color.Token,
+                    foreground = (color.Foreground ?? "").TrimStart('#'),
+                    fontStyle  = color.FontStyle
+                });
             }
 
-            return rules;
+            return rules.ToArray();
         }
 
         /// <summary>
@@ -191,21 +198,21 @@ namespace Tesserae.Monaco
 
         private static void ApplyLanguage(LanguageDefinition language)
         {
-            Script.Write(
-                @"monaco.languages.register({ id: {0}, aliases: {1}, extensions: {2} })",
-                language.Id,
-                language.Aliases ?? new string[0],
-                language.Extensions ?? new string[0]
-            );
+            MonacoApi.languages.register(new LanguageRegistration
+            {
+                id         = language.Id,
+                aliases    = language.Aliases    ?? new string[0],
+                extensions = language.Extensions ?? new string[0]
+            });
 
             if (language.Tokenizer is object)
             {
-                Script.Write("monaco.languages.setMonarchTokensProvider({0}, {1})", language.Id, language.Tokenizer);
+                MonacoApi.languages.setMonarchTokensProvider(language.Id, language.Tokenizer);
             }
 
             if (language.Configuration is object)
             {
-                Script.Write("monaco.languages.setLanguageConfiguration({0}, {1})", language.Id, language.Configuration);
+                MonacoApi.languages.setLanguageConfiguration(language.Id, language.Configuration);
             }
 
             // A provider that returns nothing, registered only so Monaco treats these characters as
@@ -213,14 +220,11 @@ namespace Tesserae.Monaco
             // the per-editor completion handler is never reached.
             if (language.CompletionTriggerCharacters is object && language.CompletionTriggerCharacters.Length > 0)
             {
-                Script.Write(
-                    @"monaco.languages.registerCompletionItemProvider({0}, {
-                        triggerCharacters: {1},
-                        provideCompletionItems: function() { return { suggestions: [] }; }
-                    })",
-                    language.Id,
-                    language.CompletionTriggerCharacters
-                );
+                MonacoApi.languages.registerCompletionItemProvider(language.Id, new CompletionItemProvider
+                {
+                    triggerCharacters      = language.CompletionTriggerCharacters,
+                    provideCompletionItems = (model, position) => new CompletionList { suggestions = new CompletionItem[0] }
+                });
             }
 
             if (language.TokenColors is object && language.TokenColors.Length > 0)
@@ -234,7 +238,7 @@ namespace Tesserae.Monaco
         {
             if (!IsLoaded) return new string[0];
 
-            var languages = Script.Write<LanguageInfo[]>("monaco.languages.getLanguages()");
+            var languages = MonacoApi.languages.getLanguages();
             var ids       = new string[languages.Length];
 
             for (var i = 0; i < languages.Length; i++)
@@ -257,7 +261,7 @@ namespace Tesserae.Monaco
 
             if (!extension.StartsWith(".")) extension = "." + extension;
 
-            var languages = Script.Write<LanguageInfo[]>("monaco.languages.getLanguages()");
+            var languages = MonacoApi.languages.getLanguages();
 
             foreach (var language in languages)
             {
@@ -285,15 +289,8 @@ namespace Tesserae.Monaco
         ///
         /// <c>Task&lt;T&gt;</c> derives from <see cref="Task"/>, so this one overload covers both;
         /// the runtime reads the result off the completed task.
-        ///
-        /// Deliberately NOT an extension method. The providers take <c>dynamic model</c> /
-        /// <c>dynamic position</c>, so an invocation that forwards them is itself dynamic-typed, and
-        /// C# does not offer extension methods on a <c>dynamic</c> receiver - <c>task.AsPromise()</c>
-        /// would be a late-bound member access that never binds here (native .NET raises
-        /// RuntimeBinderException for it; the emitted JavaScript fails with "is not a function"). A
-        /// plain static call is bound normally, because only the overload choice is deferred.
         /// </summary>
-        public static IPromise AsPromise(Task task) => Script.Write<IPromise>("Transpose.toPromise({0})", task);
+        public static IPromise AsPromise(Task task) => PromiseExtensions.ToPromise(task);
 
         /// <summary>
         /// A single, body-mounted element that Monaco renders its suggest/hover popups into when an
@@ -307,7 +304,7 @@ namespace Tesserae.Monaco
                 return _overflowWidgetsHost;
             }
 
-            var existing = Script.Write<HTMLElement>("document.querySelector('body > div[data-monaco-overflow-host=\"1\"]')");
+            var existing = document.querySelector("body > div[data-monaco-overflow-host=\"1\"]").As<HTMLElement>();
 
             if (existing is object)
             {
@@ -403,10 +400,12 @@ namespace Tesserae.Monaco
         {
             if (text is null) return null;
 
-            return Script.Write<string>(
-                "{0}.replace(/&/g, \"&amp;\").replace(/</g, \"&lt;\").replace(/>/g, \"&gt;\").replace(/\"/g, \"&quot;\").replace(/'/g, \"&#39;\")",
-                text
-            );
+            return text
+                .Replace("&", "&amp;")
+                .Replace("<", "&lt;")
+                .Replace(">", "&gt;")
+                .Replace("\"", "&quot;")
+                .Replace("'", "&#39;");
         }
 
         // Monaco sizes the popup before we swap markdown for HTML, so the widget has to be

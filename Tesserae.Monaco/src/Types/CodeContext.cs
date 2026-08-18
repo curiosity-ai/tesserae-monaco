@@ -1,5 +1,3 @@
-using Transpose;
-
 namespace Tesserae.Monaco
 {
     /// <summary>
@@ -30,34 +28,36 @@ namespace Tesserae.Monaco
         /// <summary>The range of <see cref="Word"/>, or null when the caret isn't on a word.</summary>
         public TextRange WordRange { get; }
 
-        internal CodeContext(dynamic model, dynamic position)
+        internal CodeContext(ITextModel model, Position position)
         {
-            Text = Script.Write<string>("{0}.getValue()", model);
+            Text = model.getValue();
 
-            TextUntilPosition = Script.Write<string>(
-                "{0}.getValueInRange({ startLineNumber: 1, startColumn: 1, endLineNumber: {1}.lineNumber, endColumn: {1}.column })",
-                model,
-                position
-            );
+            TextUntilPosition = model.getValueInRange(new TextRange
+            {
+                startLineNumber = 1,
+                startColumn     = 1,
+                endLineNumber   = position.lineNumber,
+                endColumn       = position.column
+            });
 
             Position = new Position
             {
-                lineNumber = Script.Write<int>("{0}.lineNumber", position),
-                column     = Script.Write<int>("{0}.column",     position)
+                lineNumber = position.lineNumber,
+                column     = position.column
             };
 
-            dynamic word = Script.Write<dynamic>("{0}.getWordAtPosition({1})", model, position);
+            var word = model.getWordAtPosition(position);
 
-            if (word is object)
+            if (word != null)
             {
-                Word = Script.Write<string>("{0}.word", word);
+                Word = word.word;
 
                 WordRange = new TextRange
                 {
                     startLineNumber = Position.lineNumber,
                     endLineNumber   = Position.lineNumber,
-                    startColumn     = Script.Write<int>("{0}.startColumn", word),
-                    endColumn       = Script.Write<int>("{0}.endColumn",   word)
+                    startColumn     = word.startColumn,
+                    endColumn       = word.endColumn
                 };
             }
         }

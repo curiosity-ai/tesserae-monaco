@@ -58,11 +58,16 @@ parent has to be able to grow too).
 | Hover | `OnHover(ctx => Task<string>)`, `OnHoverRaw` |
 | Formatting | `OnFormat(code => Task<string>)` — enables Shift+Alt+F and Ctrl+K Ctrl+F |
 | Diagnostics | `SetMarkers`, `SetDiagnostics`, `ClearMarkers`, `ValidateAsYouType`, `Validate` |
-| Escape hatch | `Editor` — the raw Monaco `IStandaloneCodeEditor`; `Layout()`, `Dispose()` |
+| Escape hatch | `Editor` — the underlying Monaco `IStandaloneCodeEditor`; `Layout()`, `Dispose()` |
 
 `OnCompletion` and `OnHover` hand you a `CodeContext` (the full text, the text up to the caret, the
-caret `Offset`, the `Position`, and the `Word`/`WordRange` under the cursor) so you never touch
-`dynamic`. The `…Raw` variants take Monaco's `(model, position)` directly when you need more control.
+caret `Offset`, the `Position`, and the `Word`/`WordRange` under the cursor). The `…Raw` variants take
+Monaco's `(ITextModel model, Position position)` directly when you need more control.
+
+Monaco itself is typed too: `Editor` is an `IStandaloneCodeEditor`, `Options(o => …)` hands you an
+`EditorOptions`, and `MonacoApi.editor` / `MonacoApi.languages` are declarations of the global
+`monaco` object — so calling into Monaco directly is checked at build time rather than written as a
+script string. See [Talking to Monaco directly](#talking-to-monaco-directly).
 
 ```csharp
 var editor = MonacoEditor.Editor()
@@ -134,6 +139,38 @@ from `Theme.Secondary.Background` when Monaco loads. After toggling the Tesserae
 
 Suggest and hover popups render into a single shared, body-mounted host, so they are not clipped when
 an editor sits inside a modal, a panel or a split view.
+
+### Talking to Monaco directly
+
+Everything the package does to Monaco goes through declarations rather than script strings, and those
+declarations are public — so anything the wrapper does not surface is still typed:
+
+```csharp
+var editor = MonacoEditor.Editor().OnRendered(e =>
+{
+    IStandaloneCodeEditor monaco = e.Editor;
+
+    monaco.addAction(new EditorAction
+    {
+        id          = "myapp.save",
+        label       = "Save",
+        keybindings = new[] { MonacoApi.KeyMod.CtrlCmd | MonacoApi.KeyCode.KeyS },
+        run         = _ => Save(e.Text)
+    });
+});
+```
+
+| Declaration | What it is |
+|---|---|
+| `MonacoApi.editor`, `MonacoApi.languages` | The global `monaco.editor` / `monaco.languages` namespaces |
+| `MonacoApi.KeyMod`, `MonacoApi.KeyCode` | Keybinding constants |
+| `IStandaloneCodeEditor`, `IStandaloneDiffEditor`, `ITextModel` | The editor and model objects |
+| `EditorOptions`, `DiffEditorOptions`, `TextModelOptions` | Construction and `updateOptions` payloads |
+| `CompletionItemProvider`, `HoverProvider`, `DocumentFormattingEditProvider` | Language providers, written as ordinary C# |
+
+The option types only cover the commonly used subset of Monaco's options. They are plain JavaScript
+objects at runtime, so `((dynamic)options).someOtherOption = value` reaches the rest — or add the
+field to the declaration, which costs nothing at runtime.
 
 ## Which Monaco, and how it is built
 

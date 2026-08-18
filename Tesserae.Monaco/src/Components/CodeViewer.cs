@@ -20,8 +20,8 @@ namespace Tesserae.Monaco
         private          string          _language = "";
         private          bool            _wordWrap;
         private          bool            _editable;
-        private          Action<dynamic> _configureOptions;
-        private          Action<CodeViewer> _onRendered;
+        private          Action<EditorOptions> _configureOptions;
+        private          Action<CodeViewer>   _onRendered;
 
         internal CodeViewer(bool autoHeight)
         {
@@ -34,15 +34,12 @@ namespace Tesserae.Monaco
         /// </summary>
         public string Text
         {
-            get => Instance is null ? _text : Script.Write<string>("{0}.getValue()", Instance);
+            get => Editor is null ? _text : Editor.getValue();
             set
             {
                 _text = value ?? "";
 
-                if (Instance is object)
-                {
-                    Script.Write("{0}.setValue({1})", Instance, _text);
-                }
+                Editor?.setValue(_text);
             }
         }
 
@@ -63,9 +60,9 @@ namespace Tesserae.Monaco
         {
             _language = language ?? "";
 
-            if (Instance is object)
+            if (Editor != null)
             {
-                Script.Write("monaco.editor.setModelLanguage({0}.getModel(), {1})", Instance, _language);
+                MonacoApi.editor.setModelLanguage(Editor.getModel(), _language);
             }
 
             return this;
@@ -99,10 +96,7 @@ namespace Tesserae.Monaco
         {
             _wordWrap = wordWrap;
 
-            if (Instance is object)
-            {
-                Script.Write("{0}.updateOptions({ wordWrap: {1} })", Instance, wordWrap ? "on" : "off");
-            }
+            Editor?.updateOptions(new EditorOptions { wordWrap = wordWrap ? "on" : "off" });
 
             return this;
         }
@@ -115,19 +109,18 @@ namespace Tesserae.Monaco
         {
             _editable = editable;
 
-            if (Instance is object)
-            {
-                Script.Write("{0}.updateOptions({ readOnly: {1} })", Instance, !editable);
-            }
+            Editor?.updateOptions(new EditorOptions { readOnly = !editable });
 
             return this;
         }
 
         /// <summary>
-        /// Mutates the raw Monaco <c>IStandaloneEditorConstructionOptions</c> before the viewer is
-        /// created - the escape hatch for options this wrapper doesn't surface.
+        /// Adjusts the Monaco construction options before the viewer is created - the escape hatch
+        /// for options this wrapper doesn't surface. <see cref="EditorOptions"/> covers the common
+        /// ones; it is a plain JavaScript object at runtime, so
+        /// <c>((dynamic)options).someOption = value</c> reaches the rest.
         /// </summary>
-        public CodeViewer Options(Action<dynamic> configureOptions)
+        public CodeViewer Options(Action<EditorOptions> configureOptions)
         {
             _configureOptions = configureOptions;
 
@@ -142,12 +135,12 @@ namespace Tesserae.Monaco
             return this;
         }
 
-        /// <summary>The raw Monaco <c>IStandaloneCodeEditor</c>, or null before mount.</summary>
-        public object Editor => Instance;
+        /// <summary>The underlying Monaco editor, or null before mount.</summary>
+        public IStandaloneCodeEditor Editor => (IStandaloneCodeEditor)Instance;
 
-        protected override object Create(HTMLElement container)
+        protected override IEditor Create(HTMLElement container)
         {
-            dynamic options = BuildBaseOptions(_language, _text, readOnly: !_editable, wordWrap: _wordWrap, autoHeight: _autoHeight);
+            var options = BuildBaseOptions(_language, _text, readOnly: !_editable, wordWrap: _wordWrap, autoHeight: _autoHeight);
 
             // A viewer is for reading: no suggest widget, and no gutter noise it can't act on.
             options.quickSuggestions = false;
@@ -159,7 +152,7 @@ namespace Tesserae.Monaco
 
             ApplyOverflowWidgetsHost(options);
 
-            return Script.Write<object>("monaco.editor.create({0}, {1})", container, options);
+            return MonacoApi.editor.create(container, options);
         }
 
         protected override void AfterCreate()

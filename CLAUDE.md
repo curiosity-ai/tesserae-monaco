@@ -17,6 +17,7 @@ Tesserae.Monaco/               the package
   src/MonacoEditor.cs          static factory: Editor() / Viewer() / Diff()
   src/MonacoEditor.Runtime.cs  loading, themes, custom languages, the overflow-widget host
   src/Components/              MonacoComponent (lifecycle base), CodeEditor, CodeViewer, DiffViewer
+  src/Interop/                 [External] declarations of the `monaco` object - see below
   src/Types/                   [ObjectLiteral] interop types, CodeDiagnostic, CodeContext, LanguageDefinition
   build/bundle-monaco.mjs      esbuild: Monaco's ESM build -> the scripts we ship
   buildTransitive/*.targets     copies the bundle into a consuming app's output
@@ -108,22 +109,62 @@ these components. Don't add an HTTP call, a `Mosaik.*` reference, or a bundled a
 Equally, don't add a Mosaik-specific language. `PatternSyntaxEditor` stayed in Mosaik; only the general
 mechanism came across, as `LanguageDefinition` + `MonacoEditor.RegisterLanguage`.
 
-## Transpose gotchas hit while writing this
+## Monaco is declared, not scripted
+
+There is **no `Script.Write` in this package**. `src/Interop/` declares the global `monaco` object to
+the compiler with `[External]`, and `src/Types/EditorOptions.cs` + `src/Types/MonacoProviders.cs`
+declare the `[ObjectLiteral]` payloads that cross the boundary. Nothing is emitted for an `[External]`
+type — a call site compiles straight to the JavaScript it names — so a typo or a wrong argument is a
+build error instead of a runtime one, and adding a member to an interface costs nothing at runtime.
+Keep it that way: reach for a new declaration, not a script string.
+
+Rules learned wiring that up, each confirmed by reading the emitted JS:
+
+- **`[Convention(Notation.None)]` on every external type**, or the compiler camel-cases members and
+  `monaco.KeyMod.Alt` is emitted as `monaco.KeyMod.alt`. `[ObjectLiteral]` *fields* are already left
+  alone, so those only need `[Name]` when the field name has to differ from the JavaScript one.
+- **`[Name]` does not survive overloads.** Two methods that emit the same JavaScript name get a `$1`
+  suffix and stop matching Monaco — declaring `getOption` twice, for its string and number ids, gave
+  `getOption$1` and `getOption`. It is declared once, as `getNumberOption`, for that reason.
+- **`[Name]` cannot express a dotted key.** `[Name("editor.background")]` on an `[ObjectLiteral]` field
+  emits `$o.editor.background = …`, a nested access. Theme colours are set with `Script.Set` instead,
+  which is the one place a JavaScript name is still a string.
+- **An `[ObjectLiteral]` emits only the fields actually assigned**, which is what lets one
+  `EditorOptions` type serve both construction and `updateOptions`, where an unmentioned option has to
+  stay untouched. `new EditorOptions { readOnly = true }` is exactly `{ readOnly: true }`.
+- **A C# array carries `$type`, so it cannot be `structuredClone`d.** `System.Array.init` stamps the
+  array with the Transpose class describing its element type — a *function*. Monaco hands a
+  formatter's edits to its editor worker to be minimised, and posting a typed array fails the whole
+  worker message with `DataCloneError`. Use `Script.ToArray` for anything Monaco forwards to a worker;
+  arrays that stay on the main thread (markers, completion items, theme rules) are fine as they are.
+- **Never `await` an `IPromise`.** Its awaiter is typed as handing back the resolved values as
+  `object[]`, but `Transpose.toPromise` passes a native promise straight through — so the awaited value
+  is the single resolved value, `.Length` reads `undefined`, and the result silently vanishes. That is
+  exactly how the hover provider looked when it broke: no error, just no tooltip. Use `IPromise.Then`;
+  `MonacoEditor.AsPromise` covers the other direction. Awaiting a `Task` is fine.
+- **Monaco's `resolveCompletionItem` takes `(item, token)`**, not `(model, position, item, token)` —
+  the model and position from the original request are not repeated. Typing the provider is what
+  surfaced that; the four-parameter version had been silently receiving the item as its `model`.
+
+## Other Transpose gotchas
 
 - **A void `Script.Write` in an expression-bodied lambda emits `return <js>`**, which is a syntax
-  error. `_ => Script.Write("if (…) …")` produced `return if (…) …` and broke the whole module. Use a
-  block body for void `Script.Write`.
+  error. Nothing in the package does this any more, but the rule still holds for any `Script.*` call
+  added later: use a block body.
 - **Don't touch `monaco.*` before it has loaded.** `SetLanguage(LanguageDefinition)` is called while
   building components in `Main`, long before mount, so `RegisterLanguage` queues definitions and
-  applies them once Monaco is ready. Any new global Monaco call needs the same treatment.
+  applies them once Monaco is ready. Any new global Monaco call needs the same treatment. `IsLoaded`
+  reads `window.monaco` rather than a bare `monaco` for the same reason — an undeclared global throws
+  a `ReferenceError`, while a missing property is just `undefined`.
 - **Enums crossing into JS need `[Enum(Emit.Value)]`**, or Transpose emits the member name.
-- **`ReadOnlyArray<T>` is the underlying array at runtime**, so pass it straight to `Script.Write` —
-  no `.ToArray()` copy — and it has an implicit conversion from `T[]`.
-- **Resolve URLs with the browser**, not by string concatenation:
-  `new URL(path, document.baseURI)`. Hand-assembling from `window.location.pathname` yields
-  `/index.html/assets/...` when the app is served as a file rather than a directory.
+- **`ReadOnlyArray<T>` is the underlying array at runtime** (its `op_Implicit` is `return data`), so it
+  crosses into Monaco with no copy — and it has an implicit conversion from `T[]`.
+- **Resolve URLs with the browser**, not by string concatenation: `new URL(path, document.baseURI)`.
+  Hand-assembling from `window.location.pathname` yields `/index.html/assets/...` when the app is
+  served as a file rather than a directory.
 - Verify emitted JS with `node --check bin/.../tps/Tesserae.Monaco.js` — a Transpose emit bug shows up
-  there long before it shows up as a confusing runtime error.
+  there long before it shows up as a confusing runtime error. Reading the emitted JS for a changed
+  method is worth the minute it takes: every rule above came out of doing that.
 - **The `Transpose.Compiler` tool and the `Transpose.BCL` package have to be updated together.** The
   compiler emits calls into the `tps.js` runtime that `Transpose.BCL` ships, and a newer compiler can
   emit a call the pinned runtime does not have. Updating only the tool left the sample rendering a
@@ -183,9 +224,14 @@ python3 -m http.server 5002 --directory Tesserae.Monaco.Sample/bin/Debug/netstan
 Then check, with the console clean throughout: an editor renders and highlights; completion opens and
 **inserts** on accept; hover shows documentation on a real mouse hover; the Format Document keybinding
 applies the formatter (**Ctrl+Shift+I** on Linux — see above); a TODO squiggles about a second after
-typing stops; the diff shows both panes; the custom `greet` language colours its keywords; a `json`
-model produces a validation marker (this is the only check that proves the bundled workers load); and
-the suggest popup is not clipped inside the modal.
+typing stops; the diff shows both panes; the custom `greet` language colours its keywords; and the
+suggest popup is not clipped inside the modal.
+
+Two of those double as worker checks, which nothing else covers: the diff's decorations come from the
+editor worker, and the `json` viewer produces a marker once its content is invalid. **The sample's own
+JSON is valid**, so an empty marker list there is the correct result rather than a broken worker —
+break the model first (`getModel().setValue('{ "name": , }')`), then wait for a marker owned by
+`json`.
 
 Note Playwright's Chromium refuses some ports (5060 is "unsafe"); 5000-5002 are fine.
 

@@ -23,42 +23,36 @@ namespace Tesserae.Monaco
         private bool            _sideBySide = true;
         private bool            _ignoreTrimWhitespace = true;
         private bool            _renderIndicators = true;
-        private Action<dynamic> _configureOptions;
-        private Action<DiffViewer> _onRendered;
+        private Action<DiffEditorOptions> _configureOptions;
+        private Action<DiffViewer>        _onRendered;
 
         // The two models backing the comparison, owned by this component.
-        private object _originalModel;
-        private object _modifiedModel;
+        private ITextModel _originalModel;
+        private ITextModel _modifiedModel;
 
         internal DiffViewer() { }
 
         /// <summary>The left-hand (baseline) document.</summary>
         public string Original
         {
-            get => _originalModel is null ? _original : Script.Write<string>("{0}.getValue()", _originalModel);
+            get => _originalModel is null ? _original : _originalModel.getValue();
             set
             {
                 _original = value ?? "";
 
-                if (_originalModel is object)
-                {
-                    Script.Write("{0}.setValue({1})", _originalModel, _original);
-                }
+                _originalModel?.setValue(_original);
             }
         }
 
         /// <summary>The right-hand (changed) document.</summary>
         public string Modified
         {
-            get => _modifiedModel is null ? _modified : Script.Write<string>("{0}.getValue()", _modifiedModel);
+            get => _modifiedModel is null ? _modified : _modifiedModel.getValue();
             set
             {
                 _modified = value ?? "";
 
-                if (_modifiedModel is object)
-                {
-                    Script.Write("{0}.setValue({1})", _modifiedModel, _modified);
-                }
+                _modifiedModel?.setValue(_modified);
             }
         }
 
@@ -92,7 +86,7 @@ namespace Tesserae.Monaco
         {
             _language = language ?? "";
 
-            if (Instance is object)
+            if (Instance != null)
             {
                 // Capture the live text first - switching language must not silently revert edits.
                 _original = Original;
@@ -131,10 +125,7 @@ namespace Tesserae.Monaco
         {
             _sideBySide = sideBySide;
 
-            if (Instance is object)
-            {
-                Script.Write("{0}.updateOptions({ renderSideBySide: {1} })", Instance, sideBySide);
-            }
+            Editor?.updateOptions(new DiffEditorOptions { renderSideBySide = sideBySide });
 
             return this;
         }
@@ -150,10 +141,7 @@ namespace Tesserae.Monaco
         {
             _ignoreTrimWhitespace = ignore;
 
-            if (Instance is object)
-            {
-                Script.Write("{0}.updateOptions({ ignoreTrimWhitespace: {1} })", Instance, ignore);
-            }
+            Editor?.updateOptions(new DiffEditorOptions { ignoreTrimWhitespace = ignore });
 
             return this;
         }
@@ -163,10 +151,7 @@ namespace Tesserae.Monaco
         {
             _renderIndicators = render;
 
-            if (Instance is object)
-            {
-                Script.Write("{0}.updateOptions({ renderIndicators: {1} })", Instance, render);
-            }
+            Editor?.updateOptions(new DiffEditorOptions { renderIndicators = render });
 
             return this;
         }
@@ -179,19 +164,18 @@ namespace Tesserae.Monaco
         {
             _readOnly = !editable;
 
-            if (Instance is object)
-            {
-                Script.Write("{0}.updateOptions({ readOnly: {1} })", Instance, _readOnly);
-            }
+            Editor?.updateOptions(new DiffEditorOptions { readOnly = _readOnly });
 
             return this;
         }
 
         /// <summary>
-        /// Mutates the raw Monaco <c>IStandaloneDiffEditorConstructionOptions</c> before creation -
-        /// the escape hatch for options this wrapper doesn't surface.
+        /// Adjusts the Monaco construction options before creation - the escape hatch for options
+        /// this wrapper doesn't surface. <see cref="DiffEditorOptions"/> covers the common ones; it
+        /// is a plain JavaScript object at runtime, so <c>((dynamic)options).someOption = value</c>
+        /// reaches the rest.
         /// </summary>
-        public DiffViewer Options(Action<dynamic> configureOptions)
+        public DiffViewer Options(Action<DiffEditorOptions> configureOptions)
         {
             _configureOptions = configureOptions;
 
@@ -209,10 +193,7 @@ namespace Tesserae.Monaco
         /// <summary>Moves to the next change.</summary>
         public DiffViewer GoToNextDifference()
         {
-            if (Instance is object)
-            {
-                Script.Write("{0}.goToDiff('next')", Instance);
-            }
+            Editor?.goToDiff("next");
 
             return this;
         }
@@ -220,20 +201,17 @@ namespace Tesserae.Monaco
         /// <summary>Moves to the previous change.</summary>
         public DiffViewer GoToPreviousDifference()
         {
-            if (Instance is object)
-            {
-                Script.Write("{0}.goToDiff('previous')", Instance);
-            }
+            Editor?.goToDiff("previous");
 
             return this;
         }
 
-        /// <summary>The raw Monaco <c>IStandaloneDiffEditor</c>, or null before mount.</summary>
-        public object Editor => Instance;
+        /// <summary>The underlying Monaco diff editor, or null before mount.</summary>
+        public IStandaloneDiffEditor Editor => (IStandaloneDiffEditor)Instance;
 
-        protected override object Create(HTMLElement container)
+        protected override IEditor Create(HTMLElement container)
         {
-            dynamic options = new
+            var options = new DiffEditorOptions
             {
                 theme                   = MonacoEditor.ActiveTheme,
                 readOnly                = _readOnly,
@@ -242,10 +220,10 @@ namespace Tesserae.Monaco
                 ignoreTrimWhitespace    = _ignoreTrimWhitespace,
                 renderIndicators        = _renderIndicators,
                 automaticLayout         = false, // the base class drives layout() from a ResizeObserver
-                minimap                 = new { enabled = false },
+                minimap                 = new MinimapOptions { enabled = false },
                 scrollBeyondLastLine    = false,
                 fixedOverflowWidgets    = true,
-                bracketPairColorization = new { enabled = true },
+                bracketPairColorization = new BracketPairColorizationOptions { enabled = true },
                 fontSize                = 12
             };
 
@@ -253,7 +231,7 @@ namespace Tesserae.Monaco
 
             ApplyOverflowWidgetsHost(options);
 
-            return Script.Write<object>("monaco.editor.createDiffEditor({0}, {1})", container, options);
+            return MonacoApi.editor.createDiffEditor(container, options);
         }
 
         protected override void AfterCreate()
@@ -269,25 +247,25 @@ namespace Tesserae.Monaco
 
             var language = string.IsNullOrWhiteSpace(_language) ? "plaintext" : _language;
 
-            _originalModel = Script.Write<object>("monaco.editor.createModel({0}, {1})", _original, language);
-            _modifiedModel = Script.Write<object>("monaco.editor.createModel({0}, {1})", _modified, language);
+            _originalModel = MonacoApi.editor.createModel(_original, language);
+            _modifiedModel = MonacoApi.editor.createModel(_modified, language);
 
-            Script.Write("{0}.setModel({ original: {1}, modified: {2} })", Instance, _originalModel, _modifiedModel);
+            Editor.setModel(new DiffEditorModel { original = _originalModel, modified = _modifiedModel });
 
             Layout();
         }
 
         private void DisposeModels()
         {
-            if (_originalModel is object)
+            if (_originalModel != null)
             {
-                Script.Write("{0}.dispose()", _originalModel);
+                _originalModel.dispose();
                 _originalModel = null;
             }
 
-            if (_modifiedModel is object)
+            if (_modifiedModel != null)
             {
-                Script.Write("{0}.dispose()", _modifiedModel);
+                _modifiedModel.dispose();
                 _modifiedModel = null;
             }
         }
