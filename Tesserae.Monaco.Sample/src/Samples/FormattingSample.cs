@@ -6,7 +6,7 @@ using static Tesserae.Monaco.Sample.SamplesHelper;
 
 namespace Tesserae.Monaco.Sample
 {
-    [SampleDetails(Group = "Language services", Order = 1, Icon = UIcons.TextCheck)]
+    [SampleDetails(Group = "Language services", Order = 3, Icon = UIcons.TextCheck)]
     public class FormattingSample : IComponent, ISample
     {
         private readonly IComponent _content;

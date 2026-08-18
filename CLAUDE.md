@@ -228,6 +228,14 @@ These were learned the hard way in Mosaik; don't simplify them away.
 - **Monaco 0.56 requires `insertText` and `range` on a completion item.** 0.52 tolerated their absence;
   0.56 throws from inside the suggest widget (`Cannot read properties of undefined (reading
   'replaceAll')`, then `'replace'` on accept). `OnCompletion` fills both in when unset.
+- **An inline-completions provider must declare `disposeInlineCompletions`.** It was
+  `freeInlineCompletions` in earlier versions; 0.56 renamed it and calls it **unguarded** —
+  `this.provider.disposeInlineCompletions(...)`, with the list and a reason — as soon as a suggestion
+  list stops being referenced. A provider without it throws `disposeInlineCompletions is not a function`
+  once ghost text has been shown, which is *after* the feature has visibly worked, so it does not look
+  like a registration problem. The other three (`handleItemDidShow`, `handlePartialAccept`,
+  `handleRejection`) are called defensively and can stay absent. Whenever the `monaco-editor` pin moves,
+  grep the bundle for the member names it calls on a provider rather than trusting the declaration.
 - **A diff editor's two models are ours to dispose.** Monaco does not dispose models handed to
   `setModel`, so `DiffViewer` disposes them itself — the inline versions in Mosaik leak one pair per
   render.
@@ -268,14 +276,38 @@ Two things this depends on, both easy to break:
   "target": "inline" }`. With the metadata in a separate `.meta.js` the discovery finds nothing and the
   sidebar comes up empty.
 - **Pages are built lazily and torn down on navigation.** `Defer` builds the page when it is opened, so
-  one visit creates one page's editors rather than all eleven at startup — and leaving a page unmounts
+  one visit creates one page's editors rather than every page's at startup — and leaving a page unmounts
   them. That is a feature: it exercises the components' disposal on every click.
+
+There are 28 pages in four groups: **Editors** (the components themselves, plus the diff's own API and
+`Colorize`), **Language services** (one page per provider — completion, signature help, inline
+completion, formatting, diagnostics, code actions, navigation, inlay hints and lenses, folding, links
+and colours, semantic tokens, a custom language, and Monaco's bundled workers), **Decorations and
+widgets**, and **Runtime and hosting** (options, events, actions and commands, several documents,
+themes, a modal, remount). The sidebar sorts groups alphabetically and pages by their `Order`.
+
+Two consequences of a page being rebuilt on every visit, both of which cost a debugging round:
+
+- **A page that names its models cannot just create them.** Monaco throws when a URI is claimed twice,
+  so the second visit to a page calling `CreateModel(..., uri)` dies. `SamplesHelper.EnsureModel(...)`
+  looks the URI up with `MonacoEditor.GetModel(...)` first and resets its text — which is what the
+  Several Documents and Bundled Services pages use.
+- **A page with no editor on it has to start the loader itself.** It is a component mounting that calls
+  `LoadAsync()`, so on the Colorize page — highlighted markup and nothing else — `WhenLoaded(...)` would
+  queue a callback that nothing ever runs. It calls `MonacoEditor.LoadAsync()` for that reason.
 
 `MonacoEditor.ApplyTheme()` alone is not enough when the theme changes at runtime. The editor
 background is baked into the theme *definition*, which is derived from the Tesserae colours in force
 when `DefineThemes()` last ran — so applying without redefining leaves a dark editor painted light.
 Call `DefineThemes()` then `ApplyTheme()`, which is what the sidebar's sun/moon button and the
 Languages and Themes page both do.
+
+The same applies to `AddTokenColors`, and it is easy to miss because it depends on which page was
+opened first. Token colours are folded into the themes when those are *defined*, which happens once as
+Monaco loads — so a colour registered from a page opened later never appears. `RegisterLanguage` covers
+this itself for a `LanguageDefinition`'s own `TokenColors`; `AddTokenColors` leaves it to the host, and
+the Semantic Tokens page calls `DefineThemes()` and `ApplyTheme()` from `WhenLoaded(...)` for it. The
+symptom is a provider that runs correctly and changes nothing on screen.
 
 ## Verifying changes
 
@@ -300,11 +332,26 @@ Linux, see above — (Formatting); a TODO squiggles about a second after typing 
 diff shows both panes (Diff Viewer); the custom `greet` language colours its keywords (Custom
 Language); and the suggest popup is not clipped inside the modal (Modal).
 
+The provider pages each have one thing that either happens or does not, which makes them cheap to check
+in a loop: the parameter-hints widget shows the signature (Signature Help), ghost text is offered
+(Inline Completion), the lightbulb offers the fix and accepting it deletes the line (Code Actions), Go
+to Definition jumps and the outline lists both symbols (Navigation), the `: color` hints and the two
+lenses render (Inlay Hints and Lenses), Fold all collapses a region the tokenizer knows nothing about
+(Folding), two colour swatches appear (Links and Colours), `MAX_ITEMS` comes out bold blue (Semantic
+Tokens), five decorations land and follow the text (Decorations), the badge, the corner label and the
+view zone are all on screen (Widgets), the custom action wraps the selection (Actions and Commands),
+switching documents switches the language (Several Documents), and detaching then re-attaching keeps
+the text (Remount).
+
 Two of those double as worker checks, which nothing else covers: the diff's decorations come from the
 editor worker, and the `json` editor produces a marker once its content is invalid. **The sample's own
 JSON is valid**, so an empty marker list there is the correct result rather than a broken worker — the
 Diagnostics page has a "Break the JSON" button for exactly this, and then a marker owned by `json`
-should arrive.
+should arrive. Bundled Services covers the same ground from the other side, with a document that is
+invalid to begin with: markers owned by `json` (against a schema) and by `typescript` (against a `.d.ts`
+handed to the worker) should both be there without touching anything. Its schema is scoped by
+`fileMatch` to that page's own model URI on purpose — `"*"` would validate every JSON document in the
+app, and the Diagnostics page's valid JSON would start reporting errors.
 
 Navigating between pages is itself a check the old single-page sample could not make: every page is
 built when it is opened and disposed when it is left, so a leak or a bad teardown shows up as a console
@@ -313,37 +360,36 @@ DiffEditorWidget model got reset` was found.
 
 Note Playwright's Chromium refuses some ports (5060 is "unsafe"); 5000-5002 are fine.
 
-Four habits that each save a wasted round of debugging when driving this page with Playwright:
+Habits that each save a wasted round of debugging when driving these pages with Playwright:
 
-- **Address editors by DOM order, not by content.** `monaco.editor.getEditors()` returns them in
-  creation order and includes the diff editor's two inner editors, and several sections seed the *same*
-  sample text — so "the editor containing TODO" finds the Code editor sample, which has no validator,
-  rather than the Diagnostics one. Sorting on `compareDocumentPosition` gives the stable order
-  `0` Code editor, `1` Code viewer, `2`/`3` diff original/modified, `4` Completion+hover,
-  `5` Formatting, `6` Diagnostics, `7` Custom language, `8` Auto height, `9` Decorations, `10` Widgets,
-  `11` Signature help/quick fixes/ghost text, `12` Navigation, `13` Hints/lenses/folding/links/colours,
-  `14` Semantic tokens, `15` Several documents, `16` Events, `17` Actions, `18` JSON schema,
-  `19` TypeScript, `20`/`21` diff-extras original/modified, `22` Remount, `23` Typed options — 24 in all.
+- **Open the page you are measuring, then take `getEditors()[0]`.** One page holds one or two editors,
+  so there is no ambiguity left to resolve — the trap this replaced was picking an editor out of nine on
+  a single page by its content and finding a different section that seeded the same text. Where a page
+  has two (Code Viewer, Auto Height, Diagnostics, Bundled Services, Editor Options) they are in DOM
+  order, and the diff editor still reports its two inner editors. Note the count is only stable once the
+  page you left has been torn down: sampling `getEditors().length` immediately after a navigation can
+  still see the previous page's.
 - **A popup's `offsetParent` is null, so it is not a visibility test.** Suggest, hover and
   parameter-hints widgets render into the shared body-mounted overflow host, which is `position:
   absolute; width: 0; height: 0` — so `offsetParent` is null even while the widget is on screen and
   populated. Filter on a non-zero `getBoundingClientRect()` instead. This cost a round of "signature
   help is broken" when the widget was in fact showing the right content.
+- **Injected text renders its spaces as `\u00a0`.** Inlay hints and ghost text are injected text, so
+  they appear in `.view-line` textContent rather than under a class of their own — and a match on
+  `': number'` or `'value * 2'` fails against the non-breaking spaces Monaco actually wrote, while
+  printing identically in a terminal. Normalise `\u00a0` before comparing. Ghost text is also split
+  across several spans, so join them first. Both of these read as a dead provider.
 - **Inlay hints and code lenses only render for an editor that is actually in view**, and hints often
   need a focus before Monaco asks the provider. Scroll the editor in and focus it before asserting, or a
-  working provider reads as a dead one.
-- **Read the page only after the thing you are measuring has settled.** The diff's decorations arrive
-  from the diff worker and the `greet` tokens after `RegisterLanguage` flushes; sampling immediately
-  after load reports zero of either and looks like a real regression. Poll instead of sleeping once.
-
-
-Two habits that save a wasted round of debugging when driving this page with Playwright:
-
-- **Open the page you are measuring, then take `getEditors()[0]`.** One page holds one or two editors
-  now, so there is no ambiguity left to resolve — the trap this replaced was picking an editor out of
-  nine on a single page by its content, and finding a different section that seeded the same text.
-  Where a page has two (Code Viewer, Auto Height, Diagnostics) they are in DOM order, and the diff
-  editor still reports its two inner editors.
+  working provider reads as a dead one. Only the lines *in view* carry hints, too: the second half of the
+  Inlay Hints document needs a `revealLine` before its `: number` hints exist at all.
+- **Click a code lens with a real mouse, and before anything has scrolled.** The lens anchor sits inside
+  the editor, so once the page has been scrolled the card furniture above it intercepts the click, and
+  Playwright retries until it times out.
+- **Inline completions are requested when the *user* types.** An edit applied from code is not that, so
+  ghost text never appears for one unless the request is made explicitly, by triggering
+  `editor.action.inlineSuggest.trigger` — which is what the Inline Completion page's button does after
+  its edit.
 - **Read the page only after the thing you are measuring has settled.** The diff's decorations arrive
   from the diff worker and the `greet` tokens after `RegisterLanguage` flushes; sampling immediately
   after load reports zero of either and looks like a real regression. Poll instead of sleeping once.

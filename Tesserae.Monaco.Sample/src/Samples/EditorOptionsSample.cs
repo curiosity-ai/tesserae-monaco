@@ -32,12 +32,38 @@ namespace Tesserae.Monaco.Sample
                     options.scrollbar = new ScrollbarOptions { alwaysConsumeMouseWheel = false };
                 });
 
+            // The same options, reached through the typed shorthands instead of the raw callback - which
+            // is the whole difference between these two editors.
+            var typed = MonacoEditor.Editor()
+               .SetLanguage("csharp")
+               .SetText(SampleCode.Order)
+               .FontSize(13)
+               .LineNumbers("relative")
+               .Rulers(new[] { 60, 100 })
+               .RenderWhitespace("boundary")
+               .StickyScroll()
+               .Padding(8, 8)
+               .Placeholder("nothing here yet")
+               .CursorBlinking("smooth")
+               .SmoothScrolling();
+
+            var minimap = false;
+            var toggle  = Button("Show minimap");
+
+            toggle.OnClick(() =>
+            {
+                minimap = !minimap;
+                typed.Minimap(minimap);
+                toggle.SetText(minimap ? "Hide minimap" : "Show minimap");
+            });
+
             _content = SectionStack().Secondary()
                .SampleTitle(typeof(EditorOptionsSample), UIcons.Settings, "Monaco's own options, at construction and at runtime")
                .FlatSection(VStack().Children(
                     Card(VStack().WS().Children(
                         TextBlock("Every component takes .Options(options => ...), which adjusts Monaco's construction options just before the editor is created. EditorOptions is an object literal that emits only the fields you assign, so it is also exactly what updateOptions wants - an option you never mention is left alone."),
-                        TextBlock("It covers the options this wrapper surfaces plus the ones a host usually reaches for. Anything else is still reachable: the object is a plain JavaScript object at runtime, so ((dynamic)options).someOption = value works for the rest.").MT(8))).SetTitle("Overview")))
+                        TextBlock("It covers the options this wrapper surfaces plus the ones a host usually reaches for. Anything else is still reachable: the object is a plain JavaScript object at runtime, so ((dynamic)options).someOption = value works for the rest.").MT(8),
+                        TextBlock("Around forty of them also have a typed shorthand - .FontSize(13), .Rulers(new[] { 60, 100 }), .StickyScroll(), .Minimap(false) - which is the same option set with a name and a signature instead of a string and an object. They apply before mount and after it, so the same call works while building the page and from a button on it.").MT(8))).SetTitle("Overview")))
                .FlatSection(VStack().Children(
                     Card(VStack().WS().Children(
                         TextBlock("Use .Options(...) for what has to be true before the first paint - font metrics, padding, the minimap, whether the editor scrolls past the last line. Use .Editor.updateOptions(...) afterwards for anything the user toggles; .Editor is null until the component has mounted, so guard for it or call it from .OnRendered(...)."),
@@ -57,7 +83,16 @@ namespace Tesserae.Monaco.Sample
                             Button("Show whitespace").OnClick(() => Update(editor, new EditorOptions { renderWhitespace = "all" })),
                             Button("Hide whitespace").OnClick(() => Update(editor, new EditorOptions { renderWhitespace = "selection" })),
                             Button("No line numbers").OnClick(() => Update(editor, new EditorOptions { lineNumbers = "off" })),
-                            Button("Line numbers").OnClick(() => Update(editor, new EditorOptions { lineNumbers = "on" })))
+                            Button("Line numbers").OnClick(() => Update(editor, new EditorOptions { lineNumbers = "on" }))),
+                        SampleSubTitle("The typed shorthands"),
+                        TextBlock("The editor below is configured entirely through them: relative line numbers, rulers at columns 60 and 100, whitespace at the boundaries, sticky scroll, 8px of padding, a smooth cursor and smooth scrolling. The buttons keep using them after mount."),
+                        typed.WS().H(240.px()).MT(8),
+                        HStack().WS().Wrap().Gap(8.px()).PT(8).Children(
+                            toggle,
+                            Button("Absolute line numbers").OnClick(() => typed.LineNumbers("on")),
+                            Button("Glyph margin").OnClick(() => typed.GlyphMargin()),
+                            Button("Bigger font").OnClick(() => typed.FontSize(16))),
+                        SampleHint("Select everything in it and delete: the placeholder shows, and it is one of the options that only has a shorthand.")
                     )).SetTitle("Usage")))
                .SeeAlso(typeof(CodeEditorSample), typeof(LanguagesAndThemesSample), typeof(DiffViewerSample));
         }

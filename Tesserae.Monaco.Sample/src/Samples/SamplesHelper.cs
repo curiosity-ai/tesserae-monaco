@@ -41,6 +41,25 @@ namespace Tesserae.Monaco.Sample
 
         public static IComponent SampleSubTitle(string text) => TextBlock(text).SemiBold().PT(16).PB(8);
 
+        /// <summary>
+        /// The model for a named document, created on the first visit and reused afterwards with its
+        /// text reset. Every page here is rebuilt each time it is opened, and Monaco throws when a URI
+        /// is claimed a second time - so a page that names its models cannot simply create them.
+        /// </summary>
+        public static CodeModel EnsureModel(string uri, string text, string language)
+        {
+            var existing = MonacoEditor.GetModel(uri);
+
+            if (existing is object)
+            {
+                existing.Text = text;
+
+                return existing;
+            }
+
+            return MonacoEditor.CreateModel(text, language, uri);
+        }
+
         /// <summary>A muted line under a demo, for the "now try this" instructions each page ends on.</summary>
         public static IComponent SampleHint(string text) => TextBlock(text).Small().Secondary().PT(4);
 
