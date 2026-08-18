@@ -2,11 +2,6 @@
 
 Guidance for working in this repository.
 
-For the Transpose and Tesserae lessons that are **not** specific to this repository - the C#-to-JavaScript
-seam, the interop rules, the toolchain hazards, and how to verify any of it - see
-[TRANSPOSE-AND-TESSERAE.md](TRANSPOSE-AND-TESSERAE.md). It is indexed by symptom, so start there if you
-have an error message in hand. This file covers what is specific to Tesserae.Monaco.
-
 ## What this is
 
 `tesserae.monaco` ships **Tesserae.Monaco**, a [Tesserae](https://github.com/curiosity-ai/tesserae)
