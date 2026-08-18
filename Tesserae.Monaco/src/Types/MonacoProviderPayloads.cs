@@ -1,5 +1,6 @@
 using System;
 using Transpose;
+using Transpose.Core;
 
 namespace Tesserae.Monaco
 {
@@ -322,13 +323,13 @@ namespace Tesserae.Monaco
     }
 
     /// <summary>
-    /// Packed semantic tokens, matching Monaco's <c>SemanticTokens</c>. The data has to be a
-    /// <see cref="Uint32Array"/> - a plain array is silently ignored.
+    /// Packed semantic tokens, matching Monaco's <c>SemanticTokens</c>. The data has to be an
+    /// <see cref="es5.Uint32Array"/> - a plain array is silently ignored.
     /// </summary>
     [ObjectLiteral]
     public class SemanticTokensResult
     {
-        public Uint32Array data;
+        public es5.Uint32Array data;
     }
 
     /// <summary>One entry of a colour picker's menu, matching Monaco's <c>IColorPresentation</c>.</summary>

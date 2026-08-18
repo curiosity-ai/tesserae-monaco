@@ -358,34 +358,4 @@ namespace Tesserae.Monaco
     {
         void setOptions(HtmlOptions options);
     }
-
-    // ---------------------------------------------------------------------------------------------
-    // Browser globals the package needs by name
-    // ---------------------------------------------------------------------------------------------
-
-    /// <summary>
-    /// A packed 32-bit array. Monaco reads semantic tokens as a <c>Uint32Array</c>; a plain array is
-    /// silently ignored, and constructing one also drops the <c>$type</c> marker Transpose stamps onto a
-    /// C# array - which is what makes the value cloneable for a worker.
-    /// </summary>
-    [External]
-    [Convention(Notation.None)]
-    [Name("Uint32Array")]
-    public class Uint32Array
-    {
-        public extern Uint32Array(uint[] source);
-    }
-
-    /// <summary>
-    /// <c>JSON</c>. Used for one thing: a round trip that strips prototypes and functions off a value
-    /// before Monaco forwards it to a worker - see <c>MonacoEditor.ToPlainObject</c>.
-    /// </summary>
-    [External]
-    [Convention(Notation.None)]
-    [Name("JSON")]
-    internal static class JsJson
-    {
-        public static extern string stringify(object value);
-        public static extern object parse(string text);
-    }
 }
