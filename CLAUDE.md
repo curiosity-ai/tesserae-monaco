@@ -160,6 +160,37 @@ Rules learned wiring that up, each confirmed by reading the emitted JS:
   the model and position from the original request are not repeated. Typing the provider is what
   surfaced that; the four-parameter version had been silently receiving the item as its `model`.
 
+### Declare Monaco, not the platform
+
+`src/Interop/` is for **Monaco**. Anything that is part of the browser or of .NET is already declared —
+`Transpose.Core` binds the DOM (`dom.*`) and the ES5/ES6 globals (`es5.*`), and `Transpose.BCL` is the
+BCL — so a second declaration of one is duplicated surface that drifts out of step with the real thing
+and, worse, shadows it: a `public class Uint32Array` in this namespace hides `es5.Uint32Array` from
+every consumer that has both in scope. Before declaring a global, grep `Transpose.Core` for it.
+
+What that rules out, each of which was in here once:
+
+- `[Name("JSON")]` for `parse`/`stringify` → **`es5.JSON`**.
+- `Uint32Array` for the semantic-tokens payload → **`es5.Uint32Array`**, built from a C# array through
+  `es5.ArrayLike<uint>.From(...)`, which is `[Template("{0}")]` and so emits the array itself. The
+  overload set on the constructor is wide enough that a bare `uint[]` is ambiguous — name the
+  conversion.
+- Hand-formatting a hex byte → **`ToString("x2")`**. The BCL's integer formatter pads as well as
+  converting, and it is a real `System.Int32.format` call in the emit.
+- Bridging an `IPromise` to a `Task` through a `TaskCompletionSource` → **`Task.FromPromise`**, the
+  mirror of `PromiseExtensions.ToPromise`. Pass a `Func<object, T>` to pick the resolved value out; a
+  rejection faults the task. (This does *not* make `await` on an `IPromise` safe — see above.) A
+  `TaskCompletionSource` is still right where it does more than adapt, which is why the hover provider
+  keeps one: it races the provider's answer against Monaco's cancellation.
+
+Two of the platform *are* genuinely missing from the pinned `Transpose.Core` (26.7.3304), and
+`Interop/DomAnimations.cs` is the whole of what is declared here as a result:
+`document.getAnimations()` and the effect's `target`. Everything else the animation wait needs —
+`dom.Animation`, `dom.AnimationEffectReadOnly`, `dom.ComputedTimingProperties` and its `endTime` — comes
+from `Transpose.Core`. Both gaps have since been filled upstream (`Document.getAnimations`,
+`Element.getAnimations`, `dom.KeyframeEffect`), so that file is deleted, not extended, once the pin
+moves.
+
 ### Extending the typed interop
 
 Two rules fall out of `[External]` types having **no emitted metadata**, both learned by crashing into

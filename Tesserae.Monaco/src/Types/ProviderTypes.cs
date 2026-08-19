@@ -1,4 +1,5 @@
 using Transpose;
+using Transpose.Core;
 
 namespace Tesserae.Monaco
 {
@@ -324,7 +325,7 @@ namespace Tesserae.Monaco
     /// </summary>
     public sealed class SemanticTokens
     {
-        /// <summary>The packed tokens. Converted to a <see cref="Uint32Array"/> before Monaco sees it.</summary>
+        /// <summary>The packed tokens. Converted to an <see cref="es5.Uint32Array"/> before Monaco sees it.</summary>
         public uint[] Data { get; set; }
 
         public SemanticTokens() { }

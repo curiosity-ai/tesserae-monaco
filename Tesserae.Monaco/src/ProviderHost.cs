@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using Transpose;
 using Tesserae;
+using Transpose.Core;
 using static Transpose.Core.dom;
 
 namespace Tesserae.Monaco
@@ -480,12 +481,11 @@ namespace Tesserae.Monaco
             return "#" + Hex(color.red) + Hex(color.green) + Hex(color.blue);
         }
 
+        // Monaco reports each channel as 0..1; a CSS hex literal wants two digits per channel, which
+        // is what the BCL's "x2" format specifier is for - it pads as well as converting.
         private static string Hex(double component)
         {
-            var value = (int)Math.Round(Math.Max(0, Math.Min(1, component)) * 255);
-            var hex   = value.ToString("x");
-
-            return hex.Length == 1 ? "0" + hex : hex;
+            return ((int)Math.Round(Math.Max(0, Math.Min(1, component)) * 255)).ToString("x2");
         }
 
         #endregion
@@ -517,7 +517,7 @@ namespace Tesserae.Monaco
 
             // Monaco reads the packed tokens as a Uint32Array; a plain array is silently ignored, and
             // building one also drops the $type marker a C# array carries.
-            return new SemanticTokensResult { data = new Uint32Array(tokens.Data) };
+            return new SemanticTokensResult { data = new es5.Uint32Array(es5.ArrayLike<uint>.From(tokens.Data)) };
         }
 
         #endregion

@@ -2,6 +2,7 @@ using System;
 using System.Threading.Tasks;
 using Transpose;
 using Tesserae;
+using Transpose.Core;
 using static Transpose.Core.dom;
 using static Tesserae.UI;
 
@@ -115,17 +116,14 @@ namespace Tesserae.Monaco
         {
             if (!IsLoaded || code is null) return Task.FromResult("");
 
-            // Then, not await: awaiting an IPromise is typed as handing back the resolved values as an
-            // array, while the runtime passes the native promise straight through - the same trap the
-            // hover provider documents.
-            var done = new TaskCompletionSource<string>();
-
-            MonacoApi.editor.colorize(code, language ?? "plaintext", new ColorizeOptions()).Then(
-                new Action<object>(html => done.TrySetResult(html as string ?? "")),
-                new Action<object>(error => done.TrySetException(error as Exception ?? new Exception("Monaco could not colorize the code: " + error))),
-                null);
-
-            return done.Task;
+            // Task.FromPromise, not await: awaiting an IPromise is typed as handing back the resolved
+            // values as an array, while the runtime passes the native promise straight through - the same
+            // trap the hover provider documents. FromPromise is the BCL's own adapter for this direction,
+            // the mirror of PromiseExtensions.ToPromise; the handler picks the single resolved value out,
+            // and a rejection faults the task.
+            return Task.FromPromise<string>(
+                MonacoApi.editor.colorize(code, language ?? "plaintext", new ColorizeOptions()),
+                new Func<object, string>(html => html as string ?? ""));
         }
 
         /// <summary>
@@ -218,7 +216,7 @@ namespace Tesserae.Monaco
 
             try
             {
-                return JsJson.parse(JsJson.stringify(value));
+                return es5.JSON.parse(es5.JSON.stringify(value));
             }
             catch (Exception exception)
             {
