@@ -55,8 +55,13 @@ namespace Tesserae.Monaco
         /// <summary>The container element - styled directly by the Tesserae sizing helpers.</summary>
         public HTMLElement StylingContainer => _container;
 
-        /// <summary>Monaco needs a sized container, so sizing stays on the container itself.</summary>
-        public bool PropagateToStackItemParent => false;
+        /// <summary>
+        /// Sizing helpers stay on the container and are not tagged for a wrapper-building container
+        /// (Masonry, SectionStack, KeyedObservableStack) to hoist: Monaco measures the element it was
+        /// created in, and hoisting the height onto a wrapper clears it here, leaving the editor with
+        /// nothing to size against.
+        /// </summary>
+        public bool PropagateStylesToWrapper => false;
 
         public HTMLElement Render()
         {
