@@ -158,7 +158,7 @@ namespace Tesserae.Monaco
 
                 // A direct cast, not `as`: a type test against an [External] type has no runtime
                 // metadata to test against. The cast itself is erased.
-                var target = ((JsKeyframeEffect)effect).target;
+                var target = effect.target;
 
                 // contains() answers true for the element itself, which is what we want: the container
                 // is as much of a problem animating itself as an ancestor animating it.
