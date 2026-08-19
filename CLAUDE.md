@@ -194,7 +194,21 @@ graph, which anonymous types need too.
   Monarch objects, 26.7's runtime had no `anon`, and `Main` threw before appending anything to the
   body. `node --check` passes in that state — the JS is syntactically fine, the callee just does not
   exist — so the only symptom is an empty page plus one console error. Bump both, and note the two
-  version lines move independently (BCL 26.8.x alongside Core 26.7.x is normal).
+  version lines move independently (BCL 26.8.x alongside Core 26.7.x is normal). **`Transpose.Core`
+  drags the compiler with it too**: it carries the version of the Transpose that built it, so raising
+  the `Transpose.Core` pin to 26.8.4176 failed the build outright with `TPS0008 ... references
+  assemblies built by a newer Transpose`, naming the minimum compiler (26.8.4157). That one is a clean
+  build error rather than a blank page, so it costs nothing to discover — but the fix is a tool update,
+  not a package one.
+- **The Web Animations DOM comes from `Transpose.Core.dom`** — `document.getAnimations()`, `Animation`,
+  `KeyframeEffect`, `ComputedTimingProperties`. It was hand-declared here (`src/Interop/DomAnimations.cs`)
+  until Core caught up; the declarations are gone and `HasAnimatingAncestor` uses the real ones. Two
+  shapes to know when reading that code: `Animation.effect` is typed as `AnimationEffectReadOnly`, which
+  has the timing but **no `target`** — the target lives on `KeyframeEffect`, which is what a CSS
+  animation, a transition and a WAAPI animation all actually have, so a direct cast (never `as`) is how
+  you reach it. And `playState` is a `LiteralType<string>`, whose `==`/`!=` against a plain string emit
+  `===`/`!==` rather than a call. The emitted JS is byte-for-byte what the hand-rolled declarations
+  produced, cast included.
 
 ## Building on the docs' own claims
 
