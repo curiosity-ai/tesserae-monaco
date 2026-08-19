@@ -140,7 +140,7 @@ namespace Tesserae.Monaco
 
         private bool HasAnimatingAncestor()
         {
-            var animations = JsDocumentAnimations.getAnimations();
+            var animations = document.getAnimations();
 
             if (animations is null) return false;
 
@@ -148,7 +148,11 @@ namespace Tesserae.Monaco
             {
                 if (animation.playState != "running") continue;
 
-                var effect = animation.effect;
+                // AnimationEffectReadOnly does not carry a target; a CSS animation, a transition and a
+                // WAAPI animation all have a KeyframeEffect, which does. A direct cast to it emits
+                // nothing - `as`/`is` would emit a runtime type test against metadata a dom type has
+                // none of.
+                var effect = (KeyframeEffect)animation.effect;
 
                 if (effect is null) continue;
 
