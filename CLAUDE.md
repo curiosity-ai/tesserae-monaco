@@ -138,6 +138,11 @@ worker strategy.
 
 Only `monaco.js` loads up front; the language workers are pulled in by Monaco on demand.
 
+That one script is fetched through **`Transpose.Require.RequireAsync`** — the loader in the
+Transpose runtime — rather than Tesserae's `Require` or a hand-rolled `<script>` element. It is the
+same loader every Transpose library now uses: it shares one fetch between callers, resolves the URL
+against the document base, and forgets a failed load so a later mount can retry.
+
 If you bump the `monaco-editor` pin, re-run the browser verification below — worker entry-point paths
 and the CSS-import situation have both changed between minor versions.
 

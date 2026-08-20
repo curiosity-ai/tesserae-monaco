@@ -86,7 +86,7 @@ namespace Tesserae.Monaco
             // One script, and everything else is already inside it: the bundle injects Monaco's
             // stylesheet and installs MonacoEnvironment itself, resolving its own worker URLs from
             // the script's own src. See build/bundle-monaco.mjs.
-            await Require.LoadScriptAsync(baseUrl + "/monaco.js");
+            await Transpose.Require.RequireAsync(baseUrl + "/monaco.js");
 
             if (!IsLoaded)
             {
