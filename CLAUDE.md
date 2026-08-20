@@ -56,6 +56,58 @@ cd Tesserae.Monaco.Sample/bin/Debug/netstandard2.0/tps/
 dotnet serve --port 5000
 ```
 
+## Publishing the sample to GitHub Pages
+
+`.github/workflows/pages.yml` builds the sample on every push to `main` that touches the package or
+the sample and pushes the result to the `gh-pages` branch, which GitHub serves at
+<https://curiosity-ai.github.io/tesserae-monaco/>. It is modelled on `graph-kit`'s workflow of the
+same name — same `contents: write` permission, same `gh-pages` concurrency group, same
+`peaceiris/actions-gh-pages` publish step, actions pinned by SHA — with the build steps this repo
+needs instead of `npm ci && npm run samples:dist`. The NuGet pipeline
+(`.azure-devops/build-nuget-transpose.yml`) is untouched and still the thing that ships the package;
+Pages only publishes the gallery.
+
+The Azure pipeline is the reference for the build half, and the two agree deliberately: .NET 10 SDK,
+Node 22, `Transpose.Compiler` as a global tool, the Monaco bundle as its own step, then
+`dotnet build … -c Release`.
+
+**The Transpose output folder is the site.** There is no site generator and nothing to template:
+`tps.json` emits an `index.html` that pulls every script with a relative path, and
+`Tesserae.Monaco.targets` copies Monaco in beside it. So `scripts/stage-samples.mjs` only copies
+that folder to `_site/`, drops the compiler's `.tps-manifest.app.json` (its record of what it wrote,
+for cleaning the folder next build — not something the page fetches), and writes `.nojekyll`.
+
+Four things that make the sub-path work, none of which needed a change to publish:
+
+- **Nothing is absolute.** The generated `index.html` references its scripts, `assets/css/tss.css`
+  and the fonts relatively, so the whole site moves under `/tesserae-monaco/` untouched. Keep it
+  that way — a `<base>` tag or an absolute path is a bug, not a fix.
+- **The Monaco bundle finds its own workers**, from `document.currentScript.src`, so the five
+  `*.worker.js` files follow `monaco.js` under the sub-path with no setting to keep in sync.
+- **Routing is hash-based** (`#/view/Code%20Editor`), so every page is a URL on `index.html` and
+  Pages needs no rewrite rule and no `404.html` fallback.
+- **`.nojekyll`** — without it Jekyll would eat paths beginning with `_`. `enable_jekyll: false`
+  makes the publish action write one too; the staging script writes it anyway so a locally staged
+  `_site/` is byte-identical to what gets published.
+
+Two build details the workflow does not leave to chance:
+
+- **Release, not Debug.** Transpose only selects the `.min.js` resource set in Release, so a Debug
+  publish would serve a variant nothing else verifies.
+- **`npm ci`, not `npm install`.** The `BundleMonaco` MSBuild target would run `npm install` itself,
+  but `npm ci` installs exactly what `package-lock.json` pins, which side-steps the `.npmrc`
+  `min-release-age` cooldown entirely — that only governs `npm install` resolution, and only on
+  npm >= 11.10.0, which the runner's npm is not. Running it as its own step also puts the bundle in
+  the log; `BundleMonaco` is `Inputs`/`Outputs`-guarded on `version.txt`, so the build then skips it
+  rather than installing twice.
+
+Verified before shipping by staging a Release build into a directory named `tesserae-monaco/` and
+serving its *parent*, which reproduces the sub-path Pages actually serves from — then walking all 28
+pages by hash navigation with the console watched. Editors rendered and tokenized, the diff's
+worker-produced decorations arrived, the custom `greet` language coloured its keywords, and no page
+logged an error or a failed request. Serving the staged folder at the root would not have tested
+anything: a leading-slash regression only shows up one directory down.
+
 ## Monaco is bundled, not vendored
 
 Nothing Monaco-related is committed. `Tesserae.Monaco/assets/` is gitignored and regenerated from the

@@ -8,5 +8,7 @@
   <Project Path="Tesserae.Monaco.Sample/Tesserae.Monaco.Sample.csproj" />
   <Folder Name="/DevOps/">
     <File Path=".azure-devops/build-nuget-transpose.yml" />
+    <File Path=".github/workflows/pages.yml" />
+    <File Path="scripts/stage-samples.mjs" />
   </Folder>
 </Solution>

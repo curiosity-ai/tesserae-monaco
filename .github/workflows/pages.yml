@@ -1,0 +1,86 @@
+name: Publish sample to GitHub Pages
+
+# Builds the Monaco bundle, compiles Tesserae.Monaco.Sample in Release, and publishes the
+# Transpose output folder to the `gh-pages` branch. Enable Pages for this repo with
+# Settings -> Pages -> "Deploy from a branch" -> branch `gh-pages` / root.
+#
+# The Transpose output folder *is* the site: `tps.json` emits an index.html that pulls every
+# script with a relative path, and Tesserae.Monaco.targets copies Monaco in next to it. That
+# is why there is nothing to rewrite for the /tesserae-monaco/ sub-path Pages serves from -
+# the bundle even resolves its own workers from `document.currentScript.src`.
+
+on:
+  push:
+    branches: [main]
+    # Only rebuild the site when something that affects it changes.
+    paths:
+      - 'Tesserae.Monaco/**'
+      - 'Tesserae.Monaco.Sample/**'
+      - 'Tesserae.Monaco.slnx'
+      - 'scripts/stage-samples.mjs'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch: {}
+
+# Allow the workflow to push to the gh-pages branch.
+permissions:
+  contents: write
+
+# Never run two deploys at once; let the latest win.
+concurrency:
+  group: gh-pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
+        with:
+          dotnet-version: 10.x
+
+      # Node is a build prerequisite, not a convenience: Monaco is restored from the pinned npm
+      # package and bundled by esbuild on every build - nothing Monaco-related is committed.
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: Tesserae.Monaco/package-lock.json
+
+      - name: Install the Transpose compiler
+        run: |
+          dotnet tool update --global Transpose.Compiler
+          echo "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
+
+      # Done explicitly rather than left to the BundleMonaco MSBuild target so the bundle shows up
+      # in the log as its own step - and so it is `npm ci` rather than `npm install`, which installs
+      # the exact versions in package-lock.json and therefore side-steps the .npmrc min-release-age
+      # cooldown (that only governs `npm install` resolution, and needs npm >= 11.10.0 to apply at
+      # all). BundleMonaco is Inputs/Outputs-guarded on version.txt, so the build below skips it.
+      - name: Bundle Monaco
+        run: |
+          npm ci --no-audit --no-fund
+          npm run bundle
+        working-directory: Tesserae.Monaco
+
+      # Release matters: Transpose only selects the .min.js resource set there, so a Debug build
+      # would publish a site that never exercises the minified variants.
+      - name: Build the sample (Release)
+        run: dotnet build Tesserae.Monaco.Sample/Tesserae.Monaco.Sample.csproj -c Release
+
+      - name: Stage the site
+        run: node scripts/stage-samples.mjs
+
+      - name: Publish _site/ to gh-pages
+        uses: peaceiris/actions-gh-pages@84c30a85c19949d7eee79c4ff27748b70285e453 # v4.1.0
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./_site
+          publish_branch: gh-pages
+          # A .nojekyll file is added so paths like /assets/ are served verbatim.
+          enable_jekyll: false
+          commit_message: 'Deploy sample for ${{ github.sha }}'
