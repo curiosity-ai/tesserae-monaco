@@ -459,6 +459,12 @@ These were learned the hard way in Mosaik; don't simplify them away.
   a split view. The sample's **Modal** page exists to catch regressions here.
 - **The hover provider honours Monaco's cancellation token.** Monaco cancels a hover as soon as the
   pointer moves; resolving late flashes a stale tooltip over the wrong symbol.
+- **A completion provider with no `triggerCharacters` auto-triggers on word characters only.** So a
+  member list registered without `"."` appears one letter *after* the dot rather than at it, which
+  reads as a language service that does not know about members rather than as a missing setting.
+  `OnCompletion(handler, triggerCharacters: new[] { "." })` on `CodeEditor`/`DiffViewer` is where they
+  go; Monaco still calls the provider for word characters as well, so a trigger character widens when
+  the list opens rather than narrowing it.
 - **Monaco 0.56 requires `insertText` and `range` on a completion item.** 0.52 tolerated their absence;
   0.56 throws from inside the suggest widget (`Cannot read properties of undefined (reading
   'replaceAll')`, then `'replace'` on accept). `OnCompletion` fills both in when unset.

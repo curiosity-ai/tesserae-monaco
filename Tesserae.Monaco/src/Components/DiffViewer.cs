@@ -38,6 +38,7 @@ namespace Tesserae.Monaco
         // A completion provider for the editable right-hand side, registered against one language id.
         private string                               _completionLanguage;
         private Func<ITextModel, Position, IPromise> _onCompletion;
+        private string[]                            _completionTriggerCharacters;
 
         // Recorded so a remount rebuilds with the same options, and so a setter called before mount is
         // not lost - the same mechanism the code editor's typed setters use.
@@ -235,21 +236,26 @@ namespace Tesserae.Monaco
         /// Only the modified pane is asked: the callback is gated on the model that side is showing, so
         /// it never fires for the baseline, nor for another editor on the same language.
         /// </summary>
-        public DiffViewer OnCompletion(string languageId, Func<CodeContext, Task<CompletionItem[]>> handler)
+        /// <param name="triggerCharacters">
+        /// Characters that pop the suggest widget on their own, on top of Monaco's word characters -
+        /// <c>"."</c> being the one a member list needs.
+        /// </param>
+        public DiffViewer OnCompletion(string languageId, Func<CodeContext, Task<CompletionItem[]>> handler, string[] triggerCharacters = null)
         {
             if (handler is null) return this;
 
-            return OnCompletionRaw(languageId, (model, position) => MonacoEditor.AsPromise(ProviderHost.BuildCompletionListAsync(handler, model, position)));
+            return OnCompletionRaw(languageId, (model, position) => MonacoEditor.AsPromise(ProviderHost.BuildCompletionListAsync(handler, model, position)), triggerCharacters);
         }
 
         /// <summary>
         /// The unwrapped form of <see cref="OnCompletion"/>: hand back the <c>Promise</c> of a Monaco
         /// <c>CompletionList</c> yourself.
         /// </summary>
-        public DiffViewer OnCompletionRaw(string languageId, Func<ITextModel, Position, IPromise> handler)
+        public DiffViewer OnCompletionRaw(string languageId, Func<ITextModel, Position, IPromise> handler, string[] triggerCharacters = null)
         {
-            _completionLanguage = languageId;
-            _onCompletion       = handler;
+            _completionLanguage          = languageId;
+            _onCompletion                = handler;
+            _completionTriggerCharacters = triggerCharacters;
 
             if (_modifiedSide is object) RegisterCompletion();
 
@@ -260,7 +266,7 @@ namespace Tesserae.Monaco
         {
             if (_onCompletion is null || string.IsNullOrWhiteSpace(_completionLanguage)) return;
 
-            new ProviderHost(Editor.getModifiedEditor(), _completionLanguage, Disposables).RegisterCompletion(_onCompletion);
+            new ProviderHost(Editor.getModifiedEditor(), _completionLanguage, Disposables).RegisterCompletion(_onCompletion, triggerCharacters: _completionTriggerCharacters);
         }
 
         /// <summary>

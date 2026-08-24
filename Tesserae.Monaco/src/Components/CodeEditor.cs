@@ -42,6 +42,7 @@ namespace Tesserae.Monaco
         private Action<EditorOptions> _configureOptions;
 
         private Func<ITextModel, Position, IPromise>                     _onCompletion;
+        private string[]                                                 _completionTriggerCharacters;
         private Func<ITextModel, Position, IPromise>                     _onHover;
         private Func<CompletionItem, ICancellationToken, object>         _onResolveCompletion;
         private Func<string, Task<string>>                               _onFormat;
@@ -118,11 +119,16 @@ namespace Tesserae.Monaco
         /// treats both as required and throws from deep inside the suggest widget when they are
         /// missing, which is a poor trade for what is almost always the obvious default.
         /// </summary>
-        public CodeEditor OnCompletion(Func<CodeContext, Task<CompletionItem[]>> onCompletion)
+        /// <param name="triggerCharacters">
+        /// Characters that pop the suggest widget on their own. Monaco auto-triggers on word
+        /// characters only, so without <c>"."</c> here a member list appears one letter *after* the
+        /// dot rather than at it - which reads as a language service that does not know about members.
+        /// </param>
+        public CodeEditor OnCompletion(Func<CodeContext, Task<CompletionItem[]>> onCompletion, string[] triggerCharacters = null)
         {
             if (onCompletion is null) return this;
 
-            return OnCompletionRaw((model, position) => MonacoEditor.AsPromise(ProviderHost.BuildCompletionListAsync(onCompletion, model, position)));
+            return OnCompletionRaw((model, position) => MonacoEditor.AsPromise(ProviderHost.BuildCompletionListAsync(onCompletion, model, position)), triggerCharacters);
         }
 
         /// <summary>
@@ -130,9 +136,10 @@ namespace Tesserae.Monaco
         /// <c>CompletionList</c> yourself. Use <see cref="OnCompletion"/> unless you need to shape the
         /// response beyond a list of items.
         /// </summary>
-        public CodeEditor OnCompletionRaw(Func<ITextModel, Position, IPromise> onCompletion)
+        public CodeEditor OnCompletionRaw(Func<ITextModel, Position, IPromise> onCompletion, string[] triggerCharacters = null)
         {
-            _onCompletion = onCompletion;
+            _onCompletion                = onCompletion;
+            _completionTriggerCharacters = triggerCharacters;
 
             return this;
         }
@@ -632,7 +639,7 @@ namespace Tesserae.Monaco
 
         private void RegisterCompletionProvider(ProviderHost host, IStandaloneCodeEditor editor)
         {
-            host.RegisterCompletion(_onCompletion, _onResolveCompletion);
+            host.RegisterCompletion(_onCompletion, _onResolveCompletion, _completionTriggerCharacters);
         }
 
         private void RegisterHoverProvider(ProviderHost host, IStandaloneCodeEditor editor)

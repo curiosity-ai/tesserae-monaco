@@ -24,7 +24,7 @@ namespace Tesserae.Monaco.Sample
         {
             var editor = MonacoEditor.Editor()
                .SetLanguage("csharp")
-               .SetText("// Ctrl+Space here, or hover \"Greet\" below\nvar greeter = new Greeter();\ngreeter.Greet(\"world\");\n");
+               .SetText("// Ctrl+Space here, type a \".\", or hover \"Greet\" below\nvar greeter = new Greeter();\ngreeter.Greet(\"world\");\n");
 
             editor.OnCompletion(context =>
             {
@@ -43,7 +43,8 @@ namespace Tesserae.Monaco.Sample
                 }
 
                 return Task.FromResult(items.ToArray());
-            });
+            },
+            triggerCharacters: new[] { "." });
 
             // Monaco resolves only the highlighted item, so this is where documentation that costs a
             // round-trip belongs. The overload taking a Task is the one a server-backed host wants;
@@ -92,6 +93,7 @@ namespace Tesserae.Monaco.Sample
                     Card(VStack().WS().Children(
                         SampleSubTitle("Try it"),
                         TextBlock("Press Ctrl+Space for the suggest list and accept an item - it inserts. The documentation beside it arrives a moment later, from the resolve callback. Hover the word Greet for its own documentation."),
+                        TextBlock("Typing a \".\" after greeter opens the list too: \".\" is passed as a trigger character. Without one, Monaco auto-triggers on word characters only, so a member list would appear one letter after the dot instead of at it.").MT(8),
                         editor.WS().H(200.px()).MT(8),
                         SampleHint("The suggestions are Greet, Greeter, Console and WriteLine; anything else has no hover.")
                     )).SetTitle("Usage")))
