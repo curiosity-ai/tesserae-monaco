@@ -115,6 +115,24 @@ the result more than the list did:
 - [x] `WhenLoaded` — the general answer to "don't touch `monaco.*` before it loads", which every piece of
       global configuration now goes through.
 
+## Tier 10 - Persisted history
+
+- [x] `PersistHistory(...)` on `CodeEditor`/`CodeViewer`: a revision log plus the view state, scoped by
+      a caller-supplied identifier and stamped with a UTC epoch-millisecond timestamp. Restoring is an
+      edit over the full range between two undo stops, so it lands on Monaco's live undo stack.
+      Verified: type, reload, and the text and the caret come back; undo after a restore reaches back
+      past it.
+- [x] `IndexedDbHistoryStore`, the default. Two object stores (`revisions` and `places`), an index per
+      scope and per scope/document pair, pruning by count and by age. Verified: 30 rows prune to the
+      newest 20, a 5-second age cap keeps exactly the 4 inside it, a second scope's key reads nothing.
+- [x] The hooks for an external system: `EditorHistoryOptions.OnSaved` to be told,
+      `DelegateHistoryStore` to be the store, `MirroredHistoryStore` to be both - writes to each, reads
+      from the browser falling back to the server, which is what a second device needs.
+      `EditorHistoryOptions.Clock` is the matching hook for a server that is the authority on time, and
+      `ShouldRestore` the veto for one that is an authority on the document.
+- [x] `EditorViewState.ToPlainObject` / `FromPlainObject`, which is what makes the view state storable
+      and sendable at all.
+
 ---
 
 ## Open

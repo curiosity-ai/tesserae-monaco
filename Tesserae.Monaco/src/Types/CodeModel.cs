@@ -270,5 +270,26 @@ namespace Tesserae.Monaco
 
         /// <summary>True when there is actually state to restore.</summary>
         public bool HasValue => Native != null;
+
+        /// <summary>
+        /// The same state as a plain object, safe to store or to send.
+        ///
+        /// Monaco's own typings call the shape <c>saveViewState</c> returns "(serializable)" - it is
+        /// cursor state, scroll offset and the folding contribution's state, nothing else - so it goes
+        /// through <c>structuredClone</c> into IndexedDB and through <c>JSON.stringify</c> to a server
+        /// unchanged. The round trip here is what guarantees that: it strips anything Monaco may have
+        /// hung off it that would not clone.
+        /// </summary>
+        public object ToPlainObject() => Native is null ? null : MonacoEditor.ToPlainObject(Native);
+
+        /// <summary>
+        /// Rebuilds a view state from what <see cref="ToPlainObject"/> produced. Monaco reads the plain
+        /// shape directly, so this only re-types it; the cast emits nothing, because nothing is emitted
+        /// for an <c>[External]</c> interface.
+        /// </summary>
+        public static EditorViewState FromPlainObject(object value)
+        {
+            return value is null ? null : new EditorViewState((IViewState)value);
+        }
     }
 }

@@ -72,6 +72,7 @@ configuration (options, events, actions, widgets) is recorded and replayed, and 
 | Content | `Text`, `SetText`, `ApplyEdits`, `PushUndoStop`, `Undo`, `Redo`, `LineCount`, `VersionId`, `GetLineContent`, `GetValueInRange`, `GetOffsetAt`, `GetPositionAt`, `GetWordAt`, `FindMatches`, `Indentation`, `EndOfLine` |
 | Language | `SetLanguage(string)`, `SetLanguage(LanguageDefinition)`, `SetLanguageByExtension` |
 | Models | `Model`, `SetModel`, `SaveViewState`, `RestoreViewState` |
+| History | `PersistHistory(options)`, `PersistHistory(scope, documentId)`, `History` |
 | Selection | `GetPosition`, `SetPosition`, `GetSelection(s)`, `SetSelection(s)`, `GetSelectedText`, `SelectAll` |
 | Scrolling | `RevealLine`, `EnsureLineVisible`, `RevealLineInCenter[IfOutsideViewport]`, `RevealLineNearTop`, `RevealPosition[InCenter]`, `RevealRange…`, `Get/SetScrollTop`, `Get/SetScrollLeft`, `GetScrollHeight`, `GetContentHeight`, `GetContentWidth` |
 | Decorations | `Decorate`, `ClearDecorations`, `GetDecorationRanges`, `CreateDecorations` |
@@ -161,6 +162,97 @@ schema is matched against it. Models you create are yours to `Dispose()`.
 
 Use `ApplyEdits` rather than assigning `Text` when the change should be undoable and leave the caret
 alone — assigning `Text` calls `setValue`, which resets both.
+
+### Persisting history across reloads
+
+`PersistHistory(...)` records the document as it is edited and puts it back the next time the same
+document is opened — after a reload, or in a new browser session.
+
+```csharp
+editor.PersistHistory(new EditorHistoryOptions
+{
+    Scope      = $"user:{userId}",   // the partition every entry is filed under
+    DocumentId = "src/Program.cs"    // the document within it
+});
+```
+
+Two things are kept, because they are what Monaco hands out serialisably: the **text**, and the
+**view state** — caret, selections, scroll offset and folding. Monaco's undo *stack* is not among
+them: it lives in the editor's undo service as objects holding closures over the model, with no
+accessor and nothing to serialise. A restored revision is therefore applied as an ordinary edit
+between two undo stops, which puts it on the live undo stack — so undo reaches back past a restore.
+
+The default store is the browser's **IndexedDB**. It is the only web storage that fits: `sessionStorage`
+is emptied when the tab closes; `localStorage` survives but is synchronous (every write blocks the
+thread Monaco lays out on), caps around 5 MB, stores strings only, and has no index to prune by.
+IndexedDB is asynchronous, sized against available disk, stores the view state as an object, and its
+cursors make "newest first" and "older than a month" bounded rather than full scans.
+
+Every entry is stamped with a UTC epoch-millisecond `Timestamp`, and scoped: `Scope` is the partition —
+a user id, a workspace id, or a composite — and `DocumentId` addresses the file inside it, so one
+origin holds several users' or projects' histories without them seeing each other.
+
+| Option | What it does |
+|---|---|
+| `Scope`, `DocumentId` | The partition and the document. The only two with no default. |
+| `Store` | Where it goes. Defaults to `IndexedDbHistoryStore.Default`. |
+| `SnapshotDebounceMs`, `PlaceDebounceMs` | How long typing / the caret has to settle first (1500 ms, 500 ms). |
+| `MaxEntries`, `MaxAge` | Retention: 50 revisions, 30 days. 0 for no cap. |
+| `RestoreOnMount`, `RestorePlace` | Whether to put the document, and the caret, back on create. |
+| `ShouldRestore` | The veto, given what was found. For when a server is also an authority on the document. |
+| `Clock` | Where `Timestamp` comes from. Replace it when a server is the authority on time. |
+| `OnSaved`, `OnRestored`, `OnError` | Told about each revision written, each one put back, and anything the store raised. |
+
+`editor.History` is the recorder itself: `SaveNowAsync(label)` takes a revision by hand and tags it
+(`"before format"`, a commit id), `ListAsync(limit)` lists what is stored newest first, `Restore(entry)`
+puts one back, `FlushAsync()` writes what the debounce is holding, and `ClearAsync()` forgets the
+document.
+
+#### Hooking an external system in
+
+Three ways, in increasing order of involvement.
+
+**Be told.** The browser stays the store; the callback posts what it wants where it wants.
+
+```csharp
+editor.PersistHistory(new EditorHistoryOptions
+{
+    Scope      = scope,
+    DocumentId = documentId,
+    OnSaved    = entry => Post("/api/history", entry.ToPlainObject())
+});
+```
+
+**Be the store.** `DelegateHistoryStore` builds one out of lambdas, so a server-backed store is an
+object initialiser rather than a class. Every hook is optional and an absent one degrades rather than
+fails — a missing reader answers with nothing, a missing writer discards.
+
+```csharp
+var server = new DelegateHistoryStore
+{
+    Save      = entry => Post("/api/history", entry.ToPlainObject()),
+    GetLatest = (scope, document) => GetEntry($"/api/history/latest?scope={scope}&doc={document}"),
+    List      = query => GetEntries("/api/history", query)
+};
+```
+
+**Be both.** `MirroredHistoryStore` writes to the browser *and* the server, reads from the browser, and
+falls through to the server when the browser has nothing — which is what a second device, a new browser
+profile or a cleared origin needs to pick the document back up. The server's failures are reported
+through `OnMirrorError` rather than thrown: a server that is down should cost an editor its backup, not
+its history.
+
+```csharp
+Store = MirroredHistoryStore.LocalFirst(server)
+```
+
+`EditorHistoryEntry.ToPlainObject()` / `FromPlainObject(...)` are the wire contract — the field names
+they produce (`scope`, `documentId`, `docKey`, `timestamp`, `text`, `viewState`, `language`,
+`versionId`, `label`, `id`) are what an external store implements against.
+
+Note that persistent is not permanent anywhere in the browser: a user agent may evict a whole origin
+under storage pressure, and clearing site data always does. That is the case mirroring to a server
+exists for.
 
 ### `DiffViewer`
 

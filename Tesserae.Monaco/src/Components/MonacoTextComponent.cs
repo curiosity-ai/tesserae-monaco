@@ -40,6 +40,7 @@ namespace Tesserae.Monaco
         private ReadOnlyArray<TextDecoration> _pendingDecorations;
         private Action<T>            _onRendered;
         private EditorViewState      _savedViewState;
+        private EditorHistory        _history;
 
         // Buffered until the editor exists.
         private string _text     = "";
@@ -118,6 +119,10 @@ namespace Tesserae.Monaco
 
             RestoreSavedViewState();
             ApplyPendingDecorations();
+
+            // After the replay, so a restored revision lands on an editor that already has its
+            // options, its events and its own remembered view state rather than racing them.
+            _history?.Attach(_surface);
         }
 
         /// <summary>
@@ -126,6 +131,9 @@ namespace Tesserae.Monaco
         /// </summary>
         protected void UnbindSurface()
         {
+            // Before the surface is dropped: the recorder still has to read the text it is flushing.
+            _history?.Detach();
+
             if (_surface is object)
             {
                 // Read the content and the user's place in it back into the fields, so a component that
@@ -446,6 +454,63 @@ namespace Tesserae.Monaco
 
             return Live(s => s.RestoreViewState(state));
         }
+
+        #endregion
+
+        #region History
+
+        /// <summary>
+        /// Keeps this editor's history somewhere it survives a reload and a closed browser, and puts it
+        /// back the next time the same document is opened.
+        ///
+        /// The default store is the browser's IndexedDB; <see cref="EditorHistoryOptions.Store"/> is
+        /// where a server-backed one goes instead, or alongside. Both halves of the entry - the text
+        /// and the caret/scroll/folding - come from what Monaco actually hands out serialisably; its
+        /// undo <i>stack</i> is not among them, which is why a restored revision is applied as an edit
+        /// rather than swapped in. See <see cref="EditorHistoryEntry"/>.
+        ///
+        /// <code>
+        /// MonacoEditor.Editor()
+        ///    .SetLanguage("csharp")
+        ///    .PersistHistory(new EditorHistoryOptions
+        ///    {
+        ///        Scope      = $"user:{userId}",
+        ///        DocumentId = "src/Program.cs"
+        ///    });
+        /// </code>
+        ///
+        /// Calling this a second time replaces the recorder, which drops whatever the previous one had
+        /// pending - so configure it once, at construction, as with the rest of the component.
+        /// </summary>
+        public T PersistHistory(EditorHistoryOptions options)
+        {
+            if (options is null) return Self;
+
+            _history?.Detach();
+            _history = new EditorHistory(options);
+
+            if (_surface is object) _history.Attach(_surface);
+
+            return Self;
+        }
+
+        /// <summary>
+        /// Shorthand for <see cref="PersistHistory(EditorHistoryOptions)"/> with only the two settings
+        /// that have no sensible default.
+        /// </summary>
+        /// <param name="scope">The partition - a user id, a workspace id, or a composite of them.</param>
+        /// <param name="documentId">The document within it, stable across sessions.</param>
+        public T PersistHistory(string scope, string documentId)
+        {
+            return PersistHistory(new EditorHistoryOptions { Scope = scope, DocumentId = documentId });
+        }
+
+        /// <summary>
+        /// The recorder attached by <see cref="PersistHistory(EditorHistoryOptions)"/>, or null. Use it
+        /// to take a revision by hand (<c>SaveNowAsync</c>), list what is stored, or put an older one
+        /// back. Valid before mount, like the rest of the component.
+        /// </summary>
+        public EditorHistory History => _history;
 
         #endregion
 
