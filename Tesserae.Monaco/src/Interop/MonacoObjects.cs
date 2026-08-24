@@ -57,6 +57,49 @@ namespace Tesserae.Monaco
     }
 
     /// <summary>
+    /// Monaco's <c>editor.contrib.messageController</c> - the transient bubble shown over the caret,
+    /// e.g. "No definition found for 'x'". Reached through <c>getContribution</c>.
+    ///
+    /// A contribution is internal API: the id and the members below are not part of Monaco's public
+    /// surface and have been renamed between releases. Only what <see cref="EditorSurface.CloseMessage"/>
+    /// needs is declared, and every step of the path is null-checked at the call site.
+    /// </summary>
+    [External]
+    [Convention(Notation.None)]
+    public interface IMessageController
+    {
+        void closeMessage();
+    }
+
+    /// <summary>
+    /// Monaco's <c>editor.contrib.suggestController</c>, far enough in to open the suggest widget's
+    /// documentation pane. Internal API, on the same terms as <see cref="IMessageController"/>.
+    /// </summary>
+    [External]
+    [Convention(Notation.None)]
+    public interface ISuggestController
+    {
+        /// <summary>Monaco holds the widget in a lazily-created cell, so the value is a level down.</summary>
+        ISuggestWidgetHolder widget { get; }
+    }
+
+    /// <summary>The lazily-created cell holding the suggest widget.</summary>
+    [External]
+    [Convention(Notation.None)]
+    public interface ISuggestWidgetHolder
+    {
+        ISuggestWidget value { get; }
+    }
+
+    /// <summary>The suggest widget itself.</summary>
+    [External]
+    [Convention(Notation.None)]
+    public interface ISuggestWidget
+    {
+        void _setDetailsVisible(bool visible);
+    }
+
+    /// <summary>
     /// A decoration set Monaco keeps tracked across edits, from
     /// <c>editor.createDecorationsCollection</c>. Updating one beats replacing it: the ranges move with
     /// the text, and only the difference is re-rendered.

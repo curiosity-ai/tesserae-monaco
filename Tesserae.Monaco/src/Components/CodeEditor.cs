@@ -43,7 +43,7 @@ namespace Tesserae.Monaco
 
         private Func<ITextModel, Position, IPromise>                     _onCompletion;
         private Func<ITextModel, Position, IPromise>                     _onHover;
-        private Func<CompletionItem, ICancellationToken, CompletionItem> _onResolveCompletion;
+        private Func<CompletionItem, ICancellationToken, object>         _onResolveCompletion;
         private Func<string, Task<string>>                               _onFormat;
         private Func<string, Task<ReadOnlyArray<CodeDiagnostic>>>        _validator;
         private bool                                                     _validateImmediately;
@@ -122,35 +122,7 @@ namespace Tesserae.Monaco
         {
             if (onCompletion is null) return this;
 
-            return OnCompletionRaw((model, position) => MonacoEditor.AsPromise(BuildCompletionListAsync(onCompletion, model, position)));
-        }
-
-        private static async Task<object> BuildCompletionListAsync(Func<CodeContext, Task<CompletionItem[]>> onCompletion, ITextModel model, Position position)
-        {
-            var context = new CodeContext(model, position);
-            var items   = await onCompletion(context);
-
-            if (items is null) return new CompletionList { suggestions = new CompletionItem[0] };
-
-            // Replace the word being typed; with the caret off a word, insert at the caret.
-            var range = context.WordRange ?? new TextRange
-            {
-                startLineNumber = context.Position.lineNumber,
-                endLineNumber   = context.Position.lineNumber,
-                startColumn     = context.Position.column,
-                endColumn       = context.Position.column
-            };
-
-            foreach (var item in items)
-            {
-                if (item is null) continue;
-
-                if (string.IsNullOrEmpty(item.insertText)) item.insertText = item.label;
-
-                if (item.range == null) item.range = range;
-            }
-
-            return new CompletionList { suggestions = items };
+            return OnCompletionRaw((model, position) => MonacoEditor.AsPromise(ProviderHost.BuildCompletionListAsync(onCompletion, model, position)));
         }
 
         /// <summary>
@@ -172,7 +144,27 @@ namespace Tesserae.Monaco
         /// </summary>
         public CodeEditor OnResolveCompletion(Func<CompletionItem, ICancellationToken, CompletionItem> onResolveCompletion)
         {
-            _onResolveCompletion = onResolveCompletion;
+            _onResolveCompletion = onResolveCompletion is null
+                ? (Func<CompletionItem, ICancellationToken, object>)null
+                : (item, token) => onResolveCompletion(item, token);
+
+            return this;
+        }
+
+        /// <summary>
+        /// The same, for documentation that has to be fetched - which is the usual case, since
+        /// resolving on demand only pays off when the work is expensive enough to be worth deferring.
+        /// Monaco takes the promise and fills the details flyout in when it settles.
+        ///
+        /// Return the item to leave it as it was; a task that faults leaves the flyout empty rather
+        /// than surfacing as an unhandled provider error, so handle the failure in the delegate if the
+        /// caller should hear about it.
+        /// </summary>
+        public CodeEditor OnResolveCompletion(Func<CompletionItem, ICancellationToken, Task<CompletionItem>> onResolveCompletion)
+        {
+            _onResolveCompletion = onResolveCompletion is null
+                ? (Func<CompletionItem, ICancellationToken, object>)null
+                : (item, token) => MonacoEditor.AsPromise(onResolveCompletion(item, token));
 
             return this;
         }
@@ -640,17 +632,7 @@ namespace Tesserae.Monaco
 
         private void RegisterCompletionProvider(ProviderHost host, IStandaloneCodeEditor editor)
         {
-            if (_onCompletion is null && _onResolveCompletion is null) return;
-
-            host.Keep(MonacoApi.languages.registerCompletionItemProvider(host.Language, new CompletionItemProvider
-            {
-                // Monaco asks every provider registered for the language; answering only for our own
-                // model is what keeps two editors on the same language independent.
-                provideCompletionItems = (model, position) =>
-                    host.OwnsModel(model) ? _onCompletion?.Invoke(model, position) : null,
-
-                resolveCompletionItem = (item, token) => _onResolveCompletion?.Invoke(item, token) ?? item
-            }));
+            host.RegisterCompletion(_onCompletion, _onResolveCompletion);
         }
 
         private void RegisterHoverProvider(ProviderHost host, IStandaloneCodeEditor editor)

@@ -481,6 +481,53 @@ namespace Tesserae.Monaco
             return action is object && action.isSupported();
         }
 
+        /// <summary>
+        /// Closes the transient message Monaco shows over the caret - the little bubble that says
+        /// "No definition found for 'x'".
+        ///
+        /// The case that wants this is a definition provider that <i>did</i> resolve the symbol but
+        /// answered with no in-editor location, because it opened the documentation somewhere of its
+        /// own instead: Monaco shows the message whenever a provider yields nothing, and there it is
+        /// simply wrong. Call it after the provider's promise has settled - Monaco shows the message
+        /// on the turn after that, so a <c>setTimeout(0)</c> is the earliest it can be closed.
+        ///
+        /// Everything below the contribution id is Monaco-internal and has been renamed between
+        /// releases, so a missing contribution is a no-op rather than a throw. The cast is direct
+        /// rather than an <c>as</c>: an <c>[External]</c> interface has no emitted metadata, so a
+        /// runtime type test throws instead of answering false, while a direct cast emits nothing at
+        /// all and leaves a missing contribution as the null it already is.
+        /// </summary>
+        public EditorSurface CloseMessage()
+        {
+            var controller = (IMessageController)_editor.getContribution(MESSAGE_CONTROLLER_ID);
+
+            controller?.closeMessage();
+
+            return this;
+        }
+
+        private const string MESSAGE_CONTROLLER_ID = "editor.contrib.messageController";
+
+        /// <summary>
+        /// Opens the documentation pane of the suggest widget and leaves it open, instead of the user
+        /// having to press Ctrl+Space a second time for it.
+        ///
+        /// Worth doing when the completions carry real documentation - an API list where the detail is
+        /// the point - and not otherwise, since it makes the widget considerably taller. Call it once
+        /// the editor exists; the widget is created with it.
+        /// </summary>
+        public EditorSurface ShowSuggestDetails(bool visible = true)
+        {
+            var controller = (ISuggestController)_editor.getContribution(SUGGEST_CONTROLLER_ID);
+            var widget     = controller?.widget?.value;
+
+            widget?._setDetailsVisible(visible);
+
+            return this;
+        }
+
+        private const string SUGGEST_CONTROLLER_ID = "editor.contrib.suggestController";
+
         #endregion
 
         #region Options

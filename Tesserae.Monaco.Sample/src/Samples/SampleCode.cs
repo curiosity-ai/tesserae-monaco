@@ -60,7 +60,8 @@ int Quadruple(int value)
     return Twice(Twice(value));
 }
 
-var result = Quadruple(3);";
+var result = Quadruple(3);
+Console.WriteLine(result);";
 
         /// <summary>
         /// Sections of key/value pairs, with a URL and two colour literals - one document the hint,

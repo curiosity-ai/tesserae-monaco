@@ -82,8 +82,9 @@ Four things that make the sub-path work, none of which needed a change to publis
 - **Nothing is absolute.** The generated `index.html` references its scripts, `assets/css/tss.css`
   and the fonts relatively, so the whole site moves under `/tesserae-monaco/` untouched. Keep it
   that way — a `<base>` tag or an absolute path is a bug, not a fix.
-- **The Monaco bundle finds its own workers**, from `document.currentScript.src`, so the five
-  `*.worker.js` files follow `monaco.js` under the sub-path with no setting to keep in sync.
+- **The Monaco bundle finds its own workers and chunks**, from `import.meta.url`, so the five
+  `*.worker.js` files and the `chunks/` folder follow `monaco.js` under the sub-path with no setting
+  to keep in sync.
 - **Routing is hash-based** (`#/view/Code%20Editor`), so every page is a URL on `index.html` and
   Pages needs no rewrite rule and no `404.html` fallback.
 - **`.nojekyll`** — without it Jekyll would eat paths beginning with `_`. `enable_jekyll: false`
@@ -123,25 +124,56 @@ consumed as-is:
 - The **AMD** build (`min/vs/...`) does load directly via `vs/loader.js`, and worked when tried, but
   upstream marks AMD as deprecated and slated for removal. Don't reintroduce it.
 
-So `build/bundle-monaco.mjs` produces `monaco.js` (IIFE → `window.monaco`) and five `*.worker.js`
-files. Everything that can be resolved ahead of time is: the module graph, minification, `codicon.ttf`
-as a data URI, Monaco's stylesheet folded into the JS as a self-injecting `<style>`, and
-`MonacoEnvironment.getWorker` baked in with the worker filenames. The browser fetches plain IIFE
-scripts — no module graph, no import map, no runtime patching.
+So `build/bundle-monaco.mjs` produces `monaco.js`, the `chunks/` beside it, and five `*.worker.js`
+files. Everything that can be resolved ahead of time is: minification, `codicon.ttf` as a data URI,
+Monaco's stylesheets folded into the JS as self-injecting `<style>` elements, and
+`MonacoEnvironment.getWorker` baked in with the worker filenames.
 
-That means the C# side does nothing but load one script. In particular the bundle resolves its own
-base URL from `document.currentScript.src`, so the workers follow wherever `monaco.js` is served from
-and there is no second setting to keep in sync — and the old ordering constraint (MonacoEnvironment
-had to exist *before* `monaco.js` evaluated) is gone, because the bundle sets it itself. The `||`
-guard means a host can still install its own `MonacoEnvironment` beforehand if it wants a different
-worker strategy.
+### The entry is a module, and that is what makes the grammars lazy
 
-Only `monaco.js` loads up front; the language workers are pulled in by Monaco on demand.
+`monaco.js` is an **ES module**, not an IIFE, and code-split (`splitting: true`). That is not a
+stylistic choice — it is the only shape in which Monaco's own laziness survives bundling.
 
-That one script is fetched through **`Transpose.Require.RequireAsync`** — the loader in the
-Transpose runtime — rather than Tesserae's `Require` or a hand-rolled `<script>` element. It is the
-same loader every Transpose library now uses: it shares one fetch between callers, resolves the URL
-against the document base, and forgets a failed load so a later mount can retry.
+Monaco registers each of its ~90 grammars, and each of its four language-service modes, behind a
+dynamic `import()`: `esm/vs/languages/definitions/csharp/register.js` declares
+`loader: () => import('./csharp.js')`, and `languages/features/json/register.js` reaches its mode
+through `import('./jsonMode.js')`. Bundled to an IIFE, esbuild resolves those at build time and
+inlines them, so a page that only ever shows C# still downloads Perl, Pascal and PowerQuery — that
+is what the previous single 4.8 MB `monaco.js` was. Bundled to ESM with splitting, they stay real
+dynamic imports and each becomes a chunk fetched the first time a document uses that language.
+
+Measured on the sample gallery: **4.1 MB across five files up front** (the entry plus the editor's
+shared chunks), and one small chunk per language after that — walking all 29 pages fetched
+`csharp`, `ini`, `typescript` and the `json`/`ts` modes and nothing else, out of 92 chunks on disk.
+The bundle script prints both halves of that number on every build, so a stray static import
+dragging the grammars back into the entry shows up in the build log rather than in a profile.
+
+Two consequences of being a module, both already handled:
+
+- **The base URL comes from `import.meta.url`**, not `document.currentScript.src` — which is
+  `null` inside a module. The workers and the chunks therefore follow wherever `monaco.js` is served
+  from, with no second setting to keep in sync.
+- **The CSS cannot be an esbuild output.** esbuild emits one `.css` file per *entry point*, so a
+  chunk's styles would have nowhere to go and a lazily-loaded grammar's styles would never be
+  requested at all. The `css-inline` plugin turns every `import './x.css'` into a module that appends
+  its own `<style>`, which keeps each chunk self-contained: the styles arrive exactly when the code
+  that needs them does.
+
+MonacoEnvironment still has to exist *before* the editor evaluates, since Monaco reads it the first
+time it needs a worker and there is no way to supply it afterwards. It lives in its own module that
+the entry imports first — ES module imports evaluate in source order, which is what makes "first"
+mean anything. The `||` guard means a host can still install its own `MonacoEnvironment` beforehand
+if it wants a different worker strategy.
+
+That entry is fetched through **`Transpose.Require.RequireAsync(RequireKind.Module, …)`** — the
+loader in the Transpose runtime — rather than Tesserae's `Require` or a hand-rolled `<script>`
+element. It is the same loader every Transpose library now uses: it shares one fetch between callers,
+resolves the URL against the document base, and forgets a failed load so a later mount can retry. The
+`RequireKind.Module` argument is load-bearing: the URL ends in `.js`, so the loader's own sniffing
+would pick a classic `<script>`, and the entry's `import` statements would be a syntax error.
+
+Nothing loads until a component mounts (or a host calls `MonacoEditor.LoadAsync()`), so a page with
+no editor on it pays nothing at all.
 
 If you bump the `monaco-editor` pin, re-run the browser verification below — worker entry-point paths
 and the CSS-import situation have both changed between minor versions.
@@ -152,8 +184,9 @@ This is the trap to avoid. `tps.json` deliberately declares only the four self-J
 packed into the nupkg under `monaco/` and copied into the consumer's output by
 `buildTransitive/Tesserae.Monaco.targets`. Three reasons it cannot be a `resources` entry:
 
-- Transpose emits a `<script>` tag for every `.js` resource. Eagerly injecting `monaco.js` and the
-  workers both breaks them and costs megabytes on first paint.
+- Transpose emits a `<script>` tag for every `.js` resource. Eagerly injecting `monaco.js`, its
+  chunks and the workers both breaks them and costs megabytes on first paint — and a classic
+  `<script>` tag cannot evaluate the module entry at all.
 - `"outputFormatting": "Both"` renames resources into `.min.js` variants, so a file cannot keep the
   name its own loader expects.
 - The `files` globs are single-level (`*`, not `**`), so a nested tree needs one entry per folder.
@@ -393,12 +426,13 @@ Two things this depends on, both easy to break:
   one visit creates one page's editors rather than every page's at startup — and leaving a page unmounts
   them. That is a feature: it exercises the components' disposal on every click.
 
-There are 28 pages in four groups: **Editors** (the components themselves, plus the diff's own API and
+There are 29 pages in four groups: **Editors** (the components themselves, plus the diff's own API and
 `Colorize`), **Language services** (one page per provider — completion, signature help, inline
 completion, formatting, diagnostics, code actions, navigation, inlay hints and lenses, folding, links
-and colours, semantic tokens, a custom language, and Monaco's bundled workers), **Decorations and
-widgets**, and **Runtime and hosting** (options, events, actions and commands, several documents,
-themes, a modal, remount). The sidebar sorts groups alphabetically and pages by their `Order`.
+and colours, semantic tokens, a custom language, deferred grammars, and Monaco's bundled workers),
+**Decorations and widgets**, and **Runtime and hosting** (options, events, actions and commands,
+several documents, themes, a modal, remount). The sidebar sorts groups alphabetically and pages by
+their `Order`.
 
 Two consequences of a page being rebuilt on every visit, both of which cost a debugging round:
 

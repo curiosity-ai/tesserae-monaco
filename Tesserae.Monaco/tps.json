@@ -34,13 +34,13 @@
         // NOTE: the Monaco distribution itself is deliberately NOT a Transpose resource. It is
         // packed into the NuGet package under monaco/ and copied into the consuming project's
         // output by buildTransitive/Tesserae.Monaco.targets instead. Three reasons:
-        //   - Transpose emits a <script> tag for every ".js" resource, but Monaco must be loaded on
-        //     demand by its own AMD loader; eagerly injecting editor.main.js and workerMain.js both
-        //     breaks them and costs megabytes on first paint.
-        //   - "outputFormatting": "Both" renames resources into ".min.js" variants, and Monaco's AMD
-        //     module ids are its file paths - a renamed file is an unresolvable module.
-        //   - The "files" globs are single-level, so Monaco's nested tree (94 files across 20-odd
-        //     folders) cannot be expressed without one entry per folder.
+        //   - Transpose emits a <script> tag for every ".js" resource, but the entry is an ES module
+        //     a classic <script> cannot evaluate at all, and its chunks and the workers are fetched
+        //     on demand; injecting them eagerly both breaks them and costs megabytes on first paint.
+        //   - "outputFormatting": "Both" renames resources into ".min.js" variants, and the chunk
+        //     names are baked into the entry's import statements - a renamed chunk is a 404.
+        //   - The "files" globs are single-level, so Monaco's nested tree (100 files, chunks/
+        //     included) cannot be expressed without one entry per folder.
     ],
     "cleanOutputFolderBeforeBuildPattern": "*.*",
     "loader": {

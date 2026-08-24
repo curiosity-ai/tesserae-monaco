@@ -83,10 +83,14 @@ namespace Tesserae.Monaco
         {
             var baseUrl = BaseUrl;
 
-            // One script, and everything else is already inside it: the bundle injects Monaco's
-            // stylesheet and installs MonacoEnvironment itself, resolving its own worker URLs from
-            // the script's own src. See build/bundle-monaco.mjs.
-            await Transpose.Require.RequireAsync(baseUrl + "/monaco.js");
+            // One request, and everything else follows from it: the entry injects Monaco's stylesheet
+            // and installs MonacoEnvironment itself, resolving its own worker URLs from its own
+            // import.meta.url. It is an ES module rather than a plain script because that is what
+            // keeps Monaco's ~90 grammars and its four language-service modes behind the dynamic
+            // imports Monaco already wrote them as - each becomes a chunk fetched the first time a
+            // document uses that language, instead of being inlined here. See
+            // build/bundle-monaco.mjs.
+            await Transpose.Require.RequireAsync(RequireKind.Module, baseUrl + "/monaco.js");
 
             if (!IsLoaded)
             {
@@ -365,9 +369,14 @@ namespace Tesserae.Monaco
                 extensions = language.Extensions ?? new string[0]
             });
 
+            // The eager grammar wins when both are given - there is nothing to wait for.
             if (language.Tokenizer is object)
             {
                 MonacoApi.languages.setMonarchTokensProvider(language.Id, language.Tokenizer);
+            }
+            else if (language.TokenizerFactory is object)
+            {
+                ApplyTokenizerFactory(language.Id, language.TokenizerFactory);
             }
 
             // The raw object wins when both are given: it is the escape hatch, so a host that reached for
@@ -377,6 +386,10 @@ namespace Tesserae.Monaco
             if (configuration is object)
             {
                 MonacoApi.languages.setLanguageConfiguration(language.Id, configuration);
+            }
+            else if (language.ConfigurationFactory is object)
+            {
+                ApplyConfigurationFactory(language.Id, language.ConfigurationFactory);
             }
 
             // A provider that returns nothing, registered only so Monaco treats these characters as
@@ -395,6 +408,81 @@ namespace Tesserae.Monaco
             {
                 _tokenColors.AddRange(language.TokenColors);
             }
+        }
+
+        private static void ApplyTokenizerFactory(string languageId, Func<Task<object>> factory)
+        {
+            // Monaco takes the grammar or a promise of one, so the task goes across as a promise and
+            // the fetch happens the first time a document uses the language - never at start-up.
+            MonacoApi.languages.registerTokensProviderFactory(languageId, new TokensProviderFactory
+            {
+                create = () => PromiseExtensions.ToPromise(factory())
+            });
+        }
+
+        private static void ApplyConfigurationFactory(string languageId, Func<Task<object>> factory)
+        {
+            MonacoApi.languages.onLanguageEncountered(languageId, () => ApplyConfigurationAsync(languageId, factory).FireAndForget());
+        }
+
+        private static async Task ApplyConfigurationAsync(string languageId, Func<Task<object>> factory)
+        {
+            var configuration = await factory();
+
+            if (configuration is object) MonacoApi.languages.setLanguageConfiguration(languageId, configuration);
+        }
+
+        /// <summary>
+        /// Replaces the Monarch grammar of a language that already exists - one of Monaco's own, or one
+        /// this package registered earlier. <see cref="RegisterLanguage"/> is for a language of your
+        /// own; this is for restyling a built-in one, e.g. swapping Monaco's deliberately coarse
+        /// <c>csharp</c> grammar for a finer one.
+        ///
+        /// Monaco treats tokenizers as exclusive per language, so the last one registered is the one
+        /// that runs. Safe to call before Monaco has loaded - the call is queued.
+        /// </summary>
+        /// <param name="languageId">The language whose grammar to replace, e.g. <c>"csharp"</c>.</param>
+        /// <param name="tokenizer">A Monarch <c>IMonarchLanguage</c>, shaped as for <see cref="LanguageDefinition.Tokenizer"/>.</param>
+        public static void SetTokenizer(string languageId, object tokenizer)
+        {
+            if (string.IsNullOrWhiteSpace(languageId) || tokenizer is null) return;
+
+            WhenLoaded(() => MonacoApi.languages.setMonarchTokensProvider(languageId, tokenizer));
+        }
+
+        /// <summary>
+        /// The same, with the grammar fetched only once a document actually uses the language - for one
+        /// that lives in its own script file. Nothing is requested at start-up, and a language nobody
+        /// opens costs nothing.
+        /// </summary>
+        public static void SetTokenizer(string languageId, Func<Task<object>> loadTokenizer)
+        {
+            if (string.IsNullOrWhiteSpace(languageId) || loadTokenizer is null) return;
+
+            WhenLoaded(() => ApplyTokenizerFactory(languageId, loadTokenizer));
+        }
+
+        /// <summary>
+        /// Sets the comment markers, brackets and auto-closing pairs of a language that already exists.
+        /// Like <see cref="SetTokenizer(string, object)"/>, this is for adjusting a built-in language;
+        /// a language of your own carries its configuration on its <see cref="LanguageDefinition"/>.
+        /// </summary>
+        public static void SetLanguageConfiguration(string languageId, object configuration)
+        {
+            if (string.IsNullOrWhiteSpace(languageId) || configuration is null) return;
+
+            WhenLoaded(() => MonacoApi.languages.setLanguageConfiguration(languageId, configuration));
+        }
+
+        /// <summary>
+        /// The same, applied the first time a document uses the language, from a configuration fetched
+        /// then rather than at start-up.
+        /// </summary>
+        public static void SetLanguageConfiguration(string languageId, Func<Task<object>> loadConfiguration)
+        {
+            if (string.IsNullOrWhiteSpace(languageId) || loadConfiguration is null) return;
+
+            WhenLoaded(() => ApplyConfigurationFactory(languageId, loadConfiguration));
         }
 
         /// <summary>Every language id Monaco currently knows about.</summary>

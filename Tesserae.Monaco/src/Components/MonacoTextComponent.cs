@@ -211,15 +211,30 @@ namespace Tesserae.Monaco
             return SetLanguage(language?.Id);
         }
 
-        /// <summary>Picks the language from a file extension, if Monaco knows one for it.</summary>
+        /// <summary>
+        /// Picks the language from a file extension, if Monaco knows one for it.
+        ///
+        /// Deferred when Monaco has not loaded yet - the registry it resolves against does not exist
+        /// until then, and a component is usually configured well before it is mounted, so answering
+        /// "no such extension" there would silently leave every such editor in plain text.
+        /// </summary>
         public T SetLanguageByExtension(string extension)
         {
-            if (MonacoEditor.TryGetLanguageIdForExtension(extension, out var languageId))
+            if (MonacoEditor.IsLoaded)
             {
-                SetLanguage(languageId);
+                Resolve();
+            }
+            else
+            {
+                MonacoEditor.WhenLoaded(Resolve);
             }
 
             return Self;
+
+            void Resolve()
+            {
+                if (MonacoEditor.TryGetLanguageIdForExtension(extension, out var languageId)) SetLanguage(languageId);
+            }
         }
 
         /// <summary>The document being shown, or null before mount.</summary>
@@ -719,6 +734,19 @@ namespace Tesserae.Monaco
 
         /// <summary>Opens the quick-suggest widget, as Ctrl+Space would.</summary>
         public bool ShowSuggestions() => RunAction("editor.action.triggerSuggest");
+
+        /// <summary>
+        /// Closes Monaco's transient over-the-caret message - "No definition found for 'x'" and its
+        /// siblings. See <see cref="EditorSurface.CloseMessage"/> for when that is the right thing to
+        /// do, and why it has to happen a turn after the provider answered.
+        /// </summary>
+        public T CloseMessage() => Live(s => s.CloseMessage());
+
+        /// <summary>
+        /// Opens the suggest widget's documentation pane and leaves it open. Worth it when the
+        /// completions carry real documentation; it makes the widget considerably taller otherwise.
+        /// </summary>
+        public T ShowSuggestDetails(bool visible = true) => Configure(s => s.ShowSuggestDetails(visible));
 
         #endregion
 

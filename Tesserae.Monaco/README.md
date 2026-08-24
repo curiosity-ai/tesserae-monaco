@@ -109,6 +109,7 @@ one of these is a delegate you supply.
 | Annotations | `OnInlayHints`, `OnCodeLenses`, `OnFoldingRanges`, `OnSelectionRanges`, `OnDocumentLinks`, `OnColors`, `OnSemanticTokens`, `OnLinkedEditing` |
 | Diagnostics | `ValidateAsYouType`, `Validate` (plus the shared marker members) |
 | Lifecycle | `OnChanged`, `OnBeforeCreate` |
+| Suggest UI | `ShowSuggestDetails()`, `CloseMessage()` |
 
 `OnCompletion`, `OnHover` and the navigation providers hand you a `CodeContext` (the full text, the
 text up to the caret, the caret `Offset`, the `Position`, and the `Word`/`WordRange` under the cursor)
@@ -136,6 +137,17 @@ var editor = MonacoEditor.Editor()
 `ValidateAsYouType` clears the squiggles on each keystroke and only calls the validator after a second
 of quiet, then discards the result if the text moved on while it was in flight — so a server-backed
 validator is neither hammered nor able to squiggle stale code.
+
+`OnResolveCompletion` takes either a synchronous delegate or one returning a `Task`; the async
+overload is the one a server-backed host wants, since Monaco calls it for the *highlighted* item only.
+That is what makes a hundred suggestions cost one documentation lookup instead of a hundred.
+`ShowSuggestDetails()` opens the pane that documentation lands in, which Monaco otherwise leaves
+collapsed.
+
+`CloseMessage()` takes down Monaco's transient over-the-caret message — "No definition found for
+'x'". Monaco shows it whenever a definition provider yields nothing, so a provider that *did* resolve
+the symbol and opened its documentation elsewhere needs to close it. Monaco shows the message on the
+turn after the provider settles, so the call belongs in a zero-delay timeout rather than inline.
 
 Two Monaco requirements the wrapper handles rather than passing on: injected text (`before`/`after` on
 a decoration) needs `showIfCollapsed` when its range is empty, which `Decoration.InlineNote` sets; and
@@ -210,6 +222,33 @@ var editor = MonacoEditor.Editor().SetLanguage(mylang);
 Monaco only auto-triggers completion on word characters, so a language whose syntax hinges on
 punctuation needs `CompletionTriggerCharacters` declared or your completion handler is never asked.
 
+**A grammar that should not be in the initial payload** goes on `TokenizerFactory` instead of
+`Tokenizer` — a `Func<Task<object>>` Monaco calls the first time a document uses the language, and
+never if none does. `ConfigurationFactory` is its companion for the comment markers and brackets. Both
+map onto how Monaco defers its own ~90 grammars, so put the fetch *inside* the delegate:
+
+```csharp
+var mylang = new LanguageDefinition
+{
+    Id               = "mylang",
+    TokenizerFactory = async () =>
+    {
+        await Transpose.Require.RequireAsync("assets/js/mylang.js");
+        return JsGlobals.MyLangGrammar;
+    },
+    TokenColors = new[] { new TokenColor("keyword", "c586c0", "bold") }
+};
+```
+
+`TokenColors` stay on the definition rather than in the deferred grammar: they are folded into the
+themes when those are defined, which happens as Monaco loads, well before any factory runs.
+
+`MonacoEditor.SetTokenizer(languageId, …)` is the other direction — it replaces the grammar of a
+language that already exists, one of Monaco's own included. Monaco treats tokenizers as exclusive per
+language, so the last one registered wins; that is how a deliberately coarse built-in grammar gets
+swapped for a finer one. It takes the same two shapes, eager or deferred, and
+`MonacoEditor.SetLanguageConfiguration` does the same for the brackets and comment markers.
+
 ### Theming
 
 The components follow the active Tesserae theme: `MonacoEditor.LIGHT_THEME` / `DARK_THEME` are derived
@@ -254,10 +293,12 @@ after the edit, so polling after typing reads the previous state.
 
 | Member | Purpose |
 |---|---|
-| `MonacoEditor.AssetsPath` | Folder holding `monaco.js` and the `*.worker.js` files (default `assets/js/monaco`, where the build copies them). Set before the first editor is built; the workers follow it automatically. |
+| `MonacoEditor.AssetsPath` | Folder holding `monaco.js`, its `chunks/` and the `*.worker.js` files (default `assets/js/monaco`, where the build copies them). Set before the first editor is built; the chunks and workers follow it automatically. |
 | `MonacoEditor.LoadAsync()` | Loads Monaco (at most once per page). Components await this themselves; call it to warm Monaco up, or before calling `monaco.*` directly. |
 | `MonacoEditor.IsLoaded` | Whether `monaco.*` is safe to call. |
 | `MonacoEditor.GetLanguageIds()` / `TryGetLanguageIdForExtension` | Monaco's language registry. |
+| `MonacoEditor.RegisterLanguage(definition)` | A language of your own, eager or deferred. Idempotent per id. |
+| `MonacoEditor.SetTokenizer(id, …)` / `SetLanguageConfiguration(id, …)` | Replace the grammar or the configuration of a language that already exists, Monaco's own included. |
 | `MonacoEditor.OnRenderedMarkdown` | Called with each markdown block Monaco renders in a hover or completion-details popup — for binding behaviour to links in backend-supplied documentation. |
 | `MonacoEditor.HTML_MARKER` / `EscapeHtml` | Opt a hover or completion detail into raw HTML rendering. Escape untrusted parts first. |
 | `MonacoEditor.WhenLoaded(action)` | Runs `action` once `monaco.*` is safe to touch — immediately if it already is, queued otherwise. The safe way to make any global Monaco call from application code, since most configuration happens while components are being built. |
@@ -284,26 +325,38 @@ text/css"*), spread across 1331 modules. This is what Monaco's own docs mean by 
 (compatible with e.g. webpack)". The alternative — Monaco's prebuilt AMD dist — is deprecated
 upstream and slated for removal, so it is deliberately not used.
 
-esbuild resolves that graph and emits seven files into `assets/js/monaco/`. As much as possible is
-resolved at build time — the module graph, minification, `codicon.ttf` as a data URI, Monaco's
-stylesheet folded into the JS as a self-injecting `<style>`, and the `MonacoEnvironment` worker wiring
-— so the browser only ever fetches plain IIFE scripts:
+esbuild resolves that graph and emits an ES-module entry, the chunks it pulls in, and the five
+language-service workers into `assets/js/monaco/`. As much as possible is resolved at build time —
+minification, `codicon.ttf` as a data URI, Monaco's stylesheets folded into the JS as self-injecting
+`<style>` elements, and the `MonacoEnvironment` worker wiring:
 
 | File | Size | Loaded |
 |---|---|---|
-| `monaco.js` | ~4.8 MB | On first editor (an IIFE exposing `window.monaco`, stylesheet folded in) |
+| `monaco.js` + its shared `chunks/` | ~4.1 MB | On first editor (an ES module publishing `window.monaco`) |
+| `chunks/<language>-*.js` | 1–20 KB each | On demand — the first document in that language |
 | `editor.worker.js` | ~300 KB | On demand — diffs, word-based suggestions |
 | `json.worker.js` | ~430 KB | On demand — a `json` model |
 | `css.worker.js` | ~1 MB | On demand — a `css`/`scss`/`less` model |
 | `html.worker.js` | ~750 KB | On demand — an `html`/`handlebars`/`razor` model |
 | `ts.worker.js` | ~7 MB | On demand — a `typescript`/`javascript` model |
 
-Only `monaco.js` is fetched to show an editor; the language workers are pulled in by Monaco itself the
-first time a model needs one. The bundle installs `MonacoEnvironment` and resolves the worker URLs
-from its own script URL, so pointing `AssetsPath` at another origin moves the workers with it — and in
-that case they load through a same-origin blob shim, since the `Worker` constructor rejects
+Nothing is fetched until a component mounts, so a page with no editor on it pays nothing.
+
+**The entry is a module because that is what keeps the grammars lazy.** Monaco registers each of its
+~90 grammars, and each of its four language-service modes, behind a dynamic `import()`. Bundled to a
+single IIFE those are resolved at build time and inlined, so an app that only shows C# still
+downloads Perl, Pascal and PowerQuery. Bundled to ESM with code splitting they stay real dynamic
+imports, and each language becomes a chunk fetched the first time a document actually uses it —
+walking the whole 29-page sample gallery fetches five of the 92 chunks on disk.
+
+The entry installs `MonacoEnvironment` and resolves the worker and chunk URLs from its own
+`import.meta.url`, so pointing `AssetsPath` at another origin moves them all with it — and in that
+case the workers load through a same-origin blob shim, since the `Worker` constructor rejects
 cross-origin scripts. Set your own `window.MonacoEnvironment` before the first editor if you want a
 different worker strategy.
+
+Serve `assets/js/monaco/` as static files with their real paths intact: the chunk names are baked
+into the entry's `import` statements, so a host that renames or flattens them breaks the lazy loads.
 
 ## License
 

@@ -49,6 +49,12 @@ namespace Tesserae.Monaco
         public string      wrappingIndent;
         public bool        scrollBeyondLastLine;
 
+        /// <summary>How many columns past the longest line the editor can scroll.</summary>
+        public double      scrollBeyondLastColumn;
+
+        /// <summary>Automatic indentation: <c>"none"</c>, <c>"keep"</c>, <c>"brackets"</c>, <c>"advanced"</c> or <c>"full"</c>.</summary>
+        public string      autoIndent;
+
         public string      cursorStyle;
         public string      cursorBlinking;
         public bool        smoothScrolling;
@@ -76,6 +82,16 @@ namespace Tesserae.Monaco
         public bool        quickSuggestions;
 
         public double      quickSuggestionsDelay;
+
+        /// <summary>Whether punctuation and other non-word characters re-open the suggest widget.</summary>
+        public bool        suggestOnTriggerCharacters;
+
+        /// <summary>
+        /// Suggestions drawn from the words already in the document: <c>"off"</c>, <c>"currentDocument"</c>,
+        /// <c>"matchingDocuments"</c> or <c>"allDocuments"</c>. Turn it off for a language whose completions
+        /// come from a backend, or the two lists interleave.
+        /// </summary>
+        public string      wordBasedSuggestions;
 
         public MinimapOptions                 minimap;
         public StickyScrollOptions            stickyScroll;
@@ -346,6 +362,18 @@ namespace Tesserae.Monaco
         public string[] filenames;
         public string[] mimetypes;
         public string   firstLine;
+    }
+
+    /// <summary>
+    /// What <c>monaco.languages.registerTokensProviderFactory</c> takes: an object with a single
+    /// <c>create</c> that Monaco calls the first time a document uses the language. It may hand back
+    /// the Monarch grammar directly or a promise of one, which is what makes a grammar that lives in
+    /// its own script file loadable on demand.
+    /// </summary>
+    [ObjectLiteral]
+    public class TokensProviderFactory
+    {
+        public Func<object> create;
     }
 
     /// <summary>The pair of models a diff editor compares, as passed to <c>diffEditor.setModel</c>.</summary>

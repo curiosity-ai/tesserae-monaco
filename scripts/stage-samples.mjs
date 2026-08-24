@@ -12,7 +12,7 @@
  *
  * Deliberately not rewritten: nothing needs a <base> or an absolute-path fixup for the
  * `/tesserae-monaco/` sub-path Pages serves from. Every reference in index.html is relative,
- * and the Monaco bundle resolves its workers from `document.currentScript.src`.
+ * and the Monaco entry resolves its chunks and workers from its own `import.meta.url`.
  *
  * Usage: node scripts/stage-samples.mjs [source-dir] [dest-dir]
  * Cross-platform, no dependencies. Run after `dotnet build ... -c Release`.

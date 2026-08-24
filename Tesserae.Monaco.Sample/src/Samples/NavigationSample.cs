@@ -12,6 +12,10 @@ namespace Tesserae.Monaco.Sample
     {
         private readonly IComponent _content;
 
+        // The definition provider is a static-shaped callback, so the status line it writes to has to
+        // be reachable from one. Rebuilt with the page, like everything else here.
+        private static TextBlock _status;
+
         public NavigationSample()
         {
             var editor = MonacoEditor.Editor()
@@ -47,6 +51,16 @@ namespace Tesserae.Monaco.Sample
             editor.OnDefinition(context =>
             {
                 if (context.Word is null) return Task.FromResult<CodeLocation[]>(null);
+
+                // A symbol this document does not declare, but that the host still knows something
+                // about - a framework type, in a real host. Monaco has nowhere to jump to, so the
+                // answer is null and the documentation opens somewhere of ours instead.
+                if (context.Word == "Console")
+                {
+                    ShowExternalDocumentation(editor, context.Word);
+
+                    return Task.FromResult<CodeLocation[]>(null);
+                }
 
                 var hits = findWord(context.Text, context.Word);
 
@@ -130,6 +144,8 @@ namespace Tesserae.Monaco.Sample
 
             var status = TextBlock("").Small().Secondary();
 
+            _status = status;
+
             _content = SectionStack().Secondary()
                .SampleTitle(typeof(NavigationSample), UIcons.LocationCrosshairs, "Definitions, references, rename and the outline")
                .FlatSection(VStack().Children(
@@ -139,11 +155,12 @@ namespace Tesserae.Monaco.Sample
                .FlatSection(VStack().Children(
                     Card(VStack().WS().Children(
                         TextBlock("Rename returns edits, not a new document: Monaco applies them as one undoable step and keeps every caret and decoration tracked through it. Returning the whole text would throw the user's undo history away."),
+                        TextBlock("A definition provider that answers by opening documentation of its own - a framework symbol with no source to jump to - should follow the null it returns with .CloseMessage(). Monaco shows \"No definition found\" whenever a provider yields nothing, and there the message is simply wrong; it appears on the turn after the provider settles, so it has to be closed from a zero-delay timeout rather than inline.").MT(8),
                         TextBlock("These commands are registered by Monaco as keybinding rules rather than editor actions, so getAction cannot see them - .GoToDefinition(), .ShowReferences(), .StartRename() and .ShowOutline() go through trigger instead. That is also why .RunAction(\"editor.action.revealDefinition\") returns false while the command itself works.").MT(8))).SetTitle("Best Practices")))
                .FlatSection(VStack().Children(
                     Card(VStack().WS().Children(
                         SampleSubTitle("Try it"),
-                        TextBlock("Put the cursor on Twice and the other occurrences highlight on their own. The buttons run the same commands the keyboard does: F12, Shift+F12, Ctrl+Shift+O and F2."),
+                        TextBlock("Put the cursor on Twice and the other occurrences highlight on their own. The buttons run the same commands the keyboard does: F12, Shift+F12, Ctrl+Shift+O and F2. Console is the out-of-band case - no declaration to jump to, so the provider answers by writing to the line below and takes Monaco's \"No definition found\" message back down."),
                         editor.WS().H(240.px()).MT(8),
                         HStack().WS().Wrap().Gap(8.px()).PT(8).AlignItemsCenter().Children(
                             Button("Go to definition").OnClick(() =>
@@ -159,6 +176,12 @@ namespace Tesserae.Monaco.Sample
                                 editor.Focus();
                                 editor.ShowReferences();
                                 status.Text = "opened the references peek";
+                            }),
+                            Button("Definition of Console").Tooltip("A symbol with no declaration in this document").OnClick(() =>
+                            {
+                                editor.SetPosition(new Position { lineNumber = 12, column = 3 });
+                                editor.Focus();
+                                editor.GoToDefinition();
                             }),
                             Button("Outline").OnClick(() =>
                             {
@@ -177,6 +200,22 @@ namespace Tesserae.Monaco.Sample
                         SampleHint("Rename edits every occurrence at once, and Ctrl+Z undoes all of them together.")
                     )).SetTitle("Usage")))
                .SeeAlso(typeof(CompletionAndHoverSample), typeof(ActionsAndCommandsSample), typeof(InlayHintsAndLensesSample));
+        }
+
+        /// <summary>
+        /// Answers a definition request out-of-band, and takes Monaco's "No definition found" message
+        /// back down.
+        ///
+        /// Monaco shows that message whenever a definition provider yields nothing - which is right
+        /// when the symbol really is unknown, and wrong here, where the request was answered by
+        /// opening documentation elsewhere. It is shown on the turn after the provider settles, so
+        /// closing it has to wait for that turn: a zero delay is the earliest that works.
+        /// </summary>
+        private static void ShowExternalDocumentation(CodeEditor editor, string word)
+        {
+            _status.Text = $"opened the documentation for {word} - no in-editor declaration to jump to";
+
+            window.setTimeout(_ => editor.CloseMessage(), 0);
         }
 
         public HTMLElement Render() => _content.Render();

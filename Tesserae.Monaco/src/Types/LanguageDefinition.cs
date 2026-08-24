@@ -1,4 +1,6 @@
+using System;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using Transpose;
 
 namespace Tesserae.Monaco
@@ -78,6 +80,17 @@ namespace Tesserae.Monaco
         public object Tokenizer { get; set; }
 
         /// <summary>
+        /// The same thing, fetched only once a document actually uses the language - for a grammar
+        /// that lives in its own script file rather than in C#. Monaco registers all ~90 of its own
+        /// grammars this way, and this is the hook it does it through
+        /// (<c>registerTokensProviderFactory</c>).
+        ///
+        /// Set this instead of <see cref="Tokenizer"/>; when both are given the eager one wins, since
+        /// there is nothing to wait for. The task is awaited once and its result cached by Monaco.
+        /// </summary>
+        public Func<Task<object>> TokenizerFactory { get; set; }
+
+        /// <summary>
         /// Monaco's <c>LanguageConfiguration</c> as a raw object (comment markers, brackets, auto-closing
         /// pairs). Optional; when null Monaco applies no bracket matching or comment toggling.
         ///
@@ -92,6 +105,14 @@ namespace Tesserae.Monaco
         /// <see cref="Configuration"/> unless you need something it doesn't express.
         /// </summary>
         public LanguageConfiguration Config { get; set; }
+
+        /// <summary>
+        /// The language configuration fetched on demand, applied the first time a document uses the
+        /// language. The companion to <see cref="TokenizerFactory"/> for a grammar file that carries
+        /// its configuration alongside its tokenizer; use it when both come from the same script, so
+        /// neither is fetched until the language is actually shown.
+        /// </summary>
+        public Func<Task<object>> ConfigurationFactory { get; set; }
 
         /// <summary>
         /// Syntax colours for the tokens the <see cref="Tokenizer"/> emits. Applied on top of the

@@ -32,17 +32,39 @@ namespace Tesserae.Monaco.Sample
 
                 foreach (var symbol in _symbols)
                 {
+                    // No documentation here on purpose: it is filled in below, once the user actually
+                    // highlights the item.
                     items.Add(new CompletionItem
                     {
-                        label         = symbol.Key,
-                        kind          = CompletionItemKind.Method,
-                        detail        = symbol.Value,
-                        documentation = new MarkdownString { value = symbol.Value, isTrusted = true }
+                        label  = symbol.Key,
+                        kind   = CompletionItemKind.Method,
+                        detail = symbol.Value
                     });
                 }
 
                 return Task.FromResult(items.ToArray());
             });
+
+            // Monaco resolves only the highlighted item, so this is where documentation that costs a
+            // round-trip belongs. The overload taking a Task is the one a server-backed host wants;
+            // Monaco fills the details pane in when it settles.
+            editor.OnResolveCompletion(async (item, token) =>
+            {
+                if (item.documentation is object) return item;
+
+                await Task.Delay(150);
+
+                if (_symbols.TryGetValue(item.label, out var documentation))
+                {
+                    item.documentation = new MarkdownString { value = $"**{item.label}**\n\n{documentation}", isTrusted = true };
+                }
+
+                return item;
+            });
+
+            // The documentation pane is collapsed until the user asks for it; these completions are
+            // worth showing it for.
+            editor.ShowSuggestDetails();
 
             editor.OnHover(context =>
             {
@@ -64,11 +86,12 @@ namespace Tesserae.Monaco.Sample
                .FlatSection(VStack().Children(
                     Card(VStack().WS().Children(
                         TextBlock("Providers are registered with Monaco per language, not per editor, so each callback is gated on its own model - two csharp editors on one page never answer each other's requests, and every registration is disposed when its editor unmounts."),
+                        TextBlock("Anything expensive belongs in .OnResolveCompletion(...) rather than in the list: Monaco calls it for the highlighted item only, so a hundred suggestions cost one lookup instead of a hundred. It takes a Task, which is the point - the round-trip is what made deferring it worth doing. .ShowSuggestDetails() then opens the pane it fills, which is otherwise collapsed until the user presses Ctrl+Space a second time.").MT(8),
                         TextBlock("Hover honours Monaco's cancellation token: Monaco cancels a hover as soon as the pointer moves, and a late answer would flash a stale tooltip over the wrong symbol. Keep your own provider fast, and let a slow backend be cancelled rather than queued.").MT(8))).SetTitle("Best Practices")))
                .FlatSection(VStack().Children(
                     Card(VStack().WS().Children(
                         SampleSubTitle("Try it"),
-                        TextBlock("Press Ctrl+Space for the suggest list and accept an item - it inserts. Hover the word Greet for its documentation."),
+                        TextBlock("Press Ctrl+Space for the suggest list and accept an item - it inserts. The documentation beside it arrives a moment later, from the resolve callback. Hover the word Greet for its own documentation."),
                         editor.WS().H(200.px()).MT(8),
                         SampleHint("The suggestions are Greet, Greeter, Console and WriteLine; anything else has no hover.")
                     )).SetTitle("Usage")))

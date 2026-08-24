@@ -54,6 +54,68 @@ namespace Tesserae.Monaco
 
         private static readonly Action NOTHING_TO_DISPOSE = () => { };
 
+        #region Completion
+
+        /// <summary>
+        /// Registers the suggest list and, optionally, the per-item resolve that fills its
+        /// documentation in on demand. Both are handed over as Monaco's own shapes, since a caller
+        /// that wants the typed form has already been through <see cref="BuildCompletionListAsync"/>.
+        /// </summary>
+        public void RegisterCompletion(
+            Func<ITextModel, Position, IPromise>              provideCompletions,
+            Func<CompletionItem, ICancellationToken, object>  resolveCompletion = null,
+            string[]                                          triggerCharacters = null)
+        {
+            if (provideCompletions is null && resolveCompletion is null) return;
+
+            Keep(MonacoApi.languages.registerCompletionItemProvider(_language, new CompletionItemProvider
+            {
+                triggerCharacters = triggerCharacters,
+
+                // Monaco asks every provider registered for the language; answering only for our own
+                // model is what keeps two editors on the same language independent.
+                provideCompletionItems = (model, position) => OwnsModel(model) ? provideCompletions?.Invoke(model, position) : null,
+
+                resolveCompletionItem = (item, token) => resolveCompletion?.Invoke(item, token) ?? item
+            }));
+        }
+
+        /// <summary>
+        /// Turns a typed completion handler's answer into the <c>CompletionList</c> Monaco expects,
+        /// filling in the two members Monaco treats as required and throws from inside the suggest
+        /// widget without: <c>insertText</c> defaults to the label, and <c>range</c> to the word under
+        /// the caret.
+        /// </summary>
+        internal static async Task<object> BuildCompletionListAsync(Func<CodeContext, Task<CompletionItem[]>> handler, ITextModel model, Position position)
+        {
+            var context = new CodeContext(model, position);
+            var items   = await handler(context);
+
+            if (items is null) return new CompletionList { suggestions = new CompletionItem[0] };
+
+            // Replace the word being typed; with the caret off a word, insert at the caret.
+            var range = context.WordRange ?? new TextRange
+            {
+                startLineNumber = context.Position.lineNumber,
+                endLineNumber   = context.Position.lineNumber,
+                startColumn     = context.Position.column,
+                endColumn       = context.Position.column
+            };
+
+            foreach (var item in items)
+            {
+                if (item is null) continue;
+
+                if (string.IsNullOrEmpty(item.insertText)) item.insertText = item.label;
+
+                if (item.range == null) item.range = range;
+            }
+
+            return new CompletionList { suggestions = items };
+        }
+
+        #endregion
+
         #region Signature help
 
         /// <summary>Parameter hints, shown as the user types an argument list.</summary>

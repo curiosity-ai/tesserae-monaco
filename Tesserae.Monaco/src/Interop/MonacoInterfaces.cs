@@ -66,6 +66,15 @@ namespace Tesserae.Monaco
         /// <summary>The editor action with this id, or null. Only editor actions, not every command.</summary>
         IEditorAction getAction(string id);
 
+        /// <summary>
+        /// One of the editor's contributions by id, or null. Contributions are Monaco's own feature
+        /// controllers - the message bar, the suggest widget, the hover - and everything below the id
+        /// is internal API that has been renamed between releases, so a caller must null-check every
+        /// step. Declared as <see cref="object"/> for that reason: a cast at the one call site that
+        /// wants a contribution is more honest than a typed surface implying stability.
+        /// </summary>
+        object getContribution(string id);
+
         /// <summary>Caret, selections, scroll offset and folding state. Opaque - hand it back unchanged.</summary>
         IViewState saveViewState();
 
@@ -375,6 +384,21 @@ namespace Tesserae.Monaco
         void register(LanguageRegistration language);
         void setMonarchTokensProvider(string languageId, object monarchLanguage);
         void setLanguageConfiguration(string languageId, object configuration);
+
+        /// <summary>
+        /// Registers a tokenizer Monaco only asks for once a document actually uses the language.
+        /// This is how Monaco registers its own ~90 grammars, and registering a second factory for a
+        /// language replaces the first - which is what lets a host swap out a built-in grammar.
+        /// </summary>
+        IJsDisposable registerTokensProviderFactory(string languageId, TokensProviderFactory factory);
+
+        /// <summary>
+        /// Fires the first time a model is associated with the language (or it is encountered while
+        /// tokenizing another), then unsubscribes itself. The companion to
+        /// <see cref="registerTokensProviderFactory"/>: the grammar arrives on demand, and this is
+        /// where its language configuration is applied.
+        /// </summary>
+        IJsDisposable onLanguageEncountered(string languageId, Action handler);
 
         IJsDisposable registerCompletionItemProvider(string languageId, CompletionItemProvider provider);
         IJsDisposable registerHoverProvider(string languageId, HoverProvider provider);

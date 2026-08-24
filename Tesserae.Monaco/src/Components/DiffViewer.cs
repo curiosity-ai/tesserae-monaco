@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using Transpose;
 using Tesserae;
 using static Transpose.Core.dom;
@@ -29,6 +30,14 @@ namespace Tesserae.Monaco
         private Action<DiffEditorOptions> _configureOptions;
         private Action<DiffViewer>     _onRendered;
         private Action                 _onDiffUpdated;
+        private Action                 _onModifiedChanged;
+
+        // Set while the host is writing content, so a programmatic load does not read as a user edit.
+        private bool                   _settingContent;
+
+        // A completion provider for the editable right-hand side, registered against one language id.
+        private string                               _completionLanguage;
+        private Func<ITextModel, Position, IPromise> _onCompletion;
 
         // Recorded so a remount rebuilds with the same options, and so a setter called before mount is
         // not lost - the same mechanism the code editor's typed setters use.
@@ -78,7 +87,16 @@ namespace Tesserae.Monaco
         /// <summary>Sets the right-hand (changed) document.</summary>
         public DiffViewer SetModified(string modified)
         {
-            Modified = modified;
+            _settingContent = true;
+
+            try
+            {
+                Modified = modified;
+            }
+            finally
+            {
+                _settingContent = false;
+            }
 
             return this;
         }
@@ -117,15 +135,28 @@ namespace Tesserae.Monaco
             return SetLanguage(language?.Id);
         }
 
-        /// <summary>Picks the language from a file extension, if Monaco knows one for it.</summary>
+        /// <summary>
+        /// Picks the language from a file extension, if Monaco knows one for it. Deferred until Monaco
+        /// has loaded, since the registry it resolves against does not exist before then - see the note
+        /// on <c>MonacoTextComponent.SetLanguageByExtension</c>.
+        /// </summary>
         public DiffViewer SetLanguageByExtension(string extension)
         {
-            if (MonacoEditor.TryGetLanguageIdForExtension(extension, out var languageId))
+            if (MonacoEditor.IsLoaded)
             {
-                SetLanguage(languageId);
+                Resolve();
+            }
+            else
+            {
+                MonacoEditor.WhenLoaded(Resolve);
             }
 
             return this;
+
+            void Resolve()
+            {
+                if (MonacoEditor.TryGetLanguageIdForExtension(extension, out var languageId)) SetLanguage(languageId);
+            }
         }
 
         /// <summary>
@@ -189,6 +220,59 @@ namespace Tesserae.Monaco
         public DiffViewer Options(Action<DiffEditorOptions> configureOptions)
         {
             _configureOptions = configureOptions;
+
+            return this;
+        }
+
+        /// <summary>
+        /// Suggestions for the editable right-hand side, for one language.
+        ///
+        /// The language is named rather than taken from the current model because Monaco's provider
+        /// registry is keyed by language and a diff whose content switches between languages would
+        /// otherwise need re-registering per document. Answer <c>null</c> from the handler for a
+        /// document this provider has nothing to say about - the built-in services still apply.
+        ///
+        /// Only the modified pane is asked: the callback is gated on the model that side is showing, so
+        /// it never fires for the baseline, nor for another editor on the same language.
+        /// </summary>
+        public DiffViewer OnCompletion(string languageId, Func<CodeContext, Task<CompletionItem[]>> handler)
+        {
+            if (handler is null) return this;
+
+            return OnCompletionRaw(languageId, (model, position) => MonacoEditor.AsPromise(ProviderHost.BuildCompletionListAsync(handler, model, position)));
+        }
+
+        /// <summary>
+        /// The unwrapped form of <see cref="OnCompletion"/>: hand back the <c>Promise</c> of a Monaco
+        /// <c>CompletionList</c> yourself.
+        /// </summary>
+        public DiffViewer OnCompletionRaw(string languageId, Func<ITextModel, Position, IPromise> handler)
+        {
+            _completionLanguage = languageId;
+            _onCompletion       = handler;
+
+            if (_modifiedSide is object) RegisterCompletion();
+
+            return this;
+        }
+
+        private void RegisterCompletion()
+        {
+            if (_onCompletion is null || string.IsNullOrWhiteSpace(_completionLanguage)) return;
+
+            new ProviderHost(Editor.getModifiedEditor(), _completionLanguage, Disposables).RegisterCompletion(_onCompletion);
+        }
+
+        /// <summary>
+        /// Runs on every edit to the right-hand side - the signal that the user has changed the
+        /// proposal in front of them, as opposed to <see cref="OnDiffUpdated"/>, which fires when
+        /// Monaco has finished re-computing the comparison.
+        ///
+        /// Survives a content change: the subscription is re-attached when the models are replaced.
+        /// </summary>
+        public DiffViewer OnModifiedChanged(Action handler)
+        {
+            _onModifiedChanged += handler;
 
             return this;
         }
@@ -450,6 +534,8 @@ namespace Tesserae.Monaco
             // then needs no registration of its own, so the handlers already attached cannot fire twice.
             Disposables.Add(Editor.onDidUpdateDiff(() => _onDiffUpdated?.Invoke()));
 
+            RegisterCompletion();
+
             _onRendered?.Invoke(this);
         }
 
@@ -464,6 +550,15 @@ namespace Tesserae.Monaco
             _modifiedModel = CodeModel.Create(_modified, modified);
 
             Editor.setModel(new DiffEditorModel { original = _originalModel.Native, modified = _modifiedModel.Native });
+
+            // The subscription belongs to the model, not the editor, so it is re-made every time the
+            // pair is replaced - and released with the model it was made on. Content the host writes is
+            // skipped: the handler exists to hear that the *user* changed something, and showing a save
+            // button the moment a document is loaded is exactly the wrong answer.
+            _modifiedModel.OnChanged(_ =>
+            {
+                if (!_settingContent) _onModifiedChanged?.Invoke();
+            });
 
             Layout();
         }
