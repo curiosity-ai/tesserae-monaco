@@ -31,6 +31,31 @@ options, and configuration for Monaco's bundled JSON/TypeScript/CSS/HTML service
 reached through typed `[External]` declarations rather than script strings. See the package
 [README](Tesserae.Monaco/README.md) for the full surface.
 
+An editor's history can also be kept across reloads, in the browser's IndexedDB or wherever else you
+say:
+
+```csharp
+MonacoEditor.Editor()
+    .SetLanguage("csharp")
+    .PersistHistory(new EditorHistoryOptions
+    {
+        Scope      = $"user:{userId}",       // the partition every entry is filed under
+        DocumentId = "src/Program.cs",       // the document within it
+
+        // Optional: IndexedDB in front of your own server, which is where the entries -
+        // each stamped with a UTC timestamp - are mirrored to and read back from on a
+        // second device.
+        Store = MirroredHistoryStore.LocalFirst(new DelegateHistoryStore
+        {
+            Save = entry => Post("/api/history", entry.ToPlainObject())
+        })
+    });
+```
+
+What is kept is the text and Monaco's view state — caret, selections, scroll offset and folding.
+Monaco's undo *stack* is not serialisable and cannot be, so a restored revision is applied as an
+ordinary edit instead, which puts it on the live undo stack.
+
 ## Building
 
 ```bash

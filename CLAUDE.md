@@ -103,7 +103,7 @@ Two build details the workflow does not leave to chance:
   rather than installing twice.
 
 Verified before shipping by staging a Release build into a directory named `tesserae-monaco/` and
-serving its *parent*, which reproduces the sub-path Pages actually serves from — then walking all 28
+serving its *parent*, which reproduces the sub-path Pages actually serves from — then walking all 29
 pages by hash navigation with the console watched. Editors rendered and tokenized, the diff's
 worker-produced decorations arrived, the custom `greet` language coloured its keywords, and no page
 logged an error or a failed request. Serving the staged folder at the root would not have tested
@@ -202,6 +202,93 @@ Two gotchas in the targets file:
 - A `ProjectReference` does not import the referenced project's `buildTransitive` targets, which is
   why `Tesserae.Monaco.Sample.csproj` imports the file by hand. That is deliberate: the sample then
   exercises exactly the copy a real package consumer gets.
+
+## Persisting history: what Monaco actually gives you
+
+`PersistHistory(...)` (`src/History/`) keeps an editor's document across a reload and a closed browser.
+Two things shaped it more than the feature list did.
+
+**Monaco's undo stack is not persistable, and pretending otherwise is the trap here.** It lives in the
+editor's `UndoRedoService` as `IUndoRedoElement` objects holding closures over the model - no public
+accessor, nothing serialisable. What Monaco *does* hand out is `saveViewState()`, whose
+`ICodeEditorViewState` its own typings call "(serializable)": `cursorState`, `viewState` (the scroll
+offset) and `contributionsState` (folding among them). So the persistable history is a log of text
+snapshots plus that view state, which is what `EditorHistoryEntry` is. Restoring one is applied as an
+**edit over the full range**, not `setValue`, so it lands on Monaco's live undo stack and a user can
+undo a restore.
+
+That edit needs `pushUndoStop()` on **both** sides. Measured: without the leading one Monaco merges the
+replacement into the undo element the user's last keystrokes are still building, so a single Ctrl+Z
+undoes the restore *and* the typing before it - which is the exact "undo ate my work" that choosing an
+edit over `setValue` was supposed to prevent. It looks correct in a test that restores into an
+untouched document, and only fails after someone has typed.
+
+**IndexedDB, not `localStorage`.** `sessionStorage` is out immediately - it is emptied when the tab
+closes. `localStorage` survives and is wrong for the rest: it is synchronous, so every snapshot blocks
+the thread Monaco lays out and tokenises on; it caps around 5 MB per origin, which a revision log of a
+real file passes quickly; it stores strings only, so a view state costs a `JSON.stringify` each way;
+and it has no index, so pruning by age means reading every key. The Cache API persists and is
+asynchronous but is a store of HTTP responses keyed by request. File System Access handles are real
+files and cost a user gesture and a permission prompt each - right for "save as", wrong for an autosave
+nobody asked for. IndexedDB is asynchronous, sized against available disk, stores the view state as an
+object through structured clone, and its indexes and cursors make "newest first" and "older than a
+month" bounded rather than full scans. Note that persistent is still not permanent: a user agent may
+evict a whole origin under storage pressure, which is what `MirroredHistoryStore` exists for.
+
+`Transpose.Core` binds the whole IndexedDB surface (`dom.indexedDB`, `IDBDatabase`, `IDBObjectStore`,
+`IDBIndex`, `IDBKeyRange`, `IDBCursorWithValue`), so per "Declare Monaco, not the platform" above
+nothing is declared here for it. Four things that binding does and does not have, each found by
+compiling:
+
+- **`IDBTransactionMode.readonly` needs `@readonly`** - the field is literally named after the C#
+  keyword. It emits `"readonly"`.
+- **A ternary over two of those literal types does not compile.** `IDBCursorDirection.prev` and
+  `.next` are distinct nested types that each convert to `IDBCursorDirection` but not to each other, so
+  one arm needs the cast: `query.NewestFirst ? (IDBCursorDirection)IDBCursorDirection.prev : ...`.
+- **There is no `getAll`/`getAllKeys`** on either the store or the index. Everything reads through a
+  cursor, which is why `ListAsync` applies its limit inside the `onsuccess` callback rather than by
+  advancing past rows - a row the query's timestamp bounds reject must not count towards it.
+- **The store names for a multi-store transaction need `Script.ToArray`**, like anything else a C#
+  array crosses on.
+
+**A cast to an `[ObjectLiteral]` type works on a plain object read back from storage.** This decided the
+whole record design and is worth knowing generally: `(HistoryRecord)value` emits
+`Transpose.cast(value, HistoryRecord)`, which for a `$literal: true` type has no constructor to test
+against and hands the same object straight back. Confirmed by reading the emit and running it. So one
+`[ObjectLiteral]` serves both writing and reading, and the second `[External]` declaration of the same
+shape that the reading side would otherwise need does not exist. A Transpose *class* would not do: its
+prototype makes `structuredClone` refuse the value, which is the same trap `MonacoEditor.ToPlainObject`
+exists for on the Monaco side.
+
+Three smaller decisions, each of which cost a round to get right:
+
+- **Two object stores, not one.** `revisions` holds the text snapshots; `places` holds one overwritten
+  row per document with the caret and scroll. Folding them together would rewrite the whole document
+  every time someone merely scrolled.
+- **The revisions store has no key path and `autoIncrement: true`**, so the primary key is an insertion
+  counter - which is what makes a reverse cursor over the `docKey` index newest-first without a second
+  index on the timestamp.
+- **`docKey` is length-prefixed** (`"17:gallery:demo-usersamples/history.cs"`) rather than joined by a
+  separator, so there is no character to reserve or escape and no scope/document pair can collide with
+  another.
+
+**Read everything off the editor before the first `await`.** `Detach` starts the flush and then drops
+the surface, so an `async` body only sees a live editor up to its first `await`. This bit twice: first
+by reading the place inside the second write, then — after that was "fixed" — by passing
+`CapturePlace()` as an *argument* to it, which is evaluated where it is written, i.e. still after the
+await. Both readings have to be locals taken before either write. The symptom is subtle: the caret
+still came back, because an earlier debounced save had written one, just not the one the user left at.
+
+**The debounce needs `visibilitychange`.** A snapshot fires after typing stops, so the last keystrokes
+before a tab closes exist only because the recorder also flushes when the page is hidden. That event
+rather than `beforeunload`, which a mobile browser switched away from may never deliver.
+
+Verified in a browser, Debug and Release: typing then reloading restores the text and the caret to the
+same line and column; the flush on hide saves an edit made well inside the debounce; restoring on mount
+adds no revision of its own; navigating away and back keeps the text; undo after a restore reaches back
+past it; the stored record carries the documented field names with `viewState` as a real object;
+querying a second scope's key returns nothing; and pruning 30 rows to 20 keeps the newest 20, pruning
+by a 5-second age keeps exactly the 4 inside it, and a delete empties the document.
 
 ## No language intelligence
 
@@ -431,7 +518,7 @@ There are 29 pages in four groups: **Editors** (the components themselves, plus 
 completion, formatting, diagnostics, code actions, navigation, inlay hints and lenses, folding, links
 and colours, semantic tokens, a custom language, deferred grammars, and Monaco's bundled workers),
 **Decorations and widgets**, and **Runtime and hosting** (options, events, actions and commands,
-several documents, themes, a modal, remount). The sidebar sorts groups alphabetically and pages by
+several documents, themes, a modal, remount, persisted history). The sidebar sorts groups alphabetically and pages by
 their `Order`.
 
 Two consequences of a page being rebuilt on every visit, both of which cost a debugging round:
