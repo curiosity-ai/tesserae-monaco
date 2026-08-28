@@ -146,9 +146,11 @@ Nothing outstanding. The one entry that lived here is now fixed:
       modal keyframes no longer start at a zero scale. Measurements in [CLAUDE.md](CLAUDE.md).
 
 The Tesserae blocker that stopped the sample rendering while this was first built is **resolved
-upstream**: the pin is now **2026.8.69584**, which is not built as chunked lazy modules, so the
-verification above ran against the repo's own pins rather than a throwaway worktree. That pin is load
-bearing - see [CLAUDE.md](CLAUDE.md) for why 69630 and later render a blank page.
+upstream**, and the pin is no longer load bearing. It read 2026.8.69584 when that was written, on the
+grounds that 69630 and later came up blank; it has since moved twice and is now **2026.8.70157**,
+well past that threshold, with the sample rendering normally - the landing page and an editor page
+were both checked in Chromium against 69740 and 70157 and are identical (283 nodes, 218 Tesserae
+elements, two Monaco editors, no console errors either side). Bump it like any other dependency.
 
 ## Deliberately not done
 
