@@ -360,13 +360,13 @@ What that rules out, each of which was in here once:
   `TaskCompletionSource` is still right where it does more than adapt, which is why the hover provider
   keeps one: it races the provider's answer against Monaco's cancellation.
 
-Two of the platform *are* genuinely missing from the pinned `Transpose.Core` (26.7.3304), and
-`Interop/DomAnimations.cs` is the whole of what is declared here as a result:
-`document.getAnimations()` and the effect's `target`. Everything else the animation wait needs —
-`dom.Animation`, `dom.AnimationEffectReadOnly`, `dom.ComputedTimingProperties` and its `endTime` — comes
-from `Transpose.Core`. Both gaps have since been filled upstream (`Document.getAnimations`,
-`Element.getAnimations`, `dom.KeyframeEffect`), so that file is deleted, not extended, once the pin
-moves.
+Two of the platform used to be genuinely missing from `Transpose.Core` — `document.getAnimations()`
+and the effect's `target` — and `Interop/DomAnimations.cs` declared them here as a result. Both gaps
+were filled upstream (`Document.getAnimations`, `Element.getAnimations`, `dom.KeyframeEffect`), so
+that file is **deleted**: everything the animation wait needs (`dom.Animation`,
+`dom.AnimationEffectReadOnly`, `dom.ComputedTimingProperties` and its `endTime` included) now comes
+from `Transpose.Core`. Nothing platform-level is declared in `src/Interop/` any more — keep it that
+way.
 
 ### Extending the typed interop
 
