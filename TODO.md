@@ -133,6 +133,23 @@ the result more than the list did:
 - [x] `EditorViewState.ToPlainObject` / `FromPlainObject`, which is what makes the view state storable
       and sendable at all.
 
+## Tier 11 - The shell around the editors
+
+- [x] `GoToDefinitionOnClickOnly()`, `OnSave` / `SaveAsync`, `GoToPosition(line, column)` and an
+      `OnResolveCompletion` handed the `CodeContext` - what Mosaik's editors grew since the wrapper was
+      extracted, and what a shell needs from a single editor. Verified: a Ctrl-hover over a word makes no
+      definition request and draws no link, a Ctrl-click and F12 each make one; Ctrl+S runs the save
+      handler and the browser's dialog never opens.
+- [x] `MultiEditor`: tree, tabs, dirty markers and the close prompt, the page-leave guard, Ctrl+S, the
+      open set and the active tab in the URL, the layout in local storage, a filter with an optional
+      server search, Ctrl+P. Composed from Tesserae - which grew middle-click close and neighbour
+      selection on `Pivot`, `Tree.Filter` and `Tree.Item.IconColor` for it. Verified in the gallery:
+      three tabs open with three live editors, the URL carries the open set and the active tab through a
+      reload, a middle click closes, a dirty tab prompts and "close without saving" discards, a content
+      search filters the tree to one folder, a flagged document turns its icon red, a form in a tab
+      reports its own dirty state, Ctrl+P opens by name, and an untitled document joins the tree and the
+      URL when saved.
+
 ---
 
 ## Open

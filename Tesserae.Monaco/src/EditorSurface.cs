@@ -509,6 +509,102 @@ namespace Tesserae.Monaco
         private const string MESSAGE_CONTROLLER_ID = "editor.contrib.messageController";
 
         /// <summary>
+        /// Disposes one of Monaco's own contributions by id, switching the feature it drives off for this
+        /// editor. Returns whether there was one. Contribution ids are Monaco-internal and have moved
+        /// between releases, so a missing one is a no-op rather than a throw - and the direct cast is
+        /// deliberate: an <c>[External]</c> interface has no metadata for <c>as</c> to test against.
+        /// </summary>
+        public bool DisposeContribution(string contributionId)
+        {
+            if (string.IsNullOrWhiteSpace(contributionId)) return false;
+
+            var contribution = (IJsDisposable)_editor.getContribution(contributionId);
+
+            if (contribution is null) return false;
+
+            contribution.dispose();
+
+            return true;
+        }
+
+        /// <summary>
+        /// Makes go-to-definition a click gesture only. Monaco treats it as a hover gesture as well: while
+        /// the trigger modifier is held, its "go to definition at position" contribution resolves the
+        /// definition on every mouse move - to underline the word as a link and preview its source inline -
+        /// and navigates from the click that follows. Resolving asks the host's <c>OnDefinition</c>, which
+        /// for a server-backed provider is a request per pixel, and a provider that answers by opening
+        /// documentation of its own navigates on a mere hover.
+        ///
+        /// With that contribution disposed, hovering keeps the hover provider it always had - tooltips, no
+        /// navigation, no link underline, no source preview - and the click is answered here through the
+        /// same command F12 and the context menu run, so the provider is only ever reached from an explicit
+        /// gesture. A press that started on another line selected text; it is not a click on a symbol and
+        /// is ignored. F12 and Peek Definition are commands rather than this contribution, so both keep
+        /// working.
+        /// </summary>
+        public EditorSurface GoToDefinitionOnClickOnly()
+        {
+            DisposeContribution(GOTO_DEFINITION_AT_POSITION_ID);
+
+            var pressedOnLine = 0;
+
+            OnMouseDown(e => pressedOnLine = IsNavigationClick(e) ? e.target.position.lineNumber : 0);
+
+            OnMouseUp(e =>
+            {
+                var startedOnLine = pressedOnLine;
+
+                pressedOnLine = 0;
+
+                if (!IsNavigationClick(e) || e.target.position.lineNumber != startedOnLine) return;
+
+                _editor.setPosition(e.target.position);
+
+                // Go-to-definition is a keybinding rule, not an editor action, so getAction cannot see it.
+                Trigger(REVEAL_DEFINITION_COMMAND, null, "mouse");
+            });
+
+            return this;
+        }
+
+        private const string GOTO_DEFINITION_AT_POSITION_ID = "editor.contrib.gotodefinitionatposition";
+        private const string REVEAL_DEFINITION_COMMAND      = "editor.action.revealDefinition";
+
+        /// <summary>
+        /// Whether a mouse event is a single left click on a word with the go-to-definition modifier held -
+        /// the modifier Monaco itself would have used, which is Ctrl (Cmd on macOS) unless the host swapped
+        /// it with the multi-cursor one.
+        /// </summary>
+        private bool IsNavigationClick(IEditorMouseEvent e)
+        {
+            if (e is null || e.@event is null || e.target is null) return false;
+            if (!e.@event.leftButton || e.@event.shiftKey || e.@event.detail > 1) return false;
+            if (e.target.type != (int)MouseTargetType.Content || e.target.position is null) return false;
+
+            var multiCursorModifier = GetOption(MonacoApi.editor.EditorOption.multiCursorModifier) as string;
+
+            if (multiCursorModifier != "altKey") return e.@event.altKey;
+
+            return Platform.IsMac ? e.@event.metaKey : e.@event.ctrlKey;
+        }
+
+        /// <summary>
+        /// Puts the caret at a position, scrolls it to the middle of the viewport and focuses the editor -
+        /// what "go to line 12" means to a user, and what a navigation answered outside Monaco (a search
+        /// hit, an error in a list) does to land in the editor.
+        /// </summary>
+        public EditorSurface GoToPosition(Position position)
+        {
+            if (position is null) return this;
+
+            _editor.setPosition(position);
+            _editor.revealPositionInCenter(position);
+            _editor.focus();
+
+            return this;
+        }
+
+        /// <summary>
         /// Opens the documentation pane of the suggest widget and leaves it open, instead of the user
         /// having to press Ctrl+Space a second time for it.
         ///
@@ -561,6 +657,13 @@ namespace Tesserae.Monaco
         /// <c>MonacoApi.editor.EditorOption.lineHeight</c>.
         /// </summary>
         public double GetNumberOption(int optionId) => _editor.getNumberOption(optionId);
+
+        /// <summary>
+        /// Reads any option by its <c>MonacoApi.editor.EditorOption</c> id, whatever its type - the
+        /// string-valued <c>multiCursorModifier</c>, say. Untyped because each id has its own type; cast
+        /// or <c>as</c> the result (both are fine on a string or a number, which have runtime types).
+        /// </summary>
+        public object GetOption(int optionId) => _editor.getOptions().get(optionId);
 
         /// <summary>Re-measures the editor against its container.</summary>
         public EditorSurface Layout()

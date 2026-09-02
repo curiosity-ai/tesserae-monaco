@@ -537,6 +537,15 @@ namespace Tesserae.Monaco
         /// <summary>Moves the caret.</summary>
         public T SetPosition(Position position) => Live(s => s.SetPosition(position));
 
+        /// <summary>
+        /// Puts the caret at a position, scrolls it to the middle of the viewport and focuses the editor -
+        /// landing on a search hit or an error from a list, in one call.
+        /// </summary>
+        public T GoToPosition(Position position) => Live(s => s.GoToPosition(position));
+
+        /// <summary>Puts the caret at a one-based line and column, scrolls it into the middle and focuses the editor.</summary>
+        public T GoToPosition(int lineNumber, int column = 1) => GoToPosition(new Position { lineNumber = lineNumber, column = column });
+
         /// <summary>The primary selection, direction included, or null before mount.</summary>
         public TextSelection GetSelection() => _surface is null ? null : _surface.GetSelection();
 

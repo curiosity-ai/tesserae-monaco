@@ -1,3 +1,4 @@
+using System.Threading.Tasks;
 using static Transpose.Core.dom;
 using static Tesserae.UI;
 using static Tesserae.Monaco.Sample.SamplesHelper;
@@ -40,8 +41,20 @@ namespace Tesserae.Monaco.Sample
                 new[] { KeyMod.With(KeyMod.CtrlCmd | KeyMod.Alt, KeyCode.KeyB) },
                 "1_modification");
 
-            // A command is a keybinding with no menu entry - and it wins over the browser's own.
-            editor.AddCommand(KeyMod.With(KeyMod.CtrlCmd, KeyCode.KeyS), () => log.Text = "Ctrl+S intercepted - the browser's save dialog never opened");
+            // Ctrl+S is the command every editor wants: OnSave binds it, ahead of the browser's own save
+            // dialog, and SaveAsync() runs the same handler from a button.
+            var saves = 0;
+
+            editor.OnSave(() =>
+            {
+                saves++;
+                log.Text = "saved " + saves + (saves == 1 ? " time" : " times") + " - the browser's save dialog never opened";
+
+                return Task.CompletedTask;
+            });
+
+            // A command is a keybinding with no menu entry - here Ctrl+Alt+L, logging the line count.
+            editor.AddCommand(KeyMod.With(KeyMod.CtrlCmd | KeyMod.Alt, KeyCode.KeyL), () => log.Text = "the document has " + editor.LineCount + " lines");
 
             _content = SectionStack().Secondary()
                .SampleTitle(typeof(ActionsAndCommandsSample), UIcons.KeyboardBrightness, "Your own actions, keybindings, and Monaco's by id")
@@ -56,9 +69,10 @@ namespace Tesserae.Monaco.Sample
                .FlatSection(VStack().Children(
                     Card(VStack().WS().Children(
                         SampleSubTitle("Try it"),
-                        TextBlock("Right-click in the editor for \"Wrap in braces\" in the first group of the menu, or press Ctrl+Alt+B. Ctrl+S is intercepted while the editor has focus. The buttons run Monaco's own actions by id."),
+                        TextBlock("Right-click in the editor for \"Wrap in braces\" in the first group of the menu, or press Ctrl+Alt+B. Ctrl+S saves while the editor has focus, Ctrl+Alt+L counts the lines. The buttons run Monaco's own actions by id."),
                         editor.WS().H(160.px()).MT(8),
                         HStack().WS().Wrap().Gap(8.px()).PT(8).Children(
+                            Button("Save").OnClick(() => editor.SaveAsync().FireAndForget()),
                             Button("Comment line").OnClick(() => { editor.Focus(); editor.ToggleLineComment(); }),
                             Button("Find").OnClick(() => { editor.Focus(); editor.ShowFind(); }),
                             Button("Select all").OnClick(() => { editor.Focus(); editor.SelectAll(); }),

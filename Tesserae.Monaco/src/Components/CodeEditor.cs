@@ -48,6 +48,7 @@ namespace Tesserae.Monaco
         private Func<string, Task<string>>                               _onFormat;
         private Func<string, Task<ReadOnlyArray<CodeDiagnostic>>>        _validator;
         private bool                                                     _validateImmediately;
+        private Func<Task>                                               _onSave;
 
         private double _validationTimeoutId;
 
@@ -177,6 +178,28 @@ namespace Tesserae.Monaco
         }
 
         /// <summary>
+        /// The same, handed the document and caret the request was made from as a <see cref="CodeContext"/>.
+        /// Monaco does not repeat them - it passes the item and a token, nothing else - so they are read
+        /// off this editor when the resolve runs, which is what a host wants when the documentation lookup
+        /// needs the surrounding code rather than just the item's label.
+        /// </summary>
+        public CodeEditor OnResolveCompletion(Func<CompletionItem, CodeContext, ICancellationToken, Task<CompletionItem>> onResolveCompletion)
+        {
+            _onResolveCompletion = onResolveCompletion is null
+                ? (Func<CompletionItem, ICancellationToken, object>)null
+                : (item, token) =>
+                {
+                    var editor = Editor;
+
+                    if (editor is null) return item;
+
+                    return MonacoEditor.AsPromise(onResolveCompletion(item, new CodeContext(editor.getModel(), editor.getPosition()), token));
+                };
+
+            return this;
+        }
+
+        /// <summary>
         /// Ghost-text suggestions ahead of the caret, accepted with Tab - what an AI completion looks
         /// like. Distinct from <see cref="OnCompletion"/>, which is a list the user picks from.
         ///
@@ -188,6 +211,61 @@ namespace Tesserae.Monaco
             if (handler is object) _providers.Add(host => host.RegisterInlineCompletions(handler));
 
             return this;
+        }
+
+        #endregion
+
+        #region Navigation gestures
+
+        /// <summary>
+        /// Makes go-to-definition a click gesture only: Ctrl-click (Cmd-click on macOS), F12 and the context
+        /// menu still navigate, but holding the modifier and hovering no longer resolves the definition
+        /// under the pointer on every mouse move. Monaco does that to underline the word as a link and
+        /// preview its source inline, and for a provider that asks a server it is a request per pixel -
+        /// and for one that answers by opening documentation of its own, a navigation on a mere hover.
+        /// Hovering keeps <see cref="OnHover"/>'s tooltips. See <see cref="EditorSurface.GoToDefinitionOnClickOnly"/>.
+        /// </summary>
+        public CodeEditor GoToDefinitionOnClickOnly() => Configure(s => s.GoToDefinitionOnClickOnly());
+
+        #endregion
+
+        #region Saving
+
+        /// <summary>
+        /// Runs <paramref name="onSave"/> on Ctrl+S (Cmd+S on macOS) while the editor has focus, and from
+        /// <see cref="SaveAsync"/>. Monaco takes the key ahead of the browser, so the browser's own save
+        /// dialog never opens - which is what a user with an editor in front of them meant anyway. A save
+        /// that faults is reported to the console rather than left as an unhandled rejection.
+        /// </summary>
+        public CodeEditor OnSave(Func<Task> onSave)
+        {
+            var wasBound = _onSave is object;
+
+            _onSave = onSave;
+
+            if (onSave is object && !wasBound)
+            {
+                AddCommand(KeyMod.With(KeyMod.CtrlCmd, KeyCode.KeyS), () => SaveAsync().FireAndForget());
+            }
+
+            return this;
+        }
+
+        /// <summary>Runs the <see cref="OnSave"/> handler, or completes at once when there is none.</summary>
+        public async Task SaveAsync()
+        {
+            var onSave = _onSave;
+
+            if (onSave is null) return;
+
+            try
+            {
+                await onSave();
+            }
+            catch (Exception e)
+            {
+                console.error("Tesserae.Monaco: the OnSave handler failed", e);
+            }
         }
 
         #endregion

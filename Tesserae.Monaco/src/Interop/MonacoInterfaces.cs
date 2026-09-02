@@ -175,6 +175,22 @@ namespace Tesserae.Monaco
         /// </summary>
         [Name("getOption")]
         double getNumberOption(int optionId);
+
+        /// <summary>
+        /// Every computed option, readable by id whatever its type - the way to an option
+        /// <see cref="getNumberOption"/>'s single declaration cannot claim, e.g. the string-valued
+        /// <c>multiCursorModifier</c>.
+        /// </summary>
+        IComputedEditorOptions getOptions();
+    }
+
+    /// <summary>Monaco's <c>IComputedEditorOptions</c>: the resolved options, read by <see cref="IEditorOptionIds"/> id.</summary>
+    [External]
+    [Convention(Notation.None)]
+    public interface IComputedEditorOptions
+    {
+        /// <summary>The value of an option. Typed <see cref="object"/> because each id has its own type.</summary>
+        object get(int optionId);
     }
 
     /// <summary>Monaco's <c>IStandaloneDiffEditor</c>.</summary>
@@ -374,6 +390,12 @@ namespace Tesserae.Monaco
         int lineNumbers { get; }
         int glyphMargin { get; }
         int minimap { get; }
+
+        /// <summary>
+        /// Which modifier adds a cursor - <c>"altKey"</c>, <c>"ctrlKey"</c> or <c>"metaKey"</c> once
+        /// resolved. Go-to-definition uses the other one, which is why the click gesture reads it.
+        /// </summary>
+        int multiCursorModifier { get; }
     }
 
     /// <summary><c>monaco.languages</c>.</summary>

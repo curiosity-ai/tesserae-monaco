@@ -29,5 +29,11 @@ namespace Tesserae.Monaco
 
         /// <summary>A side-by-side (or inline) diff of two documents.</summary>
         public static DiffViewer Diff() => new DiffViewer();
+
+        /// <summary>
+        /// A tabbed editor shell - a tree of documents, one tab per open one, unsaved-changes handling,
+        /// Ctrl+S, the open set in the URL. Give it documents with <see cref="MultiEditor.Documents"/>.
+        /// </summary>
+        public static MultiEditor MultiEditor() => new MultiEditor();
     }
 }

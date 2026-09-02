@@ -299,6 +299,31 @@ namespace Tesserae.Monaco
     public interface IEditorMouseEvent
     {
         IMouseTarget target { get; }
+
+        /// <summary>The browser event Monaco wrapped - buttons and modifiers. Named <c>event</c> in Monaco.</summary>
+        IMouseEvent @event { get; }
+    }
+
+    /// <summary>
+    /// The browser mouse event as Monaco re-exposes it, matching Monaco's <c>IMouseEvent</c>. Monaco reads
+    /// the button into three booleans rather than passing <c>button</c> through, and <c>detail</c> is the
+    /// browser's click count - 2 on the second click of a double click.
+    /// </summary>
+    [External]
+    [Convention(Notation.None)]
+    public interface IMouseEvent
+    {
+        bool leftButton { get; }
+        bool middleButton { get; }
+        bool rightButton { get; }
+        bool ctrlKey { get; }
+        bool shiftKey { get; }
+        bool altKey { get; }
+        bool metaKey { get; }
+        int  detail { get; }
+
+        void preventDefault();
+        void stopPropagation();
     }
 
     /// <summary>Text was pasted, matching Monaco's <c>IPasteEvent</c>.</summary>

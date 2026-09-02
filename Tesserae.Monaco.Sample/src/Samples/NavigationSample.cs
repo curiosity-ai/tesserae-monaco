@@ -23,6 +23,10 @@ namespace Tesserae.Monaco.Sample
                .SetText(SampleCode.Navigable)
                .OccurrencesHighlight("singleFile");
 
+            // Counts what reaches the definition provider, which is how to see that a Ctrl-hover no longer does.
+            var definitionRequests = 0;
+            var requests           = TextBlock("0 definition requests").Small().Secondary();
+
             // One fake index over the document stands in for a compiler's symbol table: every provider
             // below answers from the same word search.
             Func<string, string, TextRange[]> findWord = (text, word) =>
@@ -48,8 +52,16 @@ namespace Tesserae.Monaco.Sample
                 return ranges.ToArray();
             };
 
+            // Go-to-definition answers Ctrl-click, F12 and the context menu, but not a Ctrl-hover: without
+            // this Monaco would call the provider on every mouse move while the key is held, to underline
+            // the word and preview its source.
+            editor.GoToDefinitionOnClickOnly();
+
             editor.OnDefinition(context =>
             {
+                definitionRequests++;
+                requests.Text = definitionRequests + " definition request" + (definitionRequests == 1 ? "" : "s");
+
                 if (context.Word is null) return Task.FromResult<CodeLocation[]>(null);
 
                 // A symbol this document does not declare, but that the host still knows something
@@ -160,7 +172,7 @@ namespace Tesserae.Monaco.Sample
                .FlatSection(VStack().Children(
                     Card(VStack().WS().Children(
                         SampleSubTitle("Try it"),
-                        TextBlock("Put the cursor on Twice and the other occurrences highlight on their own. The buttons run the same commands the keyboard does: F12, Shift+F12, Ctrl+Shift+O and F2. Console is the out-of-band case - no declaration to jump to, so the provider answers by writing to the line below and takes Monaco's \"No definition found\" message back down."),
+                        TextBlock("Put the cursor on Twice and the other occurrences highlight on their own. The buttons run the same commands the keyboard does: F12, Shift+F12, Ctrl+Shift+O and F2. Console is the out-of-band case - no declaration to jump to, so the provider answers by writing to the line below and takes Monaco's \"No definition found\" message back down. Hold Ctrl and move the mouse over a word: the request counter does not move, because .GoToDefinitionOnClickOnly() left navigation to the click."),
                         editor.WS().H(240.px()).MT(8),
                         HStack().WS().Wrap().Gap(8.px()).PT(8).AlignItemsCenter().Children(
                             Button("Go to definition").OnClick(() =>
@@ -196,7 +208,8 @@ namespace Tesserae.Monaco.Sample
                                 editor.StartRename();
                                 status.Text = "renaming - type a new name";
                             }),
-                            status.PL(8.px())),
+                            status.PL(8.px()),
+                            requests.PL(8.px())),
                         SampleHint("Rename edits every occurrence at once, and Ctrl+Z undoes all of them together.")
                     )).SetTitle("Usage")))
                .SeeAlso(typeof(CompletionAndHoverSample), typeof(ActionsAndCommandsSample), typeof(InlayHintsAndLensesSample));

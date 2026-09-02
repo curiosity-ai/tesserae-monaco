@@ -14,9 +14,10 @@ only** — see "No language intelligence" below.
 
 ```
 Tesserae.Monaco/               the package
-  src/MonacoEditor.cs          static factory: Editor() / Viewer() / Diff()
+  src/MonacoEditor.cs          static factory: Editor() / Viewer() / Diff() / MultiEditor()
   src/MonacoEditor.Runtime.cs  loading, themes, custom languages, the overflow-widget host
   src/Components/              MonacoComponent (lifecycle base), CodeEditor, CodeViewer, DiffViewer
+  src/MultiEditor/             MultiEditor (tree + tabs shell) and EditorDocument - see below
   src/Interop/                 [External] declarations of the `monaco` object - see below
   src/Types/                   [ObjectLiteral] interop types, CodeDiagnostic, CodeContext, LanguageDefinition
   build/bundle-monaco.mjs      esbuild: Monaco's ESM build -> the scripts we ship
@@ -290,6 +291,53 @@ past it; the stored record carries the documented field names with `viewState` a
 querying a second scope's key returns nothing; and pruning 30 rows to 20 keeps the newest 20, pruning
 by a 5-second age keeps exactly the 4 inside it, and a delete empties the document.
 
+## The `MultiEditor` shell
+
+`src/MultiEditor/` is the tabbed shell around the editors - the shape of Mosaik's `manage/build` view,
+made general: a `Tree` of `EditorDocument`s, a `Pivot` with one tab per open one, and the wiring
+between them. It exists because that wiring is what every editor shell re-writes; the rule for what
+goes in it is **compose Tesserae, do not draw**. Everything visible is a Tesserae component - `SplitView`,
+`Tree`, `Pivot`, `SearchBox`, `CommandPalette`, `Dialog`, `TabSaveIndicator`, `UnsavedChangesGuard` -
+and the package ships no stylesheet of its own; a status tint is `Tree.Item.IconColor`, a tab title is
+an `HStack` of `Icon` and `TextBlock`. When something generic is missing from Tesserae, it goes into
+Tesserae: this shell is why `Pivot` closes on a middle click and selects the neighbour on close, and why
+`Tree` has `Filter` and `Item.IconColor`. **The Tesserae pin therefore has to carry those** - the
+`2026.9.70280-local` pin is a placeholder for the Tesserae release that does, to be replaced with the
+published version number once it exists; the branch was verified against a locally packed Tesserae.
+
+Decisions that shape it, each the cheapest way to a behaviour a user notices:
+
+- **Hidden tabs stay mounted.** Tabs are `cached: true`, so the pivot only hides the ones not in
+  front, and the editor in a hidden tab keeps its caret, scroll, undo history and markers for free.
+  The alternative - one editor and `SetModel` per tab, with view state saved and restored - is what
+  the Several Documents page shows and is cheaper per tab, but a tab whose content is a form rather
+  than an editor has no model to swap, and the shell has to host both. Closing a tab is the one-way
+  door: `OpenTab.Dispose` calls `CodeEditor.Dispose()`, since a mere removal would only tear the
+  editor down until its next mount.
+- **Dirty state is a DOM id.** `TabSaveIndicator.TabId("tssm-doc", id)` is put on the tab title, and
+  `MarkDirty`/`MarkClean`/`OnSave` go through it - which is what lets `UnsavedChangesGuard.TrackOpenTabs()`
+  find the dirty tabs for the leave-page prompt without the shell and the guard knowing each other.
+  A code editor's dirty state is `Text != savedText`; a `Content` tab reports its own through
+  `MultiEditor.MarkDirty`.
+- **The URL is read before it is written.** Re-opening the tabs from `?open=` selects each in turn, and
+  each selection rewrites the query string - so `?active=` is read first, and nothing is written until
+  the restore has run (`_urlRestored`). Ids the URL names that the catalog has not delivered yet wait
+  in `_pendingOpen` and open when `Documents(...)` arrives, so a host can mount the shell before its
+  first server round trip. Documents opened outside the catalog (`Open(document)`, a "new file") are
+  not written: nothing could re-open them.
+- **`Documents(...)` rebuilds the tree from scratch** and re-binds open tabs by id. Folder expansion is
+  remembered per path (`_expanded`) and re-applied, which is also what `PersistLayout` stores; opening a
+  folder for a filter match does not touch it, because `Tree.Filter` raises no `OnExpanded`.
+- **Ctrl+S twice over.** Inside Monaco `CodeEditor.OnSave` binds the key ahead of the browser; outside
+  it - focus in a form tab, or nowhere - the shell's own `keydown` listener saves the active document,
+  and skips a press whose target is inside `.monaco-editor` so a save does not run twice.
+
+Verified in the gallery with Playwright, Debug and Release: three tabs open with three live editors,
+the URL carries the open set and the active tab through a reload, a middle click closes, a dirty tab
+prompts and "Close without saving" discards, a content search filters the tree to one folder, a flagged
+document turns its icon red, a form in a tab reports its own dirty state, Ctrl+P opens by name, and an
+untitled document joins the tree and the URL when saved.
+
 ## No language intelligence
 
 The package ships **no** completion, hover or formatting logic — those are delegates the host supplies
@@ -335,7 +383,18 @@ Rules learned wiring that up, each confirmed by reading the emitted JS:
   `MonacoEditor.AsPromise` covers the other direction. Awaiting a `Task` is fine.
 - **Monaco's `resolveCompletionItem` takes `(item, token)`**, not `(model, position, item, token)` —
   the model and position from the original request are not repeated. Typing the provider is what
-  surfaced that; the four-parameter version had been silently receiving the item as its `model`.
+  surfaced that; the four-parameter version had been silently receiving the item as its `model`. The
+  `OnResolveCompletion` overload that hands over a `CodeContext` reads them off the editor at resolve time.
+- **`getOption` is heterogeneous**, and one declaration can only claim one value type, so the string
+  options go through `getOptions().get(id)` (`EditorSurface.GetOption`, typed `object`) rather than a
+  second `[Name("getOption")]`. `GoToDefinitionOnClickOnly` reads `multiCursorModifier` that way.
+- **Go-to-definition is a hover gesture too.** Monaco's `gotodefinitionatposition` contribution resolves
+  the definition on every mouse move while the modifier is held, to draw the link underline and the
+  source preview — a request per pixel for a server-backed provider. `EditorSurface.DisposeContribution`
+  turns a contribution off by id, and `GoToDefinitionOnClickOnly` uses it, then answers the click itself
+  through `trigger("editor.action.revealDefinition")`. The mouse event's buttons and modifiers live on
+  `IEditorMouseEvent.event` (`@event` in C#), which Monaco reads into `leftButton`/`ctrlKey`/... rather
+  than passing `button` through.
 
 ### Declare Monaco, not the platform
 
@@ -519,13 +578,13 @@ Two things this depends on, both easy to break:
   one visit creates one page's editors rather than every page's at startup — and leaving a page unmounts
   them. That is a feature: it exercises the components' disposal on every click.
 
-There are 29 pages in four groups: **Editors** (the components themselves, plus the diff's own API and
+There are 30 pages in four groups: **Editors** (the components themselves, plus the diff's own API and
 `Colorize`), **Language services** (one page per provider — completion, signature help, inline
 completion, formatting, diagnostics, code actions, navigation, inlay hints and lenses, folding, links
 and colours, semantic tokens, a custom language, deferred grammars, and Monaco's bundled workers),
 **Decorations and widgets**, and **Runtime and hosting** (options, events, actions and commands,
-several documents, themes, a modal, remount, persisted history). The sidebar sorts groups alphabetically and pages by
-their `Order`.
+several documents, themes, a modal, remount, persisted history, the multi-editor shell). The sidebar sorts groups
+alphabetically and pages by their `Order`.
 
 Two consequences of a page being rebuilt on every visit, both of which cost a debugging round:
 

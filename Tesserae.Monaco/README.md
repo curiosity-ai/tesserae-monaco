@@ -42,6 +42,7 @@ measure itself against.
 | `MonacoEditor.Editor(autoHeight)` | `CodeEditor` | Editing: completion, hover, formatting, diagnostics |
 | `MonacoEditor.Viewer(autoHeight)` | `CodeViewer` | Displaying code — highlighting and selection, no editing affordances |
 | `MonacoEditor.Diff()` | `DiffViewer` | Comparing two documents, side-by-side or inline |
+| `MonacoEditor.MultiEditor()` | `MultiEditor` | An editor shell: a tree of documents, a tab per open one, unsaved-changes handling, Ctrl+S, the open set in the URL |
 
 Pass `autoHeight: true` to grow the component to fit its content instead of scrolling vertically (the
 parent has to be able to grow too).
@@ -109,6 +110,8 @@ one of these is a delegate you supply.
 | Formatting | `OnFormat(code => Task<string>)`, `OnTypeFormat` |
 | Annotations | `OnInlayHints`, `OnCodeLenses`, `OnFoldingRanges`, `OnSelectionRanges`, `OnDocumentLinks`, `OnColors`, `OnSemanticTokens`, `OnLinkedEditing` |
 | Diagnostics | `ValidateAsYouType`, `Validate` (plus the shared marker members) |
+| Saving | `OnSave(() => Task)` — bound to Ctrl+S (Cmd+S on macOS) ahead of the browser — and `SaveAsync()` |
+| Gestures | `GoToDefinitionOnClickOnly()` |
 | Lifecycle | `OnChanged`, `OnBeforeCreate` |
 | Suggest UI | `ShowSuggestDetails()`, `CloseMessage()` |
 
@@ -141,9 +144,19 @@ validator is neither hammered nor able to squiggle stale code.
 
 `OnResolveCompletion` takes either a synchronous delegate or one returning a `Task`; the async
 overload is the one a server-backed host wants, since Monaco calls it for the *highlighted* item only.
-That is what makes a hundred suggestions cost one documentation lookup instead of a hundred.
+That is what makes a hundred suggestions cost one documentation lookup instead of a hundred. A third
+overload is handed a `CodeContext` as well — Monaco passes the item and a token and nothing else, so
+the document and caret the request came from are read off the editor when the resolve runs.
 `ShowSuggestDetails()` opens the pane that documentation lands in, which Monaco otherwise leaves
 collapsed.
+
+`GoToDefinitionOnClickOnly()` makes go-to-definition a click gesture only. Monaco treats it as a
+hover gesture as well: while Ctrl (Cmd on macOS) is held, it resolves the definition under the pointer
+on every mouse move to underline the word as a link and preview its source — for a server-backed
+`OnDefinition` that is a request per pixel, and for one that answers by opening documentation of its
+own, a navigation on a mere hover. With it on, Ctrl-click, F12 and the context menu still navigate,
+and hovering keeps `OnHover`'s tooltips. `GoToPosition(line, column)` is the other half of navigation
+answered outside Monaco: caret, centred scroll and focus in one call.
 
 `CloseMessage()` takes down Monaco's transient over-the-caret message — "No definition found for
 'x'". Monaco shows it whenever a definition provider yields nothing, so a provider that *did* resolve
@@ -265,6 +278,59 @@ they produce (`scope`, `documentId`, `docKey`, `timestamp`, `text`, `viewState`,
 Note that persistent is not permanent anywhere in the browser: a user agent may evict a whole origin
 under storage pressure, and clearing site data always does. That is the case mirroring to a server
 exists for.
+
+### `MultiEditor`
+
+The shell an application puts around its editors: a `Tree` of documents on the left, a `Pivot` with one
+tab per open document on the right, and the wiring between them — unsaved-changes markers on the tabs
+(`TabSaveIndicator`) and a prompt before a dirty tab closes, the guard against leaving the page
+(`UnsavedChangesGuard`), Ctrl+S, the open set and the active tab mirrored into the URL, the tree's
+folders and the split width remembered across visits, a filter over the tree, and a Ctrl+P quick-open
+palette. It is composed from Tesserae rather than drawn from scratch; what it adds is the wiring, which
+is what every hand-rolled editor shell ends up re-writing.
+
+```csharp
+var shell = MonacoEditor.MultiEditor()
+    .PersistInUrl()                         // ?open=a,b&active=a
+    .PersistLayout("workspace:build")       // folders, scroll, split width in localStorage
+    .Folder("endpoints", UIcons.Globe, new TreeCommand(UIcons.Plus).OnClick(() => NewEndpoint()))
+    .ConfigureEditor((doc, editor) => editor.GoToDefinitionOnClickOnly().OnCompletion(...).ValidateAsYouType(...))
+    .Search(term => Server.SearchAsync(term))   // adds server hits to the title match
+    .Documents(catalog.Select(item => new EditorDocument(item.Id, item.Name)
+    {
+        Folder = "endpoints/" + item.Group,
+        Icon   = UIcons.FileCode,
+        Status = item.CompileError is object ? DocumentStatus.Error : DocumentStatus.None,
+        Load   = () => Server.LoadAsync(item.Id),
+        Save   = text => Server.SaveAsync(item.Id, text)
+    }));
+```
+
+An `EditorDocument` is a description, not an editor: an id, a title, a slash-separated `Folder`, a
+`Language` (or the title's extension decides), `Load` and `Save`, a `Status` with a message, and the
+entries of the row's "..." menu. The editor exists only while its tab is open, and a document opens as
+a `CodeEditor` configured through `ConfigureEditor` — the place a host attaches its providers. A
+document with `Content` shows that instead, so forms and viewers sit in tabs next to code; such a tab
+reports its own dirty state through `MarkDirty(id, dirty)`.
+
+Hidden tabs stay mounted, so switching away and back keeps the caret, the scroll offset, the undo
+history and the markers. `Documents(...)` can be called again whenever the catalog changes — open tabs
+are re-bound by id — and `SetStatus(id, status, message)` flags a document after a compile without
+rebuilding anything. `Open(document)` also takes a document the catalog does not list — a "new file"
+with no identity yet — which is not written to the URL until it joins the catalog.
+
+| Area | Members |
+|---|---|
+| Catalog | `Documents`, `Add`, `Remove`, `Folder`, `SetStatus`, `Catalog`, `GetDocument` |
+| Tabs | `Open(id)`, `Open(document)`, `Select`, `CloseAsync`, `CloseAllAsync`, `OpenDocumentIds`, `ActiveDocumentId`, `ActiveDocument`, `IsOpen`, `EditorOf` |
+| Saving | `SaveAsync(id)`, `SaveAllAsync`, `IsDirty`, `HasUnsavedChanges`, `MarkDirty`, `ConfirmClose` |
+| Configuration | `ConfigureEditor`, `Landing`, `TreeWidth`, `FilterPlaceholder`, `Search`, `QuickOpen`, `PersistInUrl`, `PersistLayout` |
+| Events | `OnActiveChanged`, `OnOpened`, `OnClosed`, `OnSaved`, `OnDirtyChanged` |
+
+The URL round-trip writes the active tab under its own key and reads it back *before* re-opening the
+tabs, since re-opening selects each in turn and would otherwise overwrite it; and a document the URL
+names before the catalog has arrived is opened as soon as `Documents(...)` delivers it, so the shell
+can be mounted before its first server round trip.
 
 ### `DiffViewer`
 
