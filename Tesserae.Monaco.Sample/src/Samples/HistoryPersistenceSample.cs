@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using Tesserae;
 using static Transpose.Core.dom;
@@ -13,6 +14,11 @@ namespace Tesserae.Monaco.Sample
     {
         private const string SCOPE    = "gallery:demo-user";
         private const string DOCUMENT = "samples/history.cs";
+
+        // Who is typing here, stamped onto every revision this page records. A real app would take it
+        // from whoever is signed in; what it demonstrates is that a shared history has to say whose
+        // each revision is, because the stand-in server below contributes other people's.
+        private const string AUTHOR = "Robin Lee";
 
         private const string SEED =
             "// Type in here, then reload the page - the text and the caret come back.\n" +
@@ -29,7 +35,8 @@ namespace Tesserae.Monaco.Sample
             // system in is an object initialiser rather than a class.
             var sent   = new List<string>();
             var log    = VStack().WS();
-            var server = new DelegateHistoryStore
+            var checkpoints = Checkpoints();
+            var server      = new DelegateHistoryStore
             {
                 Save = entry =>
                 {
@@ -40,7 +47,13 @@ namespace Tesserae.Monaco.Sample
                     RenderLog(log, sent);
 
                     return Task.FromResult(true);
-                }
+                },
+
+                // What a server contributes that a browser cannot: revisions made by other people, on
+                // other machines, at times interleaved with this browser's own. They are what the
+                // history list has to label and order - the point of the origin and the author on an
+                // entry.
+                List = query => Task.FromResult(Matching(checkpoints, query))
             };
 
             var revisions = VStack().WS();
@@ -60,6 +73,10 @@ namespace Tesserae.Monaco.Sample
                 // second device needs.
                 Store = MirroredHistoryStore.LocalFirst(server),
 
+                // Stamped onto every revision recorded here, so the list can tell this browser's
+                // drafts from the server's checkpoints by more than where they came from.
+                Author = AUTHOR,
+
                 // Short so the page is worth watching. The default is 1500ms.
                 SnapshotDebounceMs = 600,
                 MaxEntries         = 20,
@@ -78,11 +95,13 @@ namespace Tesserae.Monaco.Sample
                         TextBlock("PersistHistory(...) records the document as it is edited and puts it back the next time the same document is opened. It keeps two things, because they are what Monaco actually hands out serialisably: the text, and the view state - caret, selections, scroll offset and folding."),
                         TextBlock("Monaco's undo stack is not one of them. It lives in the editor's undo service as objects holding closures over the model, with no accessor and nothing to serialise, so no wrapper can round-trip it through storage. A restored revision is therefore applied as an ordinary edit, which puts it on the live undo stack - so undo reaches back past a restore.").MT(8),
                         TextBlock("Everything stored is also browsable: ShowHistory() on the editor - or an EditorHistoryView anywhere you want it rather than in a modal - lists the revisions and diffs the selected one against what the editor holds now, with a Revert that goes through the same undoable edit.").MT(8),
+                        TextBlock("A revision says where it came from and who made it. Origin is Local for what the recorder saved in this browser and Remote for what arrived from outside it, and Author names the person - so the list can order one history that several sources contribute to. This page's stand-in server answers with three checkpoints by other people, spread over the last day, which is why the list below mixes browser and cloud glyphs.").MT(8),
                         TextBlock("It goes into IndexedDB. sessionStorage is emptied when the tab closes; localStorage survives but is synchronous - every write blocks the thread Monaco lays out on - caps out around 5 MB, stores strings only, and has no index to prune by. IndexedDB is asynchronous, sized against available disk, stores the view state as an object, and its cursors make \"newest first\" and \"older than a month\" bounded rather than full scans.").MT(8))).SetTitle("Overview")))
                .FlatSection(VStack().Children(
                     Card(VStack().WS().Children(
                         TextBlock("Scope every entry. Scope is the partition - a user id, a workspace id, or a composite - and DocumentId addresses the file inside it, so one origin holds several users' or projects' histories without them seeing each other. This page uses " + "\"" + SCOPE + "\" and \"" + DOCUMENT + "\"."),
                         TextBlock("Every entry is stamped with a UTC epoch-millisecond timestamp, and Clock is where that comes from. Replace it when a server is the authority on time: a device with a wrong clock otherwise stamps revisions that sort ahead of or behind everything the server knows, and a mirrored history then orders wrongly.").MT(8),
+                        TextBlock("Say who is typing. Author on the options is stamped onto every revision the recorder writes, and a server's own rows carry whoever the server says made them. A history that only ever holds one person's drafts can leave it unset; one that is shared cannot, because a list of revisions from several people has to say whose each one is.").MT(8),
                         TextBlock("Three ways to reach an external system, in increasing order of involvement. OnSaved is told about every revision and leaves the browser as the store. DelegateHistoryStore builds a whole store out of lambdas. MirroredHistoryStore runs both at once - writes to each, reads from the browser and falling back to the server. ShouldRestore is the veto for when the server is also an authority on the document.").MT(8))).SetTitle("Best Practices")))
                .FlatSection(VStack().Children(
                     Card(VStack().WS().Children(
@@ -107,6 +126,69 @@ namespace Tesserae.Monaco.Sample
         }
 
         public HTMLElement Render() => _content.Render();
+
+        /// <summary>
+        /// The revisions the stand-in server answers with: other people's, at times spread across the
+        /// last day, so the list interleaves them with whatever this browser has recorded and the
+        /// relative times exercise every shape they take ("40 min ago", a clock time for today,
+        /// "yesterday 09:12").
+        /// </summary>
+        private static EditorHistoryEntry[] Checkpoints()
+        {
+            var now = EditorHistory.Now();
+
+            return new[]
+            {
+                Checkpoint(now - 40 * MINUTE, "checkpoint", "Alex Kim",
+                    "// Reviewed on the server 40 minutes ago.\n" +
+                    "int Fib(int n) => n < 2 ? n : Fib(n - 1) + Fib(n - 2);\n"),
+
+                Checkpoint(now - 5 * HOUR, "release build", "build-bot",
+                    "// Tagged by the build.\n" +
+                    "int Fib(int n) => n < 2 ? n : Fib(n - 1) + Fib(n - 2);\n\n" +
+                    "int Fact(int n) => n < 2 ? 1 : n * Fact(n - 1);\n"),
+
+                Checkpoint(now - 26 * HOUR, "checkpoint", "Alex Kim",
+                    "// Yesterday's version, before the memo.\n" +
+                    "int Fib(int n) => n < 2 ? n : Fib(n - 1) + Fib(n - 2);\n")
+            };
+        }
+
+        private const double MINUTE = 60d * 1000;
+        private const double HOUR   = 60 * MINUTE;
+
+        private static EditorHistoryEntry Checkpoint(double timestamp, string label, string author, string text)
+        {
+            return new EditorHistoryEntry
+            {
+                Scope      = SCOPE,
+                DocumentId = DOCUMENT,
+                Timestamp  = timestamp,
+                Text       = text,
+                Language   = "csharp",
+                Label      = label,
+                Author     = author,
+
+                // Set here as well as by the mirror: a store that knows its rows are not this
+                // browser's should say so, rather than leaving it to whoever reads them.
+                Origin     = EditorHistoryOrigin.Remote,
+                Id         = "checkpoint-" + (long)timestamp
+            };
+        }
+
+        /// <summary>
+        /// What a server-backed store owes the query it is handed - the document it asks about and no
+        /// more than the limit it asks for. Newest first, as every store answers.
+        /// </summary>
+        private static EditorHistoryEntry[] Matching(EditorHistoryEntry[] entries, EditorHistoryQuery query)
+        {
+            var matches = entries.Where(entry => query is null || string.IsNullOrEmpty(query.DocumentId) || entry.DocumentId == query.DocumentId)
+                                 .OrderByDescending(entry => entry.Timestamp);
+
+            if (query is object && query.Limit > 0) return matches.Take(query.Limit).ToArray();
+
+            return matches.ToArray();
+        }
 
         /// <summary>
         /// The whole of what a host writes to offer the history: one call. The modal fetches the

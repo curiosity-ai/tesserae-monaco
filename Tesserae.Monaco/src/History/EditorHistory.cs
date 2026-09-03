@@ -33,6 +33,15 @@ namespace Tesserae.Monaco
         public IEditorHistoryStore Store { get; set; }
 
         /// <summary>
+        /// Who is typing, as a display name, stamped onto every revision this recorder writes. Worth
+        /// setting as soon as the history is shared with anything - a server, another device, a
+        /// colleague - because a list of revisions from several sources has to say whose each one is.
+        /// Left null the entries carry no author, which is the right answer for a browser-only history
+        /// of one person's own drafts.
+        /// </summary>
+        public string Author { get; set; }
+
+        /// <summary>
         /// How long typing has to stop before a revision is taken, in milliseconds. Long enough that a
         /// burst of typing is one revision rather than fifty; short enough that a tab closed in a hurry
         /// loses a sentence rather than a paragraph.
@@ -111,6 +120,7 @@ namespace Tesserae.Monaco
                 Scope              = Scope,
                 DocumentId         = DocumentId,
                 Store              = Store,
+                Author             = Author,
                 SnapshotDebounceMs = SnapshotDebounceMs,
                 PlaceDebounceMs    = PlaceDebounceMs,
                 MaxEntries         = MaxEntries,
@@ -399,7 +409,13 @@ namespace Tesserae.Monaco
                 ViewState  = CapturePlace(),
                 Language   = model is null ? null : model.Language,
                 VersionId  = model is null ? 0 : model.VersionId,
-                Label      = label
+                Label      = label,
+
+                // Everything this recorder writes was typed here, so it is local by construction. A
+                // list that mixes these with a server's checkpoints is then labelled without the host
+                // being asked to label anything.
+                Origin     = EditorHistoryOrigin.Local,
+                Author     = _options.Author
             };
         }
 

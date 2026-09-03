@@ -290,6 +290,39 @@ Two things it needs from the recorder, which is why they exist on `EditorHistory
 diff's right-hand side, re-read after every revert rather than captured once) and `IsAttached` (whether
 `Restore` has an editor to put a revision into — the Revert button is disabled without one).
 
+**A revision says where it came from and who made it**, because a history fed by one browser is the
+uninteresting case: as soon as a server mirrors it, a list mixes drafts this browser saved with
+checkpoints someone else made, and a reader cannot use it without being told which is which.
+`EditorHistoryEntry.Origin` (`Local` / `Remote` / `Unknown`) and `.Author` carry that, `origin` is
+stored as the *string* `"local"`/`"remote"` so an unknown value reads back as `Unknown` rather than as
+the wrong member, and nothing has to be labelled by hand in the normal arrangement — the recorder
+stamps `Local` on what it writes, and `MirroredHistoryStore` stamps `Remote` on everything it reads
+back from the store behind it, whatever the row itself says (a revision this browser mirrored is,
+from another device, exactly the one that did not happen there).
+
+That is also why `MirroredHistoryStore.ListAsync` **merges** rather than preferring the primary, which
+is the one place the store's "a primary that answers is trusted" rule does not hold: browsing means
+seeing all of it, and two sources interleave in time. It dedupes on the *timestamp*, since the two
+stores key rows differently (an IndexedDB insertion counter against whatever a server uses) and cannot
+be compared by id, while a mirrored revision is the same millisecond on both sides. `GetLatestAsync` is
+untouched — what a reload restores is still the local draft when there is one.
+
+Three things about the row that each took a measurement:
+
+- **Sort over the union, in the view.** Every store answers newest-first on its own, so it is tempting
+  to trust the order; but a `DelegateHistoryStore` is whatever a host wrote, and a merged list has no
+  inherited order at all. `LoadAsync` sorts.
+- **Hashing a name onto 0-359 for its colour does not work.** Two names that land eight degrees apart
+  are one colour rendered inconsistently, not two colours. Measured with the demo's own names:
+  "Alex Kim" and "build-bot" came out seven degrees apart, both green. It picks from a palette of ten
+  mutually distinguishable hues instead, so two people are either clearly different or exactly the
+  same — and the name is written in the pill, which settles the second case. The slot comes from the
+  hash's whole range (`hash * 10 / modulus`), not `hash % 10`: the low digits of an accumulator that
+  small are barely mixed, and the remainder put two of the three demo names in one slot.
+- **Only the pill's background is coloured.** A hue picked to read on white is the one that disappears
+  on a dark surface, and nothing re-renders the row through a theme change — so the text keeps the
+  tag's own themed foreground and the hue is carried by a 25%-alpha wash, which reads on both.
+
 **Read everything off the editor before the first `await`.** `Detach` starts the flush and then drops
 the surface, so an `async` body only sees a live editor up to its first `await`. This bit twice: first
 by reading the place inside the second write, then — after that was "fixed" — by passing

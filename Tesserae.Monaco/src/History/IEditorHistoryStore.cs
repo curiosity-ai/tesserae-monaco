@@ -188,6 +188,14 @@ namespace Tesserae.Monaco
     /// cleared origin pick the document back up from the server instead of opening empty. A primary
     /// that answers is trusted - no merge, no conflict resolution, nothing that would need a rule
     /// about whose clock wins.
+    ///
+    /// <see cref="ListAsync"/> is the exception, and deliberately: browsing a history means seeing all
+    /// of it, and the server's checkpoints and this browser's drafts are interleaved in time rather
+    /// than one being a subset of the other. So a list is both stores' answers merged, newest first,
+    /// with one row per instant - the local copy of a revision that was mirrored wins over the copy
+    /// read back from the server, since it is the same text and the nearer record of it. Restoring
+    /// still reads <see cref="GetLatestAsync"/>, which is unchanged: what a reload puts back is the
+    /// local draft when there is one.
     /// </summary>
     public sealed class MirroredHistoryStore : IEditorHistoryStore
     {
@@ -226,24 +234,60 @@ namespace Tesserae.Monaco
 
         public async Task<EditorHistoryEntry[]> ListAsync(EditorHistoryQuery query)
         {
+            var merged = new List<EditorHistoryEntry>();
+            var seen   = new Dictionary<double, bool>();
+
             if (_primary is object)
             {
-                var local = await _primary.ListAsync(query);
-
-                if (local is object && local.Length > 0) return local;
+                Collect(await _primary.ListAsync(query), EditorHistoryOrigin.Unknown, merged, seen);
             }
 
-            if (_mirror is null) return new EditorHistoryEntry[0];
-
-            try
+            if (_mirror is object)
             {
-                return await _mirror.ListAsync(query) ?? new EditorHistoryEntry[0];
+                try
+                {
+                    // Read from the mirror is remote by definition, whatever the row itself says: a
+                    // revision this browser wrote and mirrored comes back carrying "local", and on
+                    // another device that is exactly the row that did not happen here.
+                    Collect(await _mirror.ListAsync(query), EditorHistoryOrigin.Remote, merged, seen);
+                }
+                catch (Exception exception)
+                {
+                    OnMirrorError?.Invoke(exception);
+                }
             }
-            catch (Exception exception)
-            {
-                OnMirrorError?.Invoke(exception);
 
-                return new EditorHistoryEntry[0];
+            // Newest first, as every store answers on its own. Two sources interleave, so the order
+            // has to be re-established over the union rather than inherited from either half.
+            merged.Sort((left, right) => right.Timestamp.CompareTo(left.Timestamp));
+
+            if (query is object && query.Limit > 0 && merged.Count > query.Limit)
+            {
+                merged.RemoveRange(query.Limit, merged.Count - query.Limit);
+            }
+
+            return merged.ToArray();
+        }
+
+        /// <summary>
+        /// Adds what one store answered, skipping an instant already taken by the other. The timestamp
+        /// is the identity: the two stores key rows differently - IndexedDB by an insertion counter, a
+        /// server by whatever it uses - so their ids cannot be compared, while a mirrored revision is
+        /// the same millisecond on both sides.
+        /// </summary>
+        private static void Collect(EditorHistoryEntry[] entries, EditorHistoryOrigin origin, List<EditorHistoryEntry> into, Dictionary<double, bool> seen)
+        {
+            if (entries is null) return;
+
+            foreach (var entry in entries)
+            {
+                if (entry is null || seen.ContainsKey(entry.Timestamp)) continue;
+
+                seen[entry.Timestamp] = true;
+
+                if (origin != EditorHistoryOrigin.Unknown) entry.Origin = origin;
+
+                into.Add(entry);
             }
         }
 
@@ -260,7 +304,13 @@ namespace Tesserae.Monaco
 
             try
             {
-                return await _mirror.GetLatestAsync(scope, documentId);
+                var remote = await _mirror.GetLatestAsync(scope, documentId);
+
+                // Same reasoning as in ListAsync: whatever the row says, reaching this browser through
+                // the mirror is what makes it remote here.
+                if (remote is object) remote.Origin = EditorHistoryOrigin.Remote;
+
+                return remote;
             }
             catch (Exception exception)
             {
