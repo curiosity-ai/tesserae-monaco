@@ -21,7 +21,11 @@ namespace Tesserae.Monaco.Sample
             var editor = MonacoEditor.Editor()
                .SetLanguage("csharp")
                .SetText(SampleCode.Navigable)
-               .OccurrencesHighlight("singleFile");
+               .OccurrencesHighlight("singleFile")
+
+                // Because the provider below has a side effect - the Console case writes documentation
+                // into the document - and Monaco would otherwise run it on every modifier-hover.
+               .NavigateOnClickOnly();
 
             // Counts what reaches the definition provider, which is how to see that a Ctrl-hover no longer does.
             var definitionRequests = 0;
@@ -168,7 +172,8 @@ namespace Tesserae.Monaco.Sample
                     Card(VStack().WS().Children(
                         TextBlock("Rename returns edits, not a new document: Monaco applies them as one undoable step and keeps every caret and decoration tracked through it. Returning the whole text would throw the user's undo history away."),
                         TextBlock("A definition provider that answers by opening documentation of its own - a framework symbol with no source to jump to - should follow the null it returns with .CloseMessage(). Monaco shows \"No definition found\" whenever a provider yields nothing, and there the message is simply wrong; it appears on the turn after the provider settles, so it has to be closed from a zero-delay timeout rather than inline.").MT(8),
-                        TextBlock("These commands are registered by Monaco as keybinding rules rather than editor actions, so getAction cannot see them - .GoToDefinition(), .ShowReferences(), .StartRename() and .ShowOutline() go through trigger instead. That is also why .RunAction(\"editor.action.revealDefinition\") returns false while the command itself works.").MT(8))).SetTitle("Best Practices")))
+                        TextBlock("These commands are registered by Monaco as keybinding rules rather than editor actions, so getAction cannot see them - .GoToDefinition(), .ShowReferences(), .StartRename() and .ShowOutline() go through trigger instead. That is also why .RunAction(\"editor.action.revealDefinition\") returns false while the command itself works.").MT(8),
+                        TextBlock("Go to Definition is a hover gesture as well as a click one: while ctrl/cmd is held Monaco asks the provider on every mouse move, to underline the word and preview its source. A provider that only reads is fine with that; one that costs a round-trip, or that answers by opening something, runs while the user is merely passing over the code. .NavigateOnClickOnly() drops the contribution behind those hover gestures and answers the click itself, through the same command F12 and the context menu use - which is what this page does, since its Console case writes into the document.").MT(8))).SetTitle("Best Practices")))
                .FlatSection(VStack().Children(
                     Card(VStack().WS().Children(
                         SampleSubTitle("Try it"),

@@ -56,6 +56,10 @@ the result more than the list did:
       already switched Monaco's ghost-text UI on with no way to feed it.
 - [x] Definition, declaration, type definition, implementation, references, document highlights —
       verified: caret jumps to the definition; the references peek reports "References (3)".
+- [x] `NavigateOnClickOnly()` — go-to-definition as a click gesture only, for a provider that costs a
+      round-trip or opens something of its own. Verified on the Navigation page: a ctrl-hover over
+      `Console` does not produce the provider's out-of-band message, a ctrl-click does, a plain click
+      does not, and F12 still jumps.
 - [x] Document symbols and rename — verified: the outline picker lists the symbols; the rename input opens.
 - [x] Inlay hints, code lenses, semantic tokens, folding ranges, selection ranges, document links,
       colours, on-type formatting, linked editing — all verified rendering except on-type formatting and

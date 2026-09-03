@@ -426,6 +426,12 @@ Rules learned wiring that up, each confirmed by reading the emitted JS:
   formatter's edits to its editor worker to be minimised, and posting a typed array fails the whole
   worker message with `DataCloneError`. Use `Script.ToArray` for anything Monaco forwards to a worker;
   arrays that stay on the main thread (markers, completion items, theme rules) are fine as they are.
+- **Two declarations on one type cannot share a `[Name]`, but on two types they can.** `getOption` is
+  heterogeneous - each option id has its own value type - and `IStandaloneCodeEditor.getNumberOption`
+  already claims the name, so a second declaration there would be emitted as `getOption$1` and stop
+  matching Monaco. `IStringOptions` is a separate `[External]` interface declaring the same call for
+  string-valued ids; the direct cast that reaches it emits nothing, so `((IStringOptions)editor)
+  .getOption(id)` is exactly `editor.getOption(id)` in the output.
 - **Never `await` an `IPromise`.** Its awaiter is typed as handing back the resolved values as
   `object[]`, but `Transpose.toPromise` passes a native promise straight through — so the awaited value
   is the single resolved value, `.Length` reads `undefined`, and the result silently vanishes. That is
@@ -603,6 +609,18 @@ These were learned the hard way in Mosaik; don't simplify them away.
   asks for the whole column and overflows it by exactly the height of its siblings. `EditorHistoryView`
   puts it in a growing wrapper for that reason, and gives the wrapper `MinHeight(0)` — a flex item's
   automatic minimum size is its content's, and Monaco's scroll layer is 16.7 million pixels tall.
+- **Go to Definition is a hover gesture too, and that is a trap for a provider with side effects.**
+  While the trigger modifier is held, Monaco's `editor.contrib.gotodefinitionatposition` contribution
+  asks the definition provider on *every mouse move*, to underline the word as a link and preview its
+  source inline. A provider that costs a round-trip, or that answers by opening something, therefore
+  runs while the user is merely passing over the code. `CodeEditor.NavigateOnClickOnly()` disposes that
+  contribution and answers the click itself, through the same `editor.action.revealDefinition` command
+  F12 and the context menu use. Two things it depends on: the go-to-definition modifier is the
+  *complement* of `multiCursorModifier` (multi-cursor on alt, Monaco's default, leaves ctrl/cmd for
+  navigation — getting that backwards makes the click do nothing, which reads as a dead provider), and
+  `getContribution` still returns the instance after it is disposed, so a check for "is it gone" reports
+  the wrong thing. Verified by asserting on the provider's own side effect: a modifier-hover does not
+  produce it, a modifier-click does, a plain click does not, and F12 still jumps.
 - **A diff editor's two models are ours to dispose.** Monaco does not dispose models handed to
   `setModel`, so `DiffViewer` disposes them itself — the inline versions in Mosaik leak one pair per
   render.
