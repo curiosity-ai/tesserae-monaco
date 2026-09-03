@@ -138671,6 +138671,10 @@ body.tss-mobile textarea {
     flex-direction: column;
 }
 
+.tss-tree-item.tss-tree-filtered-out {
+    display: none;
+}
+
 .tss-tree-item-content {
     display: flex;
     align-items: center;
