@@ -72,7 +72,7 @@ configuration (options, events, actions, widgets) is recorded and replayed, and 
 | Content | `Text`, `SetText`, `ApplyEdits`, `PushUndoStop`, `Undo`, `Redo`, `LineCount`, `VersionId`, `GetLineContent`, `GetValueInRange`, `GetOffsetAt`, `GetPositionAt`, `GetWordAt`, `FindMatches`, `Indentation`, `EndOfLine` |
 | Language | `SetLanguage(string)`, `SetLanguage(LanguageDefinition)`, `SetLanguageByExtension` |
 | Models | `Model`, `SetModel`, `SaveViewState`, `RestoreViewState` |
-| History | `PersistHistory(options)`, `PersistHistory(scope, documentId)`, `History` |
+| History | `PersistHistory(options)`, `PersistHistory(scope, documentId)`, `History`, `ShowHistory()` |
 | Selection | `GetPosition`, `SetPosition`, `GetSelection(s)`, `SetSelection(s)`, `GetSelectedText`, `SelectAll` |
 | Scrolling | `RevealLine`, `EnsureLineVisible`, `RevealLineInCenter[IfOutsideViewport]`, `RevealLineNearTop`, `RevealPosition[InCenter]`, `RevealRange…`, `Get/SetScrollTop`, `Get/SetScrollLeft`, `GetScrollHeight`, `GetContentHeight`, `GetContentWidth` |
 | Decorations | `Decorate`, `ClearDecorations`, `GetDecorationRanges`, `CreateDecorations` |
@@ -219,6 +219,31 @@ origin holds several users' or projects' histories without them seeing each othe
 (`"before format"`, a commit id), `ListAsync(limit)` lists what is stored newest first, `Restore(entry)`
 puts one back, `FlushAsync()` writes what the debounce is holding, and `ClearAsync()` forgets the
 document.
+
+#### Browsing what is stored
+
+`editor.ShowHistory()` opens the revisions in a modal: the list on the left, a diff of the selected
+revision against what the editor holds *now* on the right, and a **Revert** that puts one back through
+the same undoable edit `Restore` uses.
+
+```csharp
+Button("History").SetIcon(UIcons.ClockFuturePast).OnClick(() => editor.ShowHistory());
+```
+
+It returns the `EditorHistoryModal`, or null when the editor has no history — so a host can hide the
+button rather than open an empty overlay. `OnRestored(...)` is told which revision was put back, and
+`Modal` is the Tesserae modal itself if it should be sized or hooked differently.
+
+The same surface without the overlay is `new EditorHistoryView(editor.History)` — an `IComponent`, so
+it goes in a panel, a split view or a page of its own. It carries the search box that filters revisions
+by their **content**, the side-by-side/inline toggle, change navigation, and the "contents are
+identical" notice for a revision that matches the editor.
+
+It is composed from Tesserae rather than drawn: `SearchableList` is the list and its search box, a
+`Card` over a `ListItemText` is a row, a `Banner` is the notice, a `SplitView` is the two panes and
+their draggable divider, and the comparison is this package's own `DiffViewer`. So it ships no
+stylesheet — the selected row's colours are `Theme` variables, and the surface follows the app's light
+and dark themes as they change.
 
 #### Hooking an external system in
 

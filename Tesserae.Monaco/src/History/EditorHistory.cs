@@ -180,6 +180,29 @@ namespace Tesserae.Monaco
         /// <summary>Whether this history has enough to do anything: a store and a scope.</summary>
         public bool IsConfigured => _store is object && !string.IsNullOrWhiteSpace(_options.Scope);
 
+        /// <summary>
+        /// Whether an editor is attached, which is what <see cref="Restore"/> needs somewhere to put a
+        /// revision - false before the first mount and again after a teardown.
+        /// </summary>
+        public bool IsAttached => _surface is object;
+
+        /// <summary>
+        /// The document as the editor holds it <b>now</b>, or null when none is attached - the
+        /// right-hand side of any comparison against a stored revision.
+        /// </summary>
+        public string CurrentText => _surface is null ? null : _surface.Text;
+
+        /// <summary>The Monaco language id the attached editor is showing, or null when none is.</summary>
+        public string CurrentLanguage
+        {
+            get
+            {
+                var model = _surface is null ? null : _surface.Model;
+
+                return model is null ? null : model.Language;
+            }
+        }
+
         #region Clock
 
         /// <summary>The browser's clock in milliseconds since the Unix epoch, UTC.</summary>

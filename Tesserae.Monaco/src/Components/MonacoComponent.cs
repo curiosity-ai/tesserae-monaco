@@ -228,7 +228,7 @@ namespace Tesserae.Monaco
         /// Re-measures the editor against its container. Called automatically when the container
         /// resizes; useful by hand after showing a previously hidden ancestor.
         /// </summary>
-        public void Layout()
+        public virtual void Layout()
         {
             Instance?.layout();
         }

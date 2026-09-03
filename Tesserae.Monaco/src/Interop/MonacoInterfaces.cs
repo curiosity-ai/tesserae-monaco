@@ -19,8 +19,14 @@ namespace Tesserae.Monaco
     [Convention(Notation.None)]
     public interface IEditor
     {
-        /// <summary>Re-measures the editor against its container.</summary>
-        void layout();
+        /// <summary>
+        /// Re-measures the editor. Left without a dimension it measures its own reference element,
+        /// which is the container for a code editor and - the trap - the widget's own root for a diff
+        /// editor, whose height Monaco has itself pinned. Declared once with an optional argument
+        /// rather than as two overloads: two declarations emitting the same JavaScript name get a
+        /// <c>$1</c> suffix on the second and stop matching Monaco.
+        /// </summary>
+        void layout(EditorDimension dimension = null);
 
         /// <summary>Tears the editor down. Does <b>not</b> dispose models handed to it.</summary>
         void dispose();

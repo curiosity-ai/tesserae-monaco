@@ -527,6 +527,21 @@ namespace Tesserae.Monaco
         /// </summary>
         public EditorHistory History => _history;
 
+        /// <summary>
+        /// Opens the stored revisions of this editor's document in a modal: the revision list on one
+        /// side, a diff of the selected revision against what the editor holds now on the other, and a
+        /// button that puts one back.
+        ///
+        /// Returns null when the editor has no history - <see cref="PersistHistory(EditorHistoryOptions)"/>
+        /// has to have been called - so a host that offers the button unconditionally can hide it on a
+        /// null. A modal is built per opening: the diff editor inside it is created on mount and
+        /// disposed when it closes, so a closed one holds no Monaco instance.
+        /// </summary>
+        public EditorHistoryModal ShowHistory(string title = null)
+        {
+            return _history is null ? null : EditorHistoryModal.Show(_history, title);
+        }
+
         #endregion
 
         #region Selection and position

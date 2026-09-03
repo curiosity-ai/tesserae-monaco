@@ -272,6 +272,23 @@ Three smaller decisions, each of which cost a round to get right:
   separator, so there is no character to reserve or escape and no scope/document pair can collide with
   another.
 
+**The viewer is composed, not drawn.** `EditorHistoryView` (and `EditorHistoryModal` around it, reached
+as `editor.ShowHistory()`) is the revision list plus a diff of the selected revision against the
+editor's current text. Every part of it is a Tesserae component: `SearchableList<T>` is the list *and*
+the "search by content" box — its `ISearchableItem.IsMatch` runs over each revision's stored text, which
+is what makes the search a content search — a `Card` over a `ListItemText` is a row, a `Banner` is the
+"contents are identical" notice with its own dismiss, a `SplitView` gives the two panes a draggable
+divider, and `Collapse()`/`Show()` are how the notice and the second pane header come and go. There is
+no `HTMLElement` in it beyond the `IComponent.Render()` signature, and **no stylesheet**: the selected
+row is `BackgroundColor(Theme.Default.BackgroundActive)` and `Border(Theme.Primary.Background)`, so it
+follows a runtime theme change for free. The first version hand-rolled the rows as divs with a
+`<style>` element injected for their hover and selected states; composing them instead deleted that
+file's worth of CSS and got the hover, the scrolling, the empty state and the search for nothing.
+
+Two things it needs from the recorder, which is why they exist on `EditorHistory`: `CurrentText` (the
+diff's right-hand side, re-read after every revert rather than captured once) and `IsAttached` (whether
+`Restore` has an editor to put a revision into — the Revert button is disabled without one).
+
 **Read everything off the editor before the first `await`.** `Detach` starts the flush and then drops
 the surface, so an `async` body only sees a live editor up to its first `await`. This bit twice: first
 by reading the place inside the second write, then — after that was "fixed" — by passing
@@ -476,6 +493,24 @@ These were learned the hard way in Mosaik; don't simplify them away.
   like a registration problem. The other three (`handleItemDidShow`, `handlePartialAccept`,
   `handleRejection`) are called defensively and can stay absent. Whenever the `monaco-editor` pin moves,
   grep the bundle for the member names it calls on a provider rather than trusting the declaration.
+- **A diff editor ignores a dimensionless `layout()`.** With `automaticLayout` off — which is how every
+  component here is created, since `MonacoComponent` drives layout from a `ResizeObserver` — Monaco's
+  diff widget measures the element it was told to observe, and that element is the widget's *own root*
+  rather than the container it was created in. Monaco writes that root's height itself
+  (`root.style.height = fullHeight + 'px'`), so `layout()` with no argument re-reads the value Monaco
+  last wrote and nothing moves. Measured: a container going 720px → 674px left the diff at 720px
+  through both an explicit `layout()` and a window resize, i.e. a diff editor never resized at all.
+  `DiffViewer.Layout()` therefore overrides the base and passes
+  `layout(new EditorDimension { width = …clientWidth, height = …clientHeight })`. A code editor
+  observes its container and does not have the problem, so the base class's dimensionless call stays
+  right for the other two — and `IEditor.layout` takes the dimension as an *optional* argument rather
+  than being declared twice, because two declarations emitting one JavaScript name get a `$1` suffix on
+  the second.
+- **A percentage height inside a flex column resolves against the container, not the leftover space.**
+  Monaco's container carries `height: 100%`, so a diff placed directly as a flex item beside other rows
+  asks for the whole column and overflows it by exactly the height of its siblings. `EditorHistoryView`
+  puts it in a growing wrapper for that reason, and gives the wrapper `MinHeight(0)` — a flex item's
+  automatic minimum size is its content's, and Monaco's scroll layer is 16.7 million pixels tall.
 - **A diff editor's two models are ours to dispose.** Monaco does not dispose models handed to
   `setModel`, so `DiffViewer` disposes them itself — the inline versions in Mosaik leak one pair per
   render.

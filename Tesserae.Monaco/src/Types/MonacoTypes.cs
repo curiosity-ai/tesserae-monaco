@@ -20,6 +20,18 @@ namespace Tesserae.Monaco
         public int endColumn;
     }
 
+    /// <summary>
+    /// A size in pixels, matching Monaco's <c>IDimension</c> - what <c>layout(...)</c> takes when the
+    /// caller has measured the container itself. See <see cref="DiffViewer.Layout"/> for the one case
+    /// where measuring is not optional.
+    /// </summary>
+    [ObjectLiteral]
+    public class EditorDimension
+    {
+        public double width;
+        public double height;
+    }
+
     /// <summary>A single text replacement, matching Monaco's <c>ISingleEditOperation</c>.</summary>
     [ObjectLiteral]
     public class TextEdit
