@@ -132,6 +132,23 @@ the result more than the list did:
       `ShouldRestore` the veto for one that is an authority on the document.
 - [x] `EditorViewState.ToPlainObject` / `FromPlainObject`, which is what makes the view state storable
       and sendable at all.
+- [x] **Browsing what is stored.** `editor.ShowHistory()` opens `EditorHistoryModal`; `EditorHistoryView`
+      is the same surface as a plain `IComponent`, for a panel or a page. The revision list, a search box
+      that filters by each revision's *content*, a diff of the selected revision against the editor's
+      current text, side-by-side/inline, change navigation, the "contents are identical" notice, and a
+      Revert that goes through the same undoable edit `Restore` does. Composed from Tesserae -
+      `SearchableList`, `Card` + `ListItemText`, `Banner`, `SplitView` and this package's `DiffViewer` -
+      so it ships no stylesheet and follows a runtime theme change. Verified in Debug and Release:
+      typing produces rows; selecting an older revision shows its differences and the count; the notice
+      appears for the revision that matches the editor and dismisses; the content search narrows the
+      list and the empty state names which emptiness it is; inline collapses to one pane and the header
+      names both documents; next/previous difference moves the caret; Revert changes the editor and undo
+      reaches back past it; closing disposes the diff editor and both its models; reopening works.
+- [x] **Fixed on the way: a diff editor never resized.** Monaco's diff widget measures its own root,
+      whose height Monaco writes itself when `automaticLayout` is off, so the dimensionless `layout()`
+      the base component called could not change anything - measured, a 720px -> 674px container left
+      the diff at 720px through both a `layout()` call and a window resize. `DiffViewer.Layout()` now
+      passes an explicit `EditorDimension`. See [CLAUDE.md](CLAUDE.md).
 
 ## Tier 11 - The shell around the editors
 

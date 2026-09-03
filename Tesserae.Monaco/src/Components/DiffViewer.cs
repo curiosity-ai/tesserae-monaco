@@ -497,6 +497,28 @@ namespace Tesserae.Monaco
             return Option(options => Script.Set(options, name, value));
         }
 
+        /// <summary>
+        /// Re-measures against the container, passing the size explicitly.
+        ///
+        /// This override is not a refinement - without it a diff editor never resizes at all. Monaco's
+        /// diff widget measures the element it was told to observe, and that element is the widget's
+        /// own root rather than the container it was created in; with <c>automaticLayout</c> off Monaco
+        /// writes that root's height itself (<c>root.style.height = fullHeight + 'px'</c>), so a
+        /// dimensionless <c>layout()</c> re-reads the value Monaco last wrote and nothing changes.
+        /// Measured: a container going 720px -> 674px left the diff at 720px through both a
+        /// <c>layout()</c> call and a window resize. A code editor observes its container and does not
+        /// have the problem, which is why the base class's dimensionless call is right for the other
+        /// two components.
+        /// </summary>
+        public override void Layout()
+        {
+            var editor = Editor;
+
+            if (editor is null) return;
+
+            editor.layout(new EditorDimension { width = StylingContainer.clientWidth, height = StylingContainer.clientHeight });
+        }
+
         protected override IEditor Create(HTMLElement container)
         {
             var options = new DiffEditorOptions

@@ -77,6 +77,7 @@ namespace Tesserae.Monaco.Sample
                     Card(VStack().WS().Children(
                         TextBlock("PersistHistory(...) records the document as it is edited and puts it back the next time the same document is opened. It keeps two things, because they are what Monaco actually hands out serialisably: the text, and the view state - caret, selections, scroll offset and folding."),
                         TextBlock("Monaco's undo stack is not one of them. It lives in the editor's undo service as objects holding closures over the model, with no accessor and nothing to serialise, so no wrapper can round-trip it through storage. A restored revision is therefore applied as an ordinary edit, which puts it on the live undo stack - so undo reaches back past a restore.").MT(8),
+                        TextBlock("Everything stored is also browsable: ShowHistory() on the editor - or an EditorHistoryView anywhere you want it rather than in a modal - lists the revisions and diffs the selected one against what the editor holds now, with a Revert that goes through the same undoable edit.").MT(8),
                         TextBlock("It goes into IndexedDB. sessionStorage is emptied when the tab closes; localStorage survives but is synchronous - every write blocks the thread Monaco lays out on - caps out around 5 MB, stores strings only, and has no index to prune by. IndexedDB is asynchronous, sized against available disk, stores the view state as an object, and its cursors make \"newest first\" and \"older than a month\" bounded rather than full scans.").MT(8))).SetTitle("Overview")))
                .FlatSection(VStack().Children(
                     Card(VStack().WS().Children(
@@ -86,9 +87,10 @@ namespace Tesserae.Monaco.Sample
                .FlatSection(VStack().Children(
                     Card(VStack().WS().Children(
                         SampleSubTitle("Try it"),
-                        TextBlock("Type something, leave the caret in the middle of it, then reload the page. The text and the caret come back, and the revision list below fills up as you pause."),
+                        TextBlock("Type something, leave the caret in the middle of it, then reload the page. The text and the caret come back, and the revision list below fills up as you pause. \"View history\" opens the revisions as a diff against what the editor holds now, and reverts to one."),
                         editor.WS().H(200.px()).MT(8),
                         HStack().WS().Wrap().Gap(8.px()).AlignItemsCenter().PT(8).Children(
+                            Button("View history").Primary().SetIcon(UIcons.CodeCompare).OnClick(() => ShowHistory(editor, revisions, status)),
                             Button("Save a revision now").SetIcon(UIcons.ClockFuturePast).OnClick(() => SaveNow(editor, revisions, status).FireAndForget()),
                             Button("Refresh list").OnClick(() => ShowRevisions(editor, revisions, status).FireAndForget()),
                             Button("Forget this document").SetIcon(UIcons.Bug).OnClick(() => Forget(editor, revisions, status).FireAndForget()),
@@ -105,6 +107,30 @@ namespace Tesserae.Monaco.Sample
         }
 
         public HTMLElement Render() => _content.Render();
+
+        /// <summary>
+        /// The whole of what a host writes to offer the history: one call. The modal fetches the
+        /// revisions itself, diffs the selected one against the editor's current text, and reverts on
+        /// request - which is an edit on the live undo stack, so this page's status line says so.
+        /// </summary>
+        private static void ShowHistory(CodeEditor editor, Stack revisions, TextBlock status)
+        {
+            var modal = editor.ShowHistory();
+
+            if (modal is null)
+            {
+                status.Text = "this editor has no history";
+
+                return;
+            }
+
+            modal.OnRestored(entry =>
+            {
+                status.Text = "reverted to the revision from " + Clock(entry.Timestamp) + " - undo reaches back past it";
+
+                ShowRevisions(editor, revisions, status).FireAndForget();
+            });
+        }
 
         private static async Task SaveNow(CodeEditor editor, Stack revisions, TextBlock status)
         {
