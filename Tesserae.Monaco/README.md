@@ -204,10 +204,19 @@ Every entry is stamped with a UTC epoch-millisecond `Timestamp`, and scoped: `Sc
 a user id, a workspace id, or a composite — and `DocumentId` addresses the file inside it, so one
 origin holds several users' or projects' histories without them seeing each other.
 
+An entry also says **where it came from and who made it**, which is what a history fed by more than one
+source needs before a list of it means anything. `Origin` is `Local` for what the recorder saved in
+this browser, `Remote` for what arrived from outside it — a server checkpoint, another device, a build —
+and `Unknown` for a row that does not say. `Author` is the display name: `EditorHistoryOptions.Author`
+supplies it for local revisions, and a server-backed store fills in whoever the server says made each of
+its own. Nothing has to be labelled by hand in the common arrangement: the recorder stamps `Local`, and
+`MirroredHistoryStore` stamps `Remote` on everything it reads back from the store behind it.
+
 | Option | What it does |
 |---|---|
 | `Scope`, `DocumentId` | The partition and the document. The only two with no default. |
 | `Store` | Where it goes. Defaults to `IndexedDbHistoryStore.Default`. |
+| `Author` | Who is typing, stamped onto every revision written here. Set it as soon as the history is shared. |
 | `SnapshotDebounceMs`, `PlaceDebounceMs` | How long typing / the caret has to settle first (1500 ms, 500 ms). |
 | `MaxEntries`, `MaxAge` | Retention: 50 revisions, 30 days. 0 for no cap. |
 | `RestoreOnMount`, `RestorePlace` | Whether to put the document, and the caret, back on create. |
@@ -236,8 +245,18 @@ button rather than open an empty overlay. `OnRestored(...)` is told which revisi
 
 The same surface without the overlay is `new EditorHistoryView(editor.History)` — an `IComponent`, so
 it goes in a panel, a split view or a page of its own. It carries the search box that filters revisions
-by their **content**, the side-by-side/inline toggle, change navigation, and the "contents are
-identical" notice for a revision that matches the editor.
+by their **content** (and by author, so `alex checkpoint` narrows to one person's), the side-by-side/inline
+toggle, change navigation, and the "contents are identical" notice for a revision that matches the editor.
+
+A row says four things in two lines, and the list runs newest first over every source at once — a store
+answers in its own order, so the ordering is re-established over the union rather than inherited:
+
+| | |
+|---|---|
+| Origin | A glyph: a browser window for what was typed here, a cloud for what came from outside it, in that origin's colour. The sentence is in its tooltip. |
+| Author | A pill washed in a colour derived from the name, so one person's revisions read as one person's down the list. Absent when no author was recorded. |
+| When | Said the way a person would: `just now`, `40 min ago`, `06:21` for earlier today, `yesterday 09:12`, `3 Sep, 11:32`. The exact stamp is in the tooltip. |
+| Size | The revision's line count. |
 
 It is composed from Tesserae rather than drawn: `SearchableList` is the list and its search box, a
 `Card` over a `ListItemText` is a row, a `Banner` is the notice, a `SplitView` is the two panes and
@@ -279,13 +298,22 @@ profile or a cleared origin needs to pick the document back up. The server's fai
 through `OnMirrorError` rather than thrown: a server that is down should cost an editor its backup, not
 its history.
 
+`ListAsync` is the exception to "the browser first": browsing a history means seeing all of it, and the
+server's checkpoints and this browser's drafts are interleaved in time rather than one being a subset of
+the other. So a list is both stores' answers merged, newest first, one row per instant — the local copy
+of a mirrored revision wins over the copy read back from the server, and everything from the server is
+stamped `Remote`. Restoring still goes through `GetLatestAsync`, which is unchanged: what a reload puts
+back is the local draft when there is one.
+
 ```csharp
 Store = MirroredHistoryStore.LocalFirst(server)
 ```
 
 `EditorHistoryEntry.ToPlainObject()` / `FromPlainObject(...)` are the wire contract — the field names
 they produce (`scope`, `documentId`, `docKey`, `timestamp`, `text`, `viewState`, `language`,
-`versionId`, `label`, `id`) are what an external store implements against.
+`versionId`, `label`, `origin`, `author`, `id`) are what an external store implements against. `origin`
+is the string `"local"` or `"remote"`; anything else, the absent value included, reads back as
+`EditorHistoryOrigin.Unknown` rather than as the wrong one.
 
 Note that persistent is not permanent anywhere in the browser: a user agent may evict a whole origin
 under storage pressure, and clearing site data always does. That is the case mirroring to a server

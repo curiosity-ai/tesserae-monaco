@@ -18,6 +18,27 @@ namespace Tesserae.Monaco
     /// <see cref="Timestamp"/>, which is what lets one origin hold several users', workspaces' or
     /// tabs' histories side by side without them seeing each other.
     /// </summary>
+    /// <summary>
+    /// Where a revision came from, which is what a list of them has to say before a reader can trust
+    /// any of it: a draft this browser saved while someone typed is not the same kind of thing as a
+    /// checkpoint a server took, and the two arrive interleaved once a history is mirrored.
+    ///
+    /// Stored as a string (<c>"local"</c>, <c>"remote"</c>) rather than as a number, so the wire
+    /// contract stays readable and a value this version does not know reads back as
+    /// <see cref="Unknown"/> instead of as the wrong one.
+    /// </summary>
+    public enum EditorHistoryOrigin
+    {
+        /// <summary>Not recorded - an entry written before origins were, or by a store that does not set one.</summary>
+        Unknown = 0,
+
+        /// <summary>Saved in this browser, by the recorder attached to the editor.</summary>
+        Local = 1,
+
+        /// <summary>Came from outside the browser - a server checkpoint, another device, a build.</summary>
+        Remote = 2
+    }
+
     public sealed class EditorHistoryEntry
     {
         /// <summary>
@@ -76,6 +97,23 @@ namespace Tesserae.Monaco
         public string Label { get; set; }
 
         /// <summary>
+        /// Where this revision came from. The recorder stamps <see cref="EditorHistoryOrigin.Local"/> on
+        /// everything it writes, and <see cref="MirroredHistoryStore"/> stamps
+        /// <see cref="EditorHistoryOrigin.Remote"/> on everything it reads back from the store behind
+        /// it - so a mixed list is labelled without a host doing anything. A server-backed store can
+        /// also set it itself, which is what a checkpoint taken by something other than a person is.
+        /// </summary>
+        public EditorHistoryOrigin Origin { get; set; }
+
+        /// <summary>
+        /// Who made this revision, as a display name - null when nobody was recorded, which is the
+        /// normal case for a browser-only history of one person's own drafts.
+        /// <see cref="EditorHistoryOptions.Author"/> is where the local one comes from; a server
+        /// checkpoint carries whoever the server says made it.
+        /// </summary>
+        public string Author { get; set; }
+
+        /// <summary>
         /// The store's own id for this entry, set when it is written and null before that. The
         /// IndexedDB store fills in its auto-incremented key; a server-backed store should fill in
         /// whatever it keys by, so a later restore or delete can name the same row.
@@ -87,7 +125,8 @@ namespace Tesserae.Monaco
         /// it survives <c>structuredClone</c> into IndexedDB and <c>JSON.stringify</c> to a server. The
         /// field names it produces <b>are</b> the contract an external store implements against -
         /// <c>scope</c>, <c>documentId</c>, <c>docKey</c>, <c>timestamp</c>, <c>text</c>,
-        /// <c>viewState</c>, <c>language</c>, <c>versionId</c>, <c>label</c>, <c>id</c>.
+        /// <c>viewState</c>, <c>language</c>, <c>versionId</c>, <c>label</c>, <c>origin</c>,
+        /// <c>author</c>, <c>id</c>.
         /// </summary>
         public object ToPlainObject()
         {
@@ -102,6 +141,8 @@ namespace Tesserae.Monaco
                 language   = Language,
                 versionId  = VersionId,
                 label      = Label,
+                origin     = HistoryRecord.OriginName(Origin),
+                author     = Author,
                 id         = Id
             };
         }
@@ -133,6 +174,8 @@ namespace Tesserae.Monaco
                 Language   = record.language,
                 VersionId  = record.versionId,
                 Label      = record.label,
+                Origin     = HistoryRecord.OriginFrom(record.origin),
+                Author     = record.author,
                 Id         = id ?? record.id
             };
         }
@@ -200,9 +243,38 @@ namespace Tesserae.Monaco
         public string language;
         public int    versionId;
         public string label;
+        public string origin;
+        public string author;
 
         /// <summary>Set only by a store that keeps its key inside the value; the IndexedDB store does not.</summary>
         public string id;
+
+        /// <summary>
+        /// <see cref="EditorHistoryOrigin"/> as it is stored and sent. A name rather than the enum's
+        /// number: the value crosses into IndexedDB and a server's JSON, where a number would be
+        /// unreadable and would silently mean something else if the enum ever grew a member in the
+        /// middle.
+        /// </summary>
+        public static string OriginName(EditorHistoryOrigin origin)
+        {
+            if (origin == EditorHistoryOrigin.Local)  return "local";
+            if (origin == EditorHistoryOrigin.Remote) return "remote";
+
+            return null;
+        }
+
+        /// <summary>
+        /// The inverse of <see cref="OriginName"/>. Anything unrecognised - including the null a row
+        /// written before origins were recorded has - reads back as
+        /// <see cref="EditorHistoryOrigin.Unknown"/>.
+        /// </summary>
+        public static EditorHistoryOrigin OriginFrom(string origin)
+        {
+            if (origin == "local")  return EditorHistoryOrigin.Local;
+            if (origin == "remote") return EditorHistoryOrigin.Remote;
+
+            return EditorHistoryOrigin.Unknown;
+        }
 
         /// <summary>
         /// The composite key a scope/document pair is indexed under.

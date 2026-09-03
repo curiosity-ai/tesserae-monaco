@@ -144,6 +144,20 @@ the result more than the list did:
       list and the empty state names which emptiness it is; inline collapses to one pane and the header
       names both documents; next/previous difference moves the caret; Revert changes the editor and undo
       reaches back past it; closing disposes the diff editor and both its models; reopening works.
+- [x] **A revision says where it came from and who made it.** `EditorHistoryEntry.Origin`
+      (`Local`/`Remote`/`Unknown`, stored as a string) and `.Author`, with
+      `EditorHistoryOptions.Author` supplying the local one; the recorder stamps `Local` and
+      `MirroredHistoryStore` stamps `Remote` on what it reads from behind it, so the common arrangement
+      labels itself. `MirroredHistoryStore.ListAsync` now merges both stores newest-first, deduping on
+      the timestamp, because browsing means seeing all of it and two sources interleave -
+      `GetLatestAsync` is unchanged, so what a reload restores is still the local draft. The list rows
+      show the origin as a coloured glyph with the sentence in its tooltip, the author as a pill washed
+      in a colour derived from their name, and the time the way a person says it ("just now",
+      "40 min ago", "06:21", "yesterday 09:12", "3 Sep, 11:32") with the exact stamp in the tooltip -
+      44px a row. Verified: the demo's server checkpoints by two other authors interleave correctly
+      with this browser's drafts; a row written before origins were recorded reads back as `Unknown`
+      with its own glyph and sorts into place; IndexedDB round-trips `origin` and `author`; searching
+      "alex" narrows to one person's revisions; the pill stays legible in both themes.
 - [x] **Fixed on the way: a diff editor never resized.** Monaco's diff widget measures its own root,
       whose height Monaco writes itself when `automaticLayout` is off, so the dimensionless `layout()`
       the base component called could not change anything - measured, a 720px -> 674px container left

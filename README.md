@@ -58,7 +58,9 @@ ordinary edit instead, which puts it on the live undo stack.
 
 `editor.ShowHistory()` then browses it: the revisions on one side, a diff of the selected one against
 what the editor holds now on the other, a search box that filters them by content, and a Revert that
-goes through that same undoable edit. It is composed from Tesserae — `SearchableList`, `Card`,
+goes through that same undoable edit. Each revision says where it came from — saved in this browser, or
+arrived from outside it as a server checkpoint — and who made it, so one list can run in time across
+every source that feeds it. It is composed from Tesserae — `SearchableList`, `Card`,
 `Banner`, `SplitView` and this package's `DiffViewer` — so it ships no stylesheet and follows the
 app's theme; `EditorHistoryView` is the same surface without the modal, for a panel or a page.
 

@@ -202,7 +202,15 @@ namespace Tesserae.Monaco
 
             _rows.Clear();
 
-            foreach (var entry in entries ?? new EditorHistoryEntry[0])
+            // Newest first, over the union rather than per source. A history can be fed by more than
+            // one store - this browser's IndexedDB and a server's checkpoints - and each answers in its
+            // own order, so the one thing a reader needs of a revision list, that it runs in time, has
+            // to be established here rather than assumed of whatever answered.
+            var sorted = new List<EditorHistoryEntry>(entries ?? new EditorHistoryEntry[0]);
+
+            sorted.Sort((left, right) => right.Timestamp.CompareTo(left.Timestamp));
+
+            foreach (var entry in sorted)
             {
                 _rows.Add(new Revision(entry, Select));
             }
@@ -384,8 +392,42 @@ namespace Tesserae.Monaco
         {
             var moment = EditorHistory.ToDateTime(epochMilliseconds).ToLocalTime();
 
-            return moment.Year + "-" + Two(moment.Month) + "-" + Two(moment.Day) + ", " + Two(moment.Hour) + ":" + Two(moment.Minute);
+            return moment.Year + "-" + Two(moment.Month) + "-" + Two(moment.Day) + ", " + Two(moment.Hour) + ":" + Two(moment.Minute) + ":" + Two(moment.Second);
         }
+
+        /// <summary>
+        /// The same instant the way a person would say it: minutes ago while that is still the useful
+        /// answer, then the clock time for today, then the day, then the year. The precise
+        /// <see cref="Stamp"/> is on the row's tooltip, so nothing is lost by being brief here - and
+        /// being brief is what lets the row stay one line for the label and one for everything else.
+        ///
+        /// Relative only inside the hour. "5 hours ago" makes a reader do arithmetic to answer "was
+        /// that before lunch"; "11:32" does not.
+        /// </summary>
+        private static string When(double epochMilliseconds)
+        {
+            var moment  = EditorHistory.ToDateTime(epochMilliseconds).ToLocalTime();
+            var now     = EditorHistory.ToDateTime(EditorHistory.Now()).ToLocalTime();
+            var seconds = (now - moment).TotalSeconds;
+
+            if (seconds >= 0 && seconds < 45)   return "just now";
+            if (seconds >= 0 && seconds < 90)   return "a minute ago";
+            if (seconds >= 0 && seconds < 3600) return (int)System.Math.Round(seconds / 60d) + " min ago";
+
+            var today     = now.Date;
+            var day       = moment.Date;
+            var clock     = Two(moment.Hour) + ":" + Two(moment.Minute);
+            var dayOffset = (today - day).TotalDays;
+
+            if (dayOffset == 0) return clock;
+            if (dayOffset == 1) return "yesterday " + clock;
+
+            var date = moment.Day + " " + MONTHS[moment.Month - 1];
+
+            return moment.Year == now.Year ? date + ", " + clock : date + " " + moment.Year;
+        }
+
+        private static readonly string[] MONTHS = { "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
 
         private static string Two(int value) => value < 10 ? "0" + value : value.ToString();
 
@@ -403,12 +445,95 @@ namespace Tesserae.Monaco
             return lines;
         }
 
+        /// <summary>
+        /// Where the revision came from, as one glyph in one colour with the sentence in its tooltip.
+        /// A word for it would cost a third of the row's width to say something a reader only needs
+        /// when two origins are actually mixed - and the icon still says it at a glance when they are:
+        /// a browser window for what was typed here, a cloud for what arrived from elsewhere.
+        /// </summary>
+        private static IComponent OriginGlyph(EditorHistoryOrigin origin)
+        {
+            if (origin == EditorHistoryOrigin.Remote)
+            {
+                return Icon(UIcons.CloudCheck, color: Theme.Primary.Background)
+                   .Tooltip("From outside this browser - a server checkpoint, or another device");
+            }
+
+            if (origin == EditorHistoryOrigin.Local)
+            {
+                return Icon(UIcons.Browser, color: Theme.Secondary.Foreground)
+                   .Tooltip("Saved in this browser as you typed");
+            }
+
+            return Icon(UIcons.QuestionSquare, color: Theme.Secondary.Foreground)
+               .Tooltip("Origin not recorded - stored before this was kept, or by a store that does not set it");
+        }
+
+        /// <summary>
+        /// Who made it, as a pill washed in a colour derived from their name - so one person's
+        /// revisions read as one person's down the list without the name having to be read each time.
+        /// Nothing at all when no author was recorded, which is the ordinary case for a browser-only
+        /// history: a pill saying "you" on every row would be noise.
+        ///
+        /// Only the background is coloured. The text keeps the tag's own themed foreground, because a
+        /// hue picked to read on a white surface is the one that disappears on a dark one - and the
+        /// pill has to stay legible through a theme change with nothing re-rendering it.
+        /// </summary>
+        private static IComponent AuthorChip(string author)
+        {
+            if (string.IsNullOrWhiteSpace(author)) return Raw();
+
+            return Tag(author).Pill()
+               .Background("hsla(" + HueFor(author) + ", 70%, 50%, 0.25)")
+               .Tooltip("Made by " + author);
+        }
+
+        /// <summary>
+        /// A hue for a name, from a palette rather than from the whole circle.
+        ///
+        /// Hashing straight onto 0-359 looks better than it is: two names that land eight degrees apart
+        /// are two colours nobody can tell apart, which reads as one colour rendered inconsistently.
+        /// Measured with the demo's own names, that is exactly what happened - "Alex Kim" and
+        /// "build-bot" came out seven degrees apart, both green. A palette of mutually distinguishable
+        /// hues instead means two people are either clearly different or exactly the same, and the name
+        /// beside the pill settles the second case.
+        ///
+        /// The slot comes from the hash's whole range rather than its remainder, because the low digits
+        /// of an accumulator this small are barely mixed: <c>hash % 10</c> put two of the three demo
+        /// names in one slot, while scaling the whole value spread them.
+        /// </summary>
+        private static int HueFor(string author)
+        {
+            var hash = 0;
+
+            // Bounded at every step, so the running value stays an exact integer where this actually
+            // runs - JavaScript has no int, and an unbounded accumulation over a long name would drift
+            // into the range where a double stops counting by ones.
+            foreach (var character in author)
+            {
+                hash = (hash * 131 + character) % HASH_MODULUS;
+            }
+
+            return AUTHOR_HUES[hash * AUTHOR_HUES.Length / HASH_MODULUS];
+        }
+
+        private const int HASH_MODULUS = 100003;
+
+        private static readonly int[] AUTHOR_HUES = { 212, 148, 28, 278, 330, 188, 100, 250, 62, 0 };
+
         #endregion
 
         /// <summary>
-        /// One row: a clickable <see cref="Card"/> over a <see cref="ListItemText"/>, plus the
+        /// One row: a clickable <see cref="Card"/> holding what a reader needs to place the revision -
+        /// where it came from, who made it, when, and how big it was - plus the
         /// <see cref="ISearchableItem"/> half that makes the list's search box filter by the revision's
         /// own content.
+        ///
+        /// Two lines and nothing more, because the list is a 280px column beside the diff that is the
+        /// actual subject. The origin is a coloured glyph rather than a word, the author a tinted pill
+        /// in a colour derived from their name, and the time is said the way a person would say it -
+        /// each with the precise version in a tooltip, which is what keeps the row short without
+        /// hiding anything.
         ///
         /// The card is built once and handed back from <see cref="Render"/> every time, because the
         /// list re-renders its rows on each query and a new card each time would lose the selection.
@@ -422,7 +547,18 @@ namespace Tesserae.Monaco
             {
                 _entry = entry;
 
-                _card = Card(ListItemText(Describe(entry), Stamp(entry.Timestamp) + "  ·  " + Lines(entry.Text) + " lines"))
+                var size = HStack().NoWrap().AlignItemsCenter().Gap(6.px()).Children(AuthorChip(entry.Author));
+
+                size.Add(TextBlock(Lines(entry.Text) + " lines").Tiny().Secondary().NoWrap());
+
+                _card = Card(HStack().WS().NoWrap().AlignItemsCenter().Gap(8.px()).Children(
+                        OriginGlyph(entry.Origin),
+                        VStack().Grow().MinWidth(0.px()).Children(
+                            HStack().WS().NoWrap().AlignItemsCenter().Gap(6.px()).Children(
+                                TextBlock(Describe(entry)).Small().SemiBold().NoWrap(),
+                                Raw().Grow(),
+                                TextBlock(When(entry.Timestamp)).Tiny().Secondary().NoWrap().Tooltip(Stamp(entry.Timestamp))),
+                            size)))
                    .Compact()
                    .HoverColor()
                    .OnClick(() => onPicked(this));
@@ -433,8 +569,9 @@ namespace Tesserae.Monaco
             internal EditorHistoryEntry Entry => _entry;
 
             /// <summary>
-            /// Whether this revision's text - or its label - contains one of the query's terms. The
-            /// list calls this once per term and keeps the row only if every one matches.
+            /// Whether this revision's text - or its label, or its author - contains one of the query's
+            /// terms. The list calls this once per term and keeps the row only if every one matches, so
+            /// "alex checkpoint" narrows to one person's checkpoints.
             /// </summary>
             public bool IsMatch(string searchTerm)
             {
@@ -442,7 +579,7 @@ namespace Tesserae.Monaco
 
                 var needle = searchTerm.ToLower();
 
-                return Contains(_entry.Text, needle) || Contains(_entry.Label, needle);
+                return Contains(_entry.Text, needle) || Contains(_entry.Label, needle) || Contains(_entry.Author, needle);
             }
 
             public IComponent Render() => _card;
