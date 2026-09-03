@@ -138876,6 +138876,7 @@ body.tss-mobile textarea {
     margin: 0px;
     padding: 0px 12px;
     min-width: 52px !important;
+    width: 100%;
     justify-content: flex-start;
 }
 
