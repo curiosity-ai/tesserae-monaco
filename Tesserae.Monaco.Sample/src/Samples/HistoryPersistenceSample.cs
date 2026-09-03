@@ -15,10 +15,10 @@ namespace Tesserae.Monaco.Sample
         private const string SCOPE    = "gallery:demo-user";
         private const string DOCUMENT = "samples/history.cs";
 
-        // Who is typing here, stamped onto every revision this page records. A real app would take it
-        // from whoever is signed in; what it demonstrates is that a shared history has to say whose
-        // each revision is, because the stand-in server below contributes other people's.
-        private const string AUTHOR = "Robin Lee";
+        // Who is typing here, stamped onto every revision this page records - an id rather than a name,
+        // which is the shape a real app has: what a revision can record is whoever was signed in, and
+        // turning that into something to show a reader is a lookup. AuthorLabel below is that lookup.
+        private const string AUTHOR = "u-7781";
 
         private const string SEED =
             "// Type in here, then reload the page - the text and the caret come back.\n" +
@@ -139,19 +139,62 @@ namespace Tesserae.Monaco.Sample
 
             return new[]
             {
-                Checkpoint(now - 40 * MINUTE, "checkpoint", "Alex Kim",
+                Checkpoint(now - 40 * MINUTE, "checkpoint", "u-1042",
                     "// Reviewed on the server 40 minutes ago.\n" +
                     "int Fib(int n) => n < 2 ? n : Fib(n - 1) + Fib(n - 2);\n"),
 
-                Checkpoint(now - 5 * HOUR, "release build", "build-bot",
+                Checkpoint(now - 5 * HOUR, "release build", "svc-build",
                     "// Tagged by the build.\n" +
                     "int Fib(int n) => n < 2 ? n : Fib(n - 1) + Fib(n - 2);\n\n" +
                     "int Fact(int n) => n < 2 ? 1 : n * Fact(n - 1);\n"),
 
-                Checkpoint(now - 26 * HOUR, "checkpoint", "Alex Kim",
+                Checkpoint(now - 26 * HOUR, "checkpoint", "u-1042",
                     "// Yesterday's version, before the memo.\n" +
                     "int Fib(int n) => n < 2 ? n : Fib(n - 1) + Fib(n - 2);\n")
             };
+        }
+
+        /// <summary>
+        /// Stands in for whatever a real app asks who someone is - a directory endpoint, a cache, a
+        /// graph API. The point is that it is asked, rather than that it answers from a dictionary.
+        /// </summary>
+        private static readonly Dictionary<string, Person> DIRECTORY = new Dictionary<string, Person>
+        {
+            { "u-7781",    new Person { Name = "Robin Lee", Color = "#22c55e" } },
+            { "u-1042",    new Person { Name = "Alex Kim",  Color = "#ef4444" } },
+            { "svc-build", new Person { Name = "build-bot", Color = "#a855f7" } }
+        };
+
+        private sealed class Person
+        {
+            public string Name;
+            public string Color;
+        }
+
+        /// <summary>
+        /// How this page draws the author of a revision, handed to the history modal through
+        /// RenderAuthor - and the reason that hook takes a component rather than a string. What the
+        /// entry carries is an id; the name behind it arrives later, from a call.
+        ///
+        /// An InlineLabel built from a task is the whole mechanism: it draws a skeleton while the task
+        /// runs, shows whatever the task sets on it, and takes its own slot out of the fact line - the
+        /// separator dot included - when the task sets nothing, which is what an id nobody can resolve
+        /// should look like.
+        /// </summary>
+        private static IComponent AuthorLabel(EditorHistoryEntry entry)
+        {
+            var id = entry.Author;
+
+            if (string.IsNullOrWhiteSpace(id)) return null;
+
+            return InlineLabel(async label =>
+            {
+                // Stands in for the round trip. Long enough to see the skeleton, short enough not to
+                // be the point of the page.
+                await Task.Delay(400);
+
+                if (DIRECTORY.TryGetValue(id, out var person)) label.SetText(person.Name).SetColor(person.Color);
+            }).Tooltip("Looked up from " + id);
         }
 
         private const double MINUTE = 60d * 1000;
@@ -205,6 +248,10 @@ namespace Tesserae.Monaco.Sample
 
                 return;
             }
+
+            // The one call a host makes to draw the author its own way. Set after Show(), which the
+            // modal handles by re-drawing the rows it has already loaded.
+            modal.RenderAuthor(AuthorLabel);
 
             modal.OnRestored(entry =>
             {

@@ -150,14 +150,27 @@ the result more than the list did:
       `MirroredHistoryStore` stamps `Remote` on what it reads from behind it, so the common arrangement
       labels itself. `MirroredHistoryStore.ListAsync` now merges both stores newest-first, deduping on
       the timestamp, because browsing means seeing all of it and two sources interleave -
-      `GetLatestAsync` is unchanged, so what a reload restores is still the local draft. The list rows
-      show the origin as a coloured glyph with the sentence in its tooltip, the author as a pill washed
-      in a colour derived from their name, and the time the way a person says it ("just now",
-      "40 min ago", "06:21", "yesterday 09:12", "3 Sep, 11:32") with the exact stamp in the tooltip -
-      44px a row. Verified: the demo's server checkpoints by two other authors interleave correctly
-      with this browser's drafts; a row written before origins were recorded reads back as `Unknown`
-      with its own glyph and sorts into place; IndexedDB round-trips `origin` and `author`; searching
-      "alex" narrows to one person's revisions; the pill stays legible in both themes.
+      `GetLatestAsync` is unchanged, so what a reload restores is still the local draft. A list row is a
+      `Button` with its content replaced - the toolkit's clickable surface, so the hover, the pressed
+      state, the pointer and the keyboard come with it - carrying the origin as a coloured glyph on the
+      title's own line with the sentence in its tooltip, the time the way a person says it ("just now",
+      "40 min ago", "06:21", "yesterday 09:12", "3 Sep, 11:32") with the exact stamp in the tooltip, and
+      the author underneath. Verified: the demo's server checkpoints by two other authors interleave
+      correctly with this browser's drafts; a row written before origins were recorded reads back as
+      `Unknown` with its own glyph and sorts into place; IndexedDB round-trips `origin` and `author`;
+      searching "alex" narrows to one person's revisions; hover, selection and the accent read in both
+      themes.
+- [x] **The author is a component the host supplies.** `RenderAuthor(Func<EditorHistoryEntry,
+      IComponent>)` on the view and the modal, because what a revision records is an id and the name
+      behind it is a network call: an `InlineLabel` built from a task draws a skeleton while the lookup
+      runs, shows what the task sets, and takes its own slot out of the line when the task sets nothing.
+      Setting it after the rows have loaded re-draws them, so `editor.ShowHistory().RenderAuthor(...)`
+      is one line. Verified against the sample's stand-in directory: four skeletons appear ~50ms after a
+      refresh and resolve into three names with their own colours.
+- [x] **Revert moved to the line that names the revision** - beside "Before 2026-09-03, 11:32" rather
+      than in the toolbar, so the button and the timestamp it acts on are one sentence; the toolbar is
+      left with what looks at the comparison. The line count came off the rows at the same time: the
+      diff beside the list says what changed.
 - [x] **Fixed on the way: a diff editor never resized.** Monaco's diff widget measures its own root,
       whose height Monaco writes itself when `automaticLayout` is off, so the dimensionless `layout()`
       the base component called could not change anything - measured, a 720px -> 674px container left

@@ -276,14 +276,39 @@ Three smaller decisions, each of which cost a round to get right:
 as `editor.ShowHistory()`) is the revision list plus a diff of the selected revision against the
 editor's current text. Every part of it is a Tesserae component: `SearchableList<T>` is the list *and*
 the "search by content" box — its `ISearchableItem.IsMatch` runs over each revision's stored text, which
-is what makes the search a content search — a `Card` over a `ListItemText` is a row, a `Banner` is the
-"contents are identical" notice with its own dismiss, a `SplitView` gives the two panes a draggable
-divider, and `Collapse()`/`Show()` are how the notice and the second pane header come and go. There is
-no `HTMLElement` in it beyond the `IComponent.Render()` signature, and **no stylesheet**: the selected
-row is `BackgroundColor(Theme.Default.BackgroundActive)` and `Border(Theme.Primary.Background)`, so it
-follows a runtime theme change for free. The first version hand-rolled the rows as divs with a
-`<style>` element injected for their hover and selected states; composing them instead deleted that
-file's worth of CSS and got the hover, the scrolling, the empty state and the search for nothing.
+is what makes the search a content search — a `Banner` is the "contents are identical" notice with its
+own dismiss, a `SplitView` gives the two panes a draggable divider, and `Collapse()`/`Show()` are how
+the notice and the second pane header come and go. There is no `HTMLElement` in it beyond the
+`IComponent.Render()` signature, and **no stylesheet**. The first version hand-rolled the rows as divs
+with a `<style>` element injected for their hover and selected states; composing them instead deleted
+that file's worth of CSS and got the hover, the scrolling, the empty state and the search for nothing.
+
+**A row is a `Button` with `ReplaceContent(...)`**, which is the toolkit's own answer to "what owns a
+row's behaviour" — `ListItemText`'s docs say as much: it draws text and nothing else, and the *lister*
+owns the border, the hover and the click. A default `Button` is already transparent, borderless and
+shadowless and brings the themed hover and pressed backgrounds, the pointer, the focus ring and
+Enter/Space with it, so a flat list row costs one call and no CSS. Two things to know:
+
+- **Clear the background for the unselected state, don't set it to `transparent`.** An inline style
+  beats the class rule, so a transparent one leaves the button's own `:hover` with nothing to paint —
+  measured: the rows stopped answering the pointer at all, while looking exactly right. `Background("")`
+  restores it.
+- **Don't reach for `Button.Color(...)`** to colour a selected row. It adds `tss-btn-nobg`
+  permanently, and that rule sits *after* the default hover rule in the stylesheet, so the hover stays
+  dead even once the inline style is gone. `Background(...)` alone is enough.
+- A `Card` was the first attempt (it has `HoverColor()` and `OnClick`) and reads as a card, which a list
+  of revisions is not. `OmniResult` was the second, and is worse: it has the list-row visuals, but it is
+  the *omnibox's* row — checkbox selection semantics, a pages rail, modal-opening — and `tss-omniresult`
+  in a history sidebar misleads whoever reads it next.
+
+**The author is a component the host supplies**, through `EditorHistoryView.RenderAuthor(...)`. What a
+revision carries is whoever the store recorded, which in a real app is an id; the name behind it is a
+lookup. So the hook hands back an `IComponent` rather than a string, and `InlineLabel(async label =>
+…)` is the whole mechanism: built from a task it draws a skeleton while the task runs, shows whatever
+the task set on it, and takes its own slot out of the line — separator included — when the task sets
+nothing, which is what an id nobody can resolve should look like. Setting the hook after the rows have
+loaded re-draws them, so `editor.ShowHistory().RenderAuthor(...)` stays one line. The default, when a
+host says nothing, is an `InlineLabel` of the recorded name behind a swatch of its own colour.
 
 Two things it needs from the recorder, which is why they exist on `EditorHistory`: `CurrentText` (the
 diff's right-hand side, re-read after every revert rather than captured once) and `IsAttached` (whether
@@ -308,6 +333,10 @@ untouched — what a reload restores is still the local draft when there is one.
 
 Three things about the row that each took a measurement:
 
+- **What a revision was is not a line count.** The rows carried one and it was the first thing to go
+  when the list had to get out of the diff's way: the pane beside it says what changed, exactly, and a
+  number that only ever means "bigger or smaller than the last one" spends a line saying less than
+  that.
 - **Sort over the union, in the view.** Every store answers newest-first on its own, so it is tempting
   to trust the order; but a `DelegateHistoryStore` is whatever a host wrote, and a merged list has no
   inherited order at all. `LoadAsync` sorts.
@@ -318,9 +347,10 @@ Three things about the row that each took a measurement:
   same — and the name is written in the pill, which settles the second case. The slot comes from the
   hash's whole range (`hash * 10 / modulus`), not `hash % 10`: the low digits of an accumulator that
   small are barely mixed, and the remainder put two of the three demo names in one slot.
-- **Only the pill's background is coloured.** A hue picked to read on white is the one that disappears
-  on a dark surface, and nothing re-renders the row through a theme change — so the text keeps the
-  tag's own themed foreground and the hue is carried by a 25%-alpha wash, which reads on both.
+- **Only the swatch is coloured.** A hue picked to read on white is the one that disappears on a dark
+  surface, and nothing re-renders the row through a theme change — so the label keeps its own themed
+  text colour and the hue is carried by `InlineLabel.SetColor(...)`, a square that is exempt from the
+  line's grey precisely because it is nothing but its colour.
 
 **Read everything off the editor before the first `await`.** `Detach` starts the flush and then drops
 the surface, so an `async` body only sees a live editor up to its first `await`. This bit twice: first
