@@ -289,13 +289,20 @@ owns the border, the hover and the click. A default `Button` is already transpar
 shadowless and brings the themed hover and pressed backgrounds, the pointer, the focus ring and
 Enter/Space with it, so a flat list row costs one call and no CSS. Two things to know:
 
-- **Clear the background for the unselected state, don't set it to `transparent`.** An inline style
-  beats the class rule, so a transparent one leaves the button's own `:hover` with nothing to paint —
-  measured: the rows stopped answering the pointer at all, while looking exactly right. `Background("")`
-  restores it.
-- **Don't reach for `Button.Color(...)`** to colour a selected row. It adds `tss-btn-nobg`
-  permanently, and that rule sits *after* the default hover rule in the stylesheet, so the hover stays
-  dead even once the inline style is gone. `Background(...)` alone is enough.
+- **Never give the button itself a background.** A `Button` with one is a *coloured* button, and a
+  coloured button brightens on hover: `Background(...)` adds `tss-btn-filter-effects`, whose `:hover`
+  is `filter: brightness(1.1)`. That is right for a saturated brand colour and wrong for a near-white
+  wash — 235 × 1.1 clamps to 255, so the selected row went **pure white** under the pointer while the
+  computed background never changed. Not a fault in the toolkit: the row is not a coloured button, so
+  it should not say it is. The selected wash goes on a `Stack` *inside* the button, which is the whole
+  reason `Revision` has a `_surface` — and it carries the padding too, so the wash covers the row
+  rather than sitting inside its inset.
+- **Clear a background rather than setting it to `transparent`.** An inline style beats the class rule,
+  so a transparent one leaves the hover with nothing to paint — measured on the first version of this,
+  where the rows stopped answering the pointer at all while looking exactly right.
+- **`Button.Color(...)` is worse than `Background(...)` here**: it adds `tss-btn-nobg` permanently, and
+  that rule sits *after* the default hover rule in the stylesheet, so the hover stays dead even once
+  the inline style is gone.
 - A `Card` was the first attempt (it has `HoverColor()` and `OnClick`) and reads as a card, which a list
   of revisions is not. `OmniResult` was the second, and is worse: it has the list-row visuals, but it is
   the *omnibox's* row — checkbox selection semantics, a pages rail, modal-opening — and `tss-omniresult`
