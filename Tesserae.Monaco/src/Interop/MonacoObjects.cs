@@ -299,6 +299,32 @@ namespace Tesserae.Monaco
     public interface IEditorMouseEvent
     {
         IMouseTarget target { get; }
+
+        /// <summary>
+        /// The pointer event behind it. Monaco wraps the browser's rather than handing it over, which
+        /// is why the button arrives as <see cref="IMouseEvent.leftButton"/> instead of a numeric
+        /// <c>button</c>.
+        /// </summary>
+        IMouseEvent @event { get; }
+    }
+
+    /// <summary>
+    /// Monaco's <c>IMouseEvent</c> - its wrapper over the browser's, carrying the button, the modifier
+    /// keys and the click count a gesture has to tell apart.
+    /// </summary>
+    [External]
+    [Convention(Notation.None)]
+    public interface IMouseEvent
+    {
+        bool leftButton  { get; }
+        bool rightButton { get; }
+        bool ctrlKey     { get; }
+        bool shiftKey    { get; }
+        bool altKey      { get; }
+        bool metaKey     { get; }
+
+        /// <summary>The click count: 1 for a single click, 2 for a double.</summary>
+        int  detail      { get; }
     }
 
     /// <summary>Text was pasted, matching Monaco's <c>IPasteEvent</c>.</summary>

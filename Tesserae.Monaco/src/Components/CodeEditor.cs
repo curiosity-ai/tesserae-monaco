@@ -46,6 +46,7 @@ namespace Tesserae.Monaco
         private Func<ITextModel, Position, IPromise>                     _onHover;
         private Func<CompletionItem, ICancellationToken, object>         _onResolveCompletion;
         private Func<string, Task<string>>                               _onFormat;
+        private bool                                                     _navigateOnClickOnly;
         private Func<string, Task<ReadOnlyArray<CodeDiagnostic>>>        _validator;
         private bool                                                     _validateImmediately;
 
@@ -392,6 +393,32 @@ namespace Tesserae.Monaco
         }
 
         /// <summary>
+        /// Makes go-to-definition a click gesture, and nothing else.
+        ///
+        /// Monaco treats it as a hover gesture too: while the trigger modifier is held, its "go to
+        /// definition at position" contribution asks the definition provider on every mouse move, to
+        /// underline the word as a link and preview its source inline. A provider that only reads is
+        /// fine with that; one that reaches a server, or whose answer opens a panel of its own,
+        /// navigates while the user is merely passing over the code.
+        ///
+        /// With that contribution disposed the editor answers the click itself: a single left click on
+        /// a word, with the modifier Monaco would have used, moves the caret there and runs the same
+        /// <c>editor.action.revealDefinition</c> command F12 and the context menu run - so all three
+        /// reach the provider by one path. A modifier-drag that selects text is not a click on a symbol
+        /// and is ignored. Hovering keeps the hover provider: tooltips, no navigation, no link
+        /// underline, no inline preview.
+        ///
+        /// Disposing the contribution unhooks those three gestures and nothing else - F12 and Peek
+        /// Definition are commands rather than this contribution.
+        /// </summary>
+        public CodeEditor NavigateOnClickOnly(bool clickOnly = true)
+        {
+            _navigateOnClickOnly = clickOnly;
+
+            return this;
+        }
+
+        /// <summary>
         /// Highlights the other occurrences of the symbol under the caret. Needs
         /// <c>OccurrencesHighlight("singleFile")</c>, which is the editor's default.
         /// </summary>
@@ -627,6 +654,8 @@ namespace Tesserae.Monaco
 
             AddWordWrapAction(editor);
 
+            if (_navigateOnClickOnly) EnableClickOnlyNavigation(editor);
+
             if (_autoHeight) EnableAutoHeight();
 
             RaiseRendered();
@@ -767,6 +796,66 @@ namespace Tesserae.Monaco
                 run                = _ => WordWrap(!IsWordWrapped)
             });
         }
+
+        // Monaco's "go to definition at position" contribution owns three gestures: the modifier-hover that
+        // underlines a word and previews its source, the same preview started by pressing the modifier with
+        // the pointer already on a word, and the navigation run from the modifier click.
+        private const string GOTO_DEFINITION_AT_POSITION_CONTRIBUTION = "editor.contrib.gotodefinitionatposition";
+
+        // Go-to-definition is a command rather than one of the editor's own actions, so it is reached through
+        // trigger() - getAction() answers null for it.
+        private const string REVEAL_DEFINITION_COMMAND = "editor.action.revealDefinition";
+
+        private void EnableClickOnlyNavigation(IStandaloneCodeEditor editor)
+        {
+            // A direct cast, never `as`: an [External] interface has no emitted metadata, so a runtime type
+            // test reads `constructor` off nothing and throws, while a direct cast emits nothing at all and
+            // leaves a missing contribution as the null it already is.
+            var gotoDefinitionAtPosition = (IJsDisposable)editor.getContribution(GOTO_DEFINITION_AT_POSITION_CONTRIBUTION);
+
+            gotoDefinitionAtPosition?.dispose();
+
+            var pressedOnLine = 0;
+
+            // Both subscriptions go through the surface, so the component's DisposableBag releases them.
+            Surface.OnMouseDown(e => pressedOnLine = IsNavigationClick(editor, e) ? e.target.position.lineNumber : 0);
+
+            Surface.OnMouseUp(e =>
+            {
+                var startedOnLine = pressedOnLine;
+
+                pressedOnLine = 0;
+
+                // A press that started on another line selected text, it did not click a symbol.
+                if (!IsNavigationClick(editor, e) || (e.target.position.lineNumber != startedOnLine)) return;
+
+                editor.setPosition(e.target.position);
+                editor.trigger("mouse", REVEAL_DEFINITION_COMMAND, null);
+            });
+        }
+
+        /// <summary>
+        /// Whether an event is a single left click on text with the go-to-definition modifier held. That
+        /// modifier is the complement of the multi-cursor one: ctrl / cmd normally, alt when the user has
+        /// swapped them.
+        /// </summary>
+        private static bool IsNavigationClick(IStandaloneCodeEditor editor, IEditorMouseEvent e)
+        {
+            if ((e is null) || (e.@event is null) || (e.target is null)) return false;
+            if (!e.@event.leftButton || e.@event.shiftKey || (e.@event.detail > 1)) return false;
+            if ((e.target.type != (int)MouseTargetType.Content) || (e.target.position is null)) return false;
+
+            // The two are complements: multi-cursor on alt (Monaco's default) leaves ctrl/cmd for
+            // go-to-definition, and swapping multi-cursor to ctrl/cmd leaves alt.
+            var multiCursorModifier = ((IStringOptions)editor).getOption(MonacoApi.editor.EditorOption.multiCursorModifier);
+
+            if (multiCursorModifier != "altKey") return e.@event.altKey;
+
+            return IS_MACINTOSH ? e.@event.metaKey : e.@event.ctrlKey;
+        }
+
+        // Monaco picks cmd over ctrl off the platform rather than off the event, and so does this.
+        private static readonly bool IS_MACINTOSH = (navigator.platform is object) && navigator.platform.StartsWith("Mac");
 
         protected override void BeforeDispose()
         {

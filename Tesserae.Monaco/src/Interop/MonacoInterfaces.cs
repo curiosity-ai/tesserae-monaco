@@ -374,6 +374,28 @@ namespace Tesserae.Monaco
         int lineNumbers { get; }
         int glyphMargin { get; }
         int minimap { get; }
+
+        /// <summary>
+        /// Which modifier adds a cursor - <c>"ctrlCmd"</c> or <c>"altKey"</c>. Worth knowing because
+        /// go-to-definition uses whichever one it does not: they are each other's complement.
+        /// </summary>
+        int multiCursorModifier { get; }
+    }
+
+    /// <summary>
+    /// Reads a string-valued option off an editor.
+    ///
+    /// It cannot join <see cref="IStandaloneCodeEditor.getNumberOption"/>: two declarations on one type
+    /// that emit the same JavaScript name get a <c>$1</c> suffix and stop matching Monaco. On a
+    /// separate <c>[External]</c> interface there is no collision, and the direct cast that reaches it
+    /// emits nothing at all - so <c>((IStringOptions)editor).getOption(id)</c> is exactly
+    /// <c>editor.getOption(id)</c>.
+    /// </summary>
+    [External]
+    [Convention(Notation.None)]
+    public interface IStringOptions
+    {
+        string getOption(int optionId);
     }
 
     /// <summary><c>monaco.languages</c>.</summary>
