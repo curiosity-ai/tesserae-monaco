@@ -596,7 +596,8 @@ namespace Tesserae.Monaco
         /// toolkit's own answer to "what owns a row's behaviour": a default button is already
         /// transparent, borderless and shadowless, and brings the themed hover and pressed backgrounds,
         /// the pointer, the focus ring and Enter/Space with it. So the row reads as a list row rather
-        /// than as a card, and nothing here draws a hover state or ships a rule to get one.
+        /// than as a card, and nothing here draws a hover state or ships a rule to get one. The
+        /// button's own background is left alone for that reason - see <see cref="Select"/>.
         ///
         /// Two lines: the origin tile and what the revision was, with when it was on the same line; who
         /// made it underneath. The origin is a glyph in its own colour with the sentence in its tooltip;
@@ -611,6 +612,7 @@ namespace Tesserae.Monaco
         {
             private readonly EditorHistoryEntry _entry;
             private readonly Button             _row;
+            private readonly Stack              _surface;
             private readonly Stack              _accent;
 
             internal Revision(EditorHistoryEntry entry, Action<Revision> onPicked, Func<EditorHistoryEntry, IComponent> renderAuthor)
@@ -638,9 +640,15 @@ namespace Tesserae.Monaco
                     body.Add(HStack().WS().NoWrap().AlignItemsCenter().PL(20).Children(author));
                 }
 
+                // The padding and the selected wash are the surface's, not the button's - see Select.
+                _surface = HStack().WS().NoWrap().AlignItems(ItemAlign.Stretch).Gap(7.px())
+                   .PL(6).PR(10).PT(5).PB(5)
+                   .Rounded(BorderRadius.Medium)
+                   .Children(_accent, body);
+
                 _row = Button()
-                   .ReplaceContent(HStack().WS().NoWrap().AlignItems(ItemAlign.Stretch).Gap(7.px()).Children(_accent, body))
-                   .WS().MinWidth(0.px()).PL(6).PR(10).PT(5).PB(5)
+                   .ReplaceContent(_surface)
+                   .WS().MinWidth(0.px()).PL(0).PR(0).PT(0).PB(0)
                    .OnClick(() => onPicked(this));
 
                 Select(false);
@@ -668,16 +676,23 @@ namespace Tesserae.Monaco
             /// Whether this is the revision on screen: the pressed background the toolkit uses for a
             /// chosen row, and the brand colour in the column at its edge.
             ///
-            /// The unselected state <b>clears</b> the background rather than setting it to transparent.
-            /// An inline style beats a class rule, so a transparent one leaves the button's own hover
-            /// with nothing to paint - measured: the rows stopped answering the pointer entirely, while
-            /// looking exactly right. For the same reason this goes through <c>Background</c> rather
-            /// than <c>Color</c>, which permanently adds the no-background class and would take the
-            /// hover away for good.
+            /// The wash goes on the surface <b>inside</b> the button rather than on the button itself,
+            /// which is the whole reason there is a surface. Giving a <see cref="Button"/> a background
+            /// tells it that it is a coloured button, and a coloured button brightens on hover
+            /// (<c>Background</c> adds <c>tss-btn-filter-effects</c>, whose <c>:hover</c> is
+            /// <c>filter: brightness(1.1)</c>) - correct for a saturated brand colour and wrong for a
+            /// near-white wash, where 235 x 1.1 clamps to 255 and the selected row goes white under the
+            /// pointer. Measured, and not a fault in the toolkit: the row simply is not a coloured
+            /// button, so it should not say it is. With the wash one level in, the button keeps its
+            /// stock hover for every unselected row and nothing filters anything.
+            ///
+            /// The unselected state <b>clears</b> the background rather than setting it to transparent,
+            /// for the neighbouring reason: an inline style beats a class rule, so a transparent one
+            /// would leave the hover with nothing to paint.
             /// </summary>
             internal void Select(bool selected)
             {
-                _row.Background(selected ? Theme.Default.BackgroundActive : "");
+                _surface.Background(selected ? Theme.Default.BackgroundActive : "");
 
                 _accent.Background(selected ? Theme.Primary.Background : "");
             }
