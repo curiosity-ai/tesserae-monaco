@@ -18,12 +18,14 @@ namespace Tesserae.Monaco
     /// this too.
     ///
     /// It is composed from Tesserae rather than drawn: <see cref="SearchableList{T}"/> is the list and
-    /// its "search by content" box, a <see cref="Card"/> is a row, <see cref="ListItemText"/> is the
-    /// row's two lines, a <see cref="Banner"/> is the "contents are identical" strip, a
-    /// <see cref="SplitView"/> is the two panes and their draggable divider, and the diff is this
-    /// package's own <see cref="DiffViewer"/>. So there is no stylesheet to ship and no element to
-    /// build by hand - the selected row's colours are <c>Theme</c> variables, which is what makes the
-    /// surface follow the app's light and dark themes as they change.
+    /// its "search by content" box, a <see cref="Button"/> with its content replaced is a row - the
+    /// toolkit's clickable surface, which is where the hover, the pressed state, the pointer and the
+    /// keyboard come from - an <see cref="InlineLabel"/> is the author under the title, a
+    /// <see cref="Banner"/> is the "contents are identical" strip, a <see cref="SplitView"/> is the two
+    /// panes and their draggable divider, and the diff is this package's own <see cref="DiffViewer"/>.
+    /// So there is no stylesheet to ship and no element built by hand - the selected row's colours are
+    /// <c>Theme</c> variables, which is what makes the surface follow the app's light and dark themes
+    /// as they change.
     ///
     /// The revisions are read when it is mounted, so building one costs nothing and loads nothing.
     /// </summary>
@@ -41,11 +43,13 @@ namespace Tesserae.Monaco
         private readonly Button                   _restore;
         private readonly IComponent               _content;
 
-        private readonly List<Revision> _rows = new List<Revision>();
+        private readonly List<Revision>           _rows    = new List<Revision>();
+        private          List<EditorHistoryEntry> _entries = new List<EditorHistoryEntry>();
 
         private readonly SearchBox _search;
 
         private Revision                   _selected;
+        private Func<EditorHistoryEntry, IComponent> _renderAuthor;
         private bool                       _sideBySide = true;
         private string                     _current = "";
         private bool                       _identicalDismissed;
@@ -89,7 +93,7 @@ namespace Tesserae.Monaco
                .SetIcon(UIcons.SquareInfo)
                .OnDismiss(() => _identicalDismissed = true);
 
-            _restore = Button("Revert").SetIcon(UIcons.RotateLeft).Compact()
+            _restore = Button("Revert").SetIcon(UIcons.RotateLeft).Compact().NoBorder()
                .Tooltip("Put this revision back into the editor, as one undoable edit")
                .OnClick(RestoreSelected)
                .Disabled();
@@ -99,8 +103,10 @@ namespace Tesserae.Monaco
                     IconToggleItem(UIcons.Square,      "Inline",       false)).Compact()
                .OnChange((_, sideBySide) => ShowSideBySide(sideBySide));
 
+            // The toolbar is what looks at the comparison - reload it, walk its differences, split it or
+            // not. Reverting is not one of those: it changes the document, and it belongs beside the
+            // revision it puts back rather than in the row of view controls.
             var toolbar = HStack().WS().NoWrap().AlignItemsCenter().Gap(6.px()).PL(8).PR(8).PT(4).PB(4).Children(
-                _restore,
                 Button(UIcons.Refresh).Compact().NoBackground().Tooltip("Reload the revisions").OnClick(() => LoadAsync().FireAndForget()),
                 Raw().Grow(),
                 _status,
@@ -112,10 +118,17 @@ namespace Tesserae.Monaco
             // cannot be typed into; the right is the editor's own text. Inline there is only one pane,
             // so the right half is collapsed and the left one names both documents - two headers over a
             // single column would each point at nothing.
+            //
+            // Revert sits here, at the end of the line that names the revision on screen: the button
+            // and the timestamp it acts on are then one sentence, and the question a person asks before
+            // pressing it - "which revision is this?" - is answered immediately to its left.
             _currentHeader = HStack().Grow().Children(TextBlock("Current").Small().Secondary());
 
             var headers = HStack().WS().NoWrap().AlignItemsCenter().PL(8).PR(8).PT(2).PB(2).Children(
-                HStack().NoWrap().AlignItemsCenter().Gap(4.px()).Grow().Children(Icon(UIcons.Lock, size: TextSize.Small), _beforeHeader),
+                HStack().NoWrap().AlignItemsCenter().Gap(6.px()).Grow().Children(
+                    Icon(UIcons.Lock, size: TextSize.Small),
+                    _beforeHeader,
+                    _restore),
                 _currentHeader);
 
             // Three things this layout depends on, each measured:
@@ -168,6 +181,38 @@ namespace Tesserae.Monaco
         }
 
         /// <summary>
+        /// Draws the author of a revision however the host wants to draw it, in the row's fact line
+        /// under the title. Answer null to leave the row without an author.
+        ///
+        /// The point of it being a component rather than a string is that a name usually is not one
+        /// yet: what a revision carries is whoever the store recorded - often an id - and turning that
+        /// into a name is a lookup. So hand back a component that fills itself in, which
+        /// <see cref="InlineLabel"/> does natively: built from a task it draws a skeleton while the
+        /// task runs, shows whatever the task set on it, and removes itself - separator dot included -
+        /// when the task sets nothing at all.
+        ///
+        /// <code>
+        /// view.RenderAuthor(entry =&gt; InlineLabel(async label =&gt;
+        /// {
+        ///     var person = await Directory.LookUpAsync(entry.Author);
+        ///
+        ///     if (person is object) label.SetText(person.Name).SetImage(person.AvatarUrl);
+        /// }));
+        /// </code>
+        ///
+        /// Setting it after the revisions have loaded re-draws the rows, so it does not have to be in
+        /// place before the view is shown.
+        /// </summary>
+        public EditorHistoryView RenderAuthor(Func<EditorHistoryEntry, IComponent> render)
+        {
+            _renderAuthor = render;
+
+            if (_loaded) ShowRows();
+
+            return this;
+        }
+
+        /// <summary>
         /// Re-reads the revisions from the store. Runs on mount; call it again after writing one from
         /// outside this view.
         /// </summary>
@@ -200,19 +245,29 @@ namespace Tesserae.Monaco
 
             if (!string.IsNullOrWhiteSpace(language)) _diff.SetLanguage(language);
 
-            _rows.Clear();
-
             // Newest first, over the union rather than per source. A history can be fed by more than
             // one store - this browser's IndexedDB and a server's checkpoints - and each answers in its
             // own order, so the one thing a reader needs of a revision list, that it runs in time, has
             // to be established here rather than assumed of whatever answered.
-            var sorted = new List<EditorHistoryEntry>(entries ?? new EditorHistoryEntry[0]);
+            _entries = new List<EditorHistoryEntry>(entries ?? new EditorHistoryEntry[0]);
 
-            sorted.Sort((left, right) => right.Timestamp.CompareTo(left.Timestamp));
+            _entries.Sort((left, right) => right.Timestamp.CompareTo(left.Timestamp));
 
-            foreach (var entry in sorted)
+            ShowRows();
+        }
+
+        /// <summary>
+        /// Rebuilds the rows from what was last loaded. Separate from <see cref="LoadAsync"/> because
+        /// how a row is drawn can change without the revisions having - <see cref="RenderAuthor"/> -
+        /// and re-reading the store to redraw a list would be the wrong shape of fix.
+        /// </summary>
+        private void ShowRows()
+        {
+            _rows.Clear();
+
+            foreach (var entry in _entries)
             {
-                _rows.Add(new Revision(entry, Select));
+                _rows.Add(new Revision(entry, Select, Author));
             }
 
             _revisions.Items.ReplaceAll(_rows);
@@ -318,7 +373,7 @@ namespace Tesserae.Monaco
                 return;
             }
 
-            var stamp = Stamp(_selected.Entry.Timestamp);
+            var stamp = Stamp(_selected.Entry.Timestamp, withSeconds: false);
 
             _beforeHeader.Text = _sideBySide ? "Before " + stamp : "Before " + stamp + "   \u2192   Current";
         }
@@ -388,11 +443,15 @@ namespace Tesserae.Monaco
         /// An epoch-millisecond stamp as a local <c>yyyy-MM-dd, HH:mm</c>. Hand-formatted rather than
         /// through a format string: the parts are what a row shows, and padding them is the whole job.
         /// </summary>
-        private static string Stamp(double epochMilliseconds)
+        private static string Stamp(double epochMilliseconds, bool withSeconds = true)
         {
             var moment = EditorHistory.ToDateTime(epochMilliseconds).ToLocalTime();
+            var stamp  = moment.Year + "-" + Two(moment.Month) + "-" + Two(moment.Day) + ", " + Two(moment.Hour) + ":" + Two(moment.Minute);
 
-            return moment.Year + "-" + Two(moment.Month) + "-" + Two(moment.Day) + ", " + Two(moment.Hour) + ":" + Two(moment.Minute) + ":" + Two(moment.Second);
+            // Seconds where the stamp is the precise answer to "when exactly was this" - a row's
+            // tooltip - and not where it is a heading, which two revisions a minute apart never need
+            // telling apart by.
+            return withSeconds ? stamp + ":" + Two(moment.Second) : stamp;
         }
 
         /// <summary>
@@ -431,60 +490,67 @@ namespace Tesserae.Monaco
 
         private static string Two(int value) => value < 10 ? "0" + value : value.ToString();
 
-        private static int Lines(string text)
-        {
-            if (string.IsNullOrEmpty(text)) return 0;
-
-            var lines = 1;
-
-            for (var index = 0; index < text.Length; index++)
-            {
-                if (text[index] == '\n') lines++;
-            }
-
-            return lines;
-        }
-
         /// <summary>
-        /// Where the revision came from, as one glyph in one colour with the sentence in its tooltip.
-        /// A word for it would cost a third of the row's width to say something a reader only needs
-        /// when two origins are actually mixed - and the icon still says it at a glance when they are:
-        /// a browser window for what was typed here, a cloud for what arrived from elsewhere.
+        /// Where the revision came from, as one glyph on the title's own line with the sentence in its
+        /// tooltip. A word for it would cost a third of the row's width to say something a reader only
+        /// needs when two origins are actually mixed - and the glyph still says it at a glance when
+        /// they are: a browser window for what was typed here, a cloud for what arrived from elsewhere.
         /// </summary>
         private static IComponent OriginGlyph(EditorHistoryOrigin origin)
         {
             if (origin == EditorHistoryOrigin.Remote)
             {
-                return Icon(UIcons.CloudCheck, color: Theme.Primary.Background)
+                return Icon(UIcons.CloudCheck, color: OriginColor(origin))
                    .Tooltip("From outside this browser - a server checkpoint, or another device");
             }
 
             if (origin == EditorHistoryOrigin.Local)
             {
-                return Icon(UIcons.Browser, color: Theme.Secondary.Foreground)
+                return Icon(UIcons.Browser, color: OriginColor(origin))
                    .Tooltip("Saved in this browser as you typed");
             }
 
-            return Icon(UIcons.QuestionSquare, color: Theme.Secondary.Foreground)
+            return Icon(UIcons.QuestionSquare, color: OriginColor(origin))
                .Tooltip("Origin not recorded - stored before this was kept, or by a store that does not set it");
         }
 
         /// <summary>
-        /// Who made it, as a pill washed in a colour derived from their name - so one person's
-        /// revisions read as one person's down the list without the name having to be read each time.
-        /// Nothing at all when no author was recorded, which is the ordinary case for a browser-only
-        /// history: a pill saying "you" on every row would be noise.
-        ///
-        /// Only the background is coloured. The text keeps the tag's own themed foreground, because a
-        /// hue picked to read on a white surface is the one that disappears on a dark one - and the
-        /// pill has to stay legible through a theme change with nothing re-rendering it.
+        /// The colour the origin's glyph is drawn in - <c>Theme</c> variables, so both follow a runtime
+        /// theme change and neither has to be picked twice for light and dark. What came from outside
+        /// the browser takes the app's own accent, since that is the row a reader is looking for; what
+        /// was typed here is the quiet one, being the ordinary case.
         /// </summary>
-        private static IComponent AuthorChip(string author)
+        private static string OriginColor(EditorHistoryOrigin origin)
         {
-            if (string.IsNullOrWhiteSpace(author)) return Raw();
+            return origin == EditorHistoryOrigin.Remote ? Theme.Primary.Background : Theme.Secondary.Foreground;
+        }
 
-            return Tag(author).Pill()
-               .Background("hsla(" + HueFor(author) + ", 70%, 50%, 0.25)")
+        /// <summary>
+        /// Who made it, when the host has not said how to draw that - the name behind a small square of
+        /// a colour derived from it, so one person's revisions read as one person's down the list
+        /// without the name being read each time. Nothing at all when no author was recorded, which is
+        /// the ordinary case for a browser-only history: a label saying "you" on every row would be
+        /// noise.
+        ///
+        /// An <see cref="InlineLabel"/> because that is what the rest of the fact line is, and because
+        /// it is the shape a host replacing this needs - one built from a task looks up its own name
+        /// and takes its slot back if there is none. Only the square carries the hue: a colour picked to
+        /// read on a white surface is the one that disappears on a dark one, and the label's own text
+        /// colour is themed, while a swatch is exempt from the fact line's grey precisely because it is
+        /// nothing but its colour.
+        /// </summary>
+        private IComponent Author(EditorHistoryEntry entry)
+        {
+            var render = _renderAuthor;
+
+            if (render is object) return render(entry);
+
+            var author = entry.Author;
+
+            if (string.IsNullOrWhiteSpace(author)) return null;
+
+            return InlineLabel(author)
+               .SetColor("hsl(" + HueFor(author) + ", 65%, 50%)")
                .Tooltip("Made by " + author);
         }
 
@@ -496,7 +562,7 @@ namespace Tesserae.Monaco
         /// Measured with the demo's own names, that is exactly what happened - "Alex Kim" and
         /// "build-bot" came out seven degrees apart, both green. A palette of mutually distinguishable
         /// hues instead means two people are either clearly different or exactly the same, and the name
-        /// beside the pill settles the second case.
+        /// beside the swatch settles the second case.
         ///
         /// The slot comes from the hash's whole range rather than its remainder, because the low digits
         /// of an accumulator this small are barely mixed: <c>hash % 10</c> put two of the three demo
@@ -524,43 +590,57 @@ namespace Tesserae.Monaco
         #endregion
 
         /// <summary>
-        /// One row: a clickable <see cref="Card"/> holding what a reader needs to place the revision -
-        /// where it came from, who made it, when, and how big it was - plus the
-        /// <see cref="ISearchableItem"/> half that makes the list's search box filter by the revision's
-        /// own content.
+        /// One row of the list.
         ///
-        /// Two lines and nothing more, because the list is a 280px column beside the diff that is the
-        /// actual subject. The origin is a coloured glyph rather than a word, the author a tinted pill
-        /// in a colour derived from their name, and the time is said the way a person would say it -
-        /// each with the precise version in a tooltip, which is what keeps the row short without
-        /// hiding anything.
+        /// The clickable surface is a <see cref="Button"/> with its content replaced, which is the
+        /// toolkit's own answer to "what owns a row's behaviour": a default button is already
+        /// transparent, borderless and shadowless, and brings the themed hover and pressed backgrounds,
+        /// the pointer, the focus ring and Enter/Space with it. So the row reads as a list row rather
+        /// than as a card, and nothing here draws a hover state or ships a rule to get one.
         ///
-        /// The card is built once and handed back from <see cref="Render"/> every time, because the
-        /// list re-renders its rows on each query and a new card each time would lose the selection.
+        /// Two lines: the origin tile and what the revision was, with when it was on the same line; who
+        /// made it underneath. The origin is a glyph in its own colour with the sentence in its tooltip;
+        /// the author is whatever <see cref="EditorHistoryView.RenderAuthor"/> hands back, which is an
+        /// <see cref="InlineLabel"/> by default and can be one that looks its own name up. What the
+        /// revision was worth measuring, the diff beside the list says better than a line count would.
+        ///
+        /// The row is built once and handed back from <see cref="Render"/> every time, because the list
+        /// re-renders its rows on each query and a new row each time would lose the selection.
         /// </summary>
         private sealed class Revision : ISearchableItem
         {
             private readonly EditorHistoryEntry _entry;
-            private readonly Card               _card;
+            private readonly Button             _row;
+            private readonly Stack              _accent;
 
-            internal Revision(EditorHistoryEntry entry, Action<Revision> onPicked)
+            internal Revision(EditorHistoryEntry entry, Action<Revision> onPicked, Func<EditorHistoryEntry, IComponent> renderAuthor)
             {
                 _entry = entry;
 
-                var size = HStack().NoWrap().AlignItemsCenter().Gap(6.px()).Children(AuthorChip(entry.Author));
+                // A 3px column of colour rather than a left border on the row: a border would move the
+                // content sideways as the selection moved down the list, and it is one more thing that
+                // cannot be said without a stylesheet.
+                _accent = VStack().W(3.px()).HS();
 
-                size.Add(TextBlock(Lines(entry.Text) + " lines").Tiny().Secondary().NoWrap());
+                var author = renderAuthor is null ? null : renderAuthor(entry);
 
-                _card = Card(HStack().WS().NoWrap().AlignItemsCenter().Gap(8.px()).Children(
+                var body = VStack().Grow().MinWidth(0.px()).Children(
+                    HStack().WS().NoWrap().AlignItemsCenter().Gap(6.px()).Children(
                         OriginGlyph(entry.Origin),
-                        VStack().Grow().MinWidth(0.px()).Children(
-                            HStack().WS().NoWrap().AlignItemsCenter().Gap(6.px()).Children(
-                                TextBlock(Describe(entry)).Small().SemiBold().NoWrap(),
-                                Raw().Grow(),
-                                TextBlock(When(entry.Timestamp)).Tiny().Secondary().NoWrap().Tooltip(Stamp(entry.Timestamp))),
-                            size)))
-                   .Compact()
-                   .HoverColor()
+                        TextBlock(Describe(entry)).Small().SemiBold().NoWrap(),
+                        Raw().Grow(),
+                        TextBlock(When(entry.Timestamp)).Tiny().Secondary().NoWrap().Tooltip(Stamp(entry.Timestamp))));
+
+                // The author line only exists when there is an author, so a browser-only history is a
+                // list of single-line rows rather than one with a blank second line on every row.
+                if (author is object)
+                {
+                    body.Add(HStack().WS().NoWrap().AlignItemsCenter().PL(20).Children(author));
+                }
+
+                _row = Button()
+                   .ReplaceContent(HStack().WS().NoWrap().AlignItems(ItemAlign.Stretch).Gap(7.px()).Children(_accent, body))
+                   .WS().MinWidth(0.px()).PL(6).PR(10).PT(5).PB(5)
                    .OnClick(() => onPicked(this));
 
                 Select(false);
@@ -582,17 +662,24 @@ namespace Tesserae.Monaco
                 return Contains(_entry.Text, needle) || Contains(_entry.Label, needle) || Contains(_entry.Author, needle);
             }
 
-            public IComponent Render() => _card;
+            public IComponent Render() => _row;
 
             /// <summary>
-            /// The selected look, in theme variables rather than a stylesheet: the pressed background
-            /// the rest of the toolkit uses for a chosen row, and the brand colour on the border.
+            /// Whether this is the revision on screen: the pressed background the toolkit uses for a
+            /// chosen row, and the brand colour in the column at its edge.
+            ///
+            /// The unselected state <b>clears</b> the background rather than setting it to transparent.
+            /// An inline style beats a class rule, so a transparent one leaves the button's own hover
+            /// with nothing to paint - measured: the rows stopped answering the pointer entirely, while
+            /// looking exactly right. For the same reason this goes through <c>Background</c> rather
+            /// than <c>Color</c>, which permanently adds the no-background class and would take the
+            /// hover away for good.
             /// </summary>
             internal void Select(bool selected)
             {
-                _card
-                   .BackgroundColor(selected ? Theme.Default.BackgroundActive : Theme.Default.Background)
-                   .Border(selected ? Theme.Primary.Background : Theme.Default.Border);
+                _row.Background(selected ? Theme.Default.BackgroundActive : "");
+
+                _accent.Background(selected ? Theme.Primary.Background : "");
             }
 
             private static bool Contains(string haystack, string lowercaseNeedle)
@@ -651,6 +738,18 @@ namespace Tesserae.Monaco
         public EditorHistoryModal OnRestored(Action<EditorHistoryEntry> handler)
         {
             _view.OnRestored(handler);
+
+            return this;
+        }
+
+        /// <summary>
+        /// Draws the author of a revision - see <see cref="EditorHistoryView.RenderAuthor"/>. Safe to
+        /// call after <see cref="Show"/>: the rows are re-drawn if they have already loaded, which is
+        /// what lets <c>editor.ShowHistory().RenderAuthor(...)</c> stay one line.
+        /// </summary>
+        public EditorHistoryModal RenderAuthor(Func<EditorHistoryEntry, IComponent> render)
+        {
+            _view.RenderAuthor(render);
 
             return this;
         }

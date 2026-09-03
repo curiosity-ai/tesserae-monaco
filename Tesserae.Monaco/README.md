@@ -261,15 +261,37 @@ it goes in a panel, a split view or a page of its own. It carries the search box
 by their **content** (and by author, so `alex checkpoint` narrows to one person's), the side-by-side/inline
 toggle, change navigation, and the "contents are identical" notice for a revision that matches the editor.
 
-A row says four things in two lines, and the list runs newest first over every source at once — a store
+A row says three things in two lines, and the list runs newest first over every source at once — a store
 answers in its own order, so the ordering is re-established over the union rather than inherited:
 
 | | |
 |---|---|
-| Origin | A glyph: a browser window for what was typed here, a cloud for what came from outside it, in that origin's colour. The sentence is in its tooltip. |
-| Author | A pill washed in a colour derived from the name, so one person's revisions read as one person's down the list. Absent when no author was recorded. |
+| Origin | A glyph on the title's own line: a browser window for what was typed here, a cloud for what came from outside it, in that origin's colour. The sentence is in its tooltip. |
 | When | Said the way a person would: `just now`, `40 min ago`, `06:21` for earlier today, `yesterday 09:12`, `3 Sep, 11:32`. The exact stamp is in the tooltip. |
-| Size | The revision's line count. |
+| Author | Under the title, and whatever you want it to be — see below. Absent when no author was recorded. |
+
+The row itself is a `Button` with its content replaced, so the hover, the pressed state, the pointer,
+the focus ring and Enter/Space are the toolkit's; the selected row takes the pressed background and a
+column of the brand colour at its edge. Nothing here is a card and nothing here is a stylesheet.
+
+**The author is yours to draw.** What a revision carries is whoever the store recorded — usually an id —
+and the name behind it is a lookup, so `RenderAuthor` hands back a component rather than a string:
+
+```csharp
+editor.ShowHistory().RenderAuthor(entry => InlineLabel(async label =>
+{
+    var person = await Directory.LookUpAsync(entry.Author);   // sets nothing -> the slot disappears
+
+    if (person is object) label.SetText(person.Name).SetImage(person.AvatarUrl);
+}));
+```
+
+An `InlineLabel` built from a task draws a skeleton while the task runs, shows whatever the task set on
+it, and removes itself when the task sets nothing — which is what an id nobody can resolve should look
+like. Any `IComponent` will do, and `null` leaves the row without an author. Called after the modal is
+open it re-draws the rows, so the one-liner above is enough. The default, if you say nothing, is the
+recorded name behind a swatch in a colour derived from it, so one person's revisions read as one
+person's down the list.
 
 It is composed from Tesserae rather than drawn: `SearchableList` is the list and its search box, a
 `Card` over a `ListItemText` is a row, a `Banner` is the notice, a `SplitView` is the two panes and
