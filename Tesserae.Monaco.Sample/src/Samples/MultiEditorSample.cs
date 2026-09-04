@@ -26,6 +26,7 @@ namespace Tesserae.Monaco.Sample
             var shell = MonacoEditor.MultiEditor()
                .PersistInUrl()
                .PersistLayout("gallery:multi-editor")
+               .Views("gallery:multi-editor")
                .FilterPlaceholder("Filter documents...")
                .Landing(() => VStack().AlignItemsCenter().Gap(8.px()).Children(
                     Icon(UIcons.WindowRestore, size: TextSize.Large, color: Theme.Secondary.Foreground),
@@ -52,17 +53,18 @@ namespace Tesserae.Monaco.Sample
                .SampleTitle(typeof(MultiEditorSample), UIcons.WindowRestore, "A tree of documents, a tab per open one, and everything in between")
                .FlatSection(VStack().Children(
                     Card(VStack().WS().Children(
-                        TextBlock("MonacoEditor.MultiEditor() is the shell an application puts around its editors: a tree of documents on the left, one tab per open document on the right, unsaved-changes markers on the tabs and a prompt before a dirty one closes, Ctrl+S, the open set and the active tab in the URL, the tree's folders and width remembered across visits, a filter over the tree, and Ctrl+P to open by name."),
+                        TextBlock("MonacoEditor.MultiEditor() is the shell an application puts around its editors: a tree of documents on the left, one tab per open document on the right, unsaved-changes markers on the tabs and a prompt before a dirty one closes, Ctrl+S, the open set and the active tab in the URL, the tree's folders and width remembered across visits, a filter over the tree, Ctrl+P to open by name, and views - named subsets of the documents to show while working on one thing."),
                         TextBlock("It is composed from Tesserae - SplitView, Tree, Pivot, SearchBox, CommandPalette, TabSaveIndicator and UnsavedChangesGuard - and adds only the wiring between them and the documents. A document is a description: an id, a title, a folder, and how to load and save its text. The editor exists only while its tab is open.").MT(8))).SetTitle("Overview")))
                .FlatSection(VStack().Children(
                     Card(VStack().WS().Children(
                         TextBlock("Attach language providers in .ConfigureEditor((doc, editor) => ...), which runs for every editor the shell creates - the document tells you which providers it wants. A document with .Content set shows that instead of an editor, so forms and viewers can sit in tabs next to code; such a tab reports its own dirty state through .MarkDirty(id, dirty)."),
                         TextBlock("Hidden tabs stay mounted, so switching away and back keeps the caret, the scroll offset, the undo history and the markers. Call .Documents(...) again whenever the catalog changes - open tabs are re-bound by id and keep their state - and .SetStatus(id, status, message) to flag a document after a compile without rebuilding anything.").MT(8),
-                        TextBlock("Mount the shell before its catalog has arrived if you like: a document the URL names is opened as soon as .Documents(...) delivers it.").MT(8))).SetTitle("Best Practices")))
+                        TextBlock("Mount the shell before its catalog has arrived if you like: a document the URL names is opened as soon as .Documents(...) delivers it.").MT(8),
+                        TextBlock(".Views(scope) turns on views: a row above the filter picks one, and the right-click menu of any file or folder adds it to a view or takes it out. A folder in a view stands for everything under it, including documents created later. Views live in the browser's local storage by default, one list per scope; to keep them on a server instead - so they follow the user across machines, or so a team shares them - pass a store: .Views(scope, new DelegateEditorViewStore { List = s => GetViews(s), Save = v => Post(v.ToPlainObject()), Delete = (s, id) => DeleteView(s, id) }). The package makes no HTTP call of its own.").MT(8))).SetTitle("Best Practices")))
                .FlatSection(VStack().Children(
                     Card(VStack().WS().Children(
                         SampleSubTitle("Try it"),
-                        TextBlock("Open a few documents, edit one and watch its tab's marker, press Ctrl+S, then middle-click a tab or drag it along the strip. Type in the filter box - it also searches the documents' text. The + on a folder opens an untitled document that joins the catalog when it is saved; a document that still contains a TODO is flagged after saving. Reload the page and the same tabs come back."),
+                        TextBlock("Open a few documents, edit one and watch its tab's marker, press Ctrl+S, then middle-click a tab or drag it along the strip. Type in the filter box - it also searches the documents' text. The + on a folder opens an untitled document that joins the catalog when it is saved; a document that still contains a TODO is flagged after saving. Reload the page and the same tabs come back. Right-click a file or folder and pick Add to view, New view... to start a view, then choose it in the dropdown above the filter: the tree shows only that view, the URL carries it, and Ctrl+P still opens anything. The dots button beside the dropdown renames or deletes the view."),
                         shell.WS().H(560.px()).MT(8),
                         HStack().WS().Wrap().Gap(8.px()).AlignItemsCenter().PT(8).Children(
                             Button("Save all").SetIcon(UIcons.Disk).OnClick(() => shell.SaveAllAsync().FireAndForget()),
