@@ -193,7 +193,10 @@ namespace Tesserae.Monaco
 
         /// <summary>
         /// A structured-clone-safe deep copy of <paramref name="value"/> - fresh plain objects and arrays
-        /// carrying the data alone, no prototypes and no functions.
+        /// carrying the data alone, no prototypes and no functions. The static type is kept, as on
+        /// <see cref="Script.ToPlainObjectCopy{T}"/> itself: at runtime the copy is plain data of the same
+        /// shape, and an <c>[ObjectLiteral]</c> or <c>[External]</c> type describes it as well as it
+        /// described the original.
         ///
         /// Anything Monaco forwards to a web worker has to survive <c>postMessage</c>, and anything the
         /// history stores has to survive <c>structuredClone</c> into IndexedDB; values built from C# do
@@ -218,7 +221,7 @@ namespace Tesserae.Monaco
         /// or a cycle is copied with the same shape rather than throwing. What Monaco's own view state
         /// carries is exactly the plain data either form produces.
         /// </summary>
-        public static object ToPlainObject(object value) => Script.ToPlainObjectCopy(value);
+        public static T ToPlainObject<T>(T value) => Script.ToPlainObjectCopy(value);
 
         #endregion
     }

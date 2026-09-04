@@ -119,7 +119,7 @@ namespace Tesserae.Monaco
                         entries.Add(new JsonSchemaEntry
                         {
                             uri       = schema.Uri,
-                            fileMatch = (string[])ToPlainObject(schema.FileMatch),
+                            fileMatch = ToPlainObject(schema.FileMatch),
                             schema    = ToPlainObject(schema.Schema)
                         });
                     }
