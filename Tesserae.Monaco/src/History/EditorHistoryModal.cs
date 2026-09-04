@@ -20,7 +20,7 @@ namespace Tesserae.Monaco
     /// It is composed from Tesserae rather than drawn: <see cref="SearchableList{T}"/> is the list and
     /// its "search by content" box, a <see cref="Button"/> with its content replaced is a row - the
     /// toolkit's clickable surface, which is where the hover, the pressed state, the pointer and the
-    /// keyboard come from - an <see cref="InlineLabel"/> is the author under the title, a
+    /// keyboard come from - an <see cref="InlineLabel"/> is the author under the time, a
     /// <see cref="Banner"/> is the "contents are identical" strip, a <see cref="SplitView"/> is the two
     /// panes and their draggable divider, and the diff is this package's own <see cref="DiffViewer"/>.
     /// So there is no stylesheet to ship and no element built by hand - the selected row's colours are
@@ -182,7 +182,7 @@ namespace Tesserae.Monaco
 
         /// <summary>
         /// Draws the author of a revision however the host wants to draw it, in the row's fact line
-        /// under the title. Answer null to leave the row without an author.
+        /// under the time, at the row's right edge. Answer null to leave the row without an author.
         ///
         /// The point of it being a component rather than a string is that a name usually is not one
         /// yet: what a revision carries is whoever the store recorded - often an id - and turning that
@@ -599,9 +599,10 @@ namespace Tesserae.Monaco
         /// than as a card, and nothing here draws a hover state or ships a rule to get one. The
         /// button's own background is left alone for that reason - see <see cref="Select"/>.
         ///
-        /// Two lines: the origin tile and what the revision was, with when it was on the same line; who
-        /// made it underneath. The origin is a glyph in its own colour with the sentence in its tooltip;
-        /// the author is whatever <see cref="EditorHistoryView.RenderAuthor"/> hands back, which is an
+        /// Two lines: the origin glyph and what the revision was, with when it was at the far end of the
+        /// same line; who made it under that, against the same edge. The glyph carries the origin's
+        /// colour and the sentence in its tooltip; the author is whatever
+        /// <see cref="EditorHistoryView.RenderAuthor"/> hands back, which is an
         /// <see cref="InlineLabel"/> by default and can be one that looks its own name up. What the
         /// revision was worth measuring, the diff beside the list says better than a line count would.
         ///
@@ -634,10 +635,13 @@ namespace Tesserae.Monaco
                         TextBlock(When(entry.Timestamp)).Tiny().Secondary().NoWrap().Tooltip(Stamp(entry.Timestamp))));
 
                 // The author line only exists when there is an author, so a browser-only history is a
-                // list of single-line rows rather than one with a blank second line on every row.
+                // list of single-line rows rather than one with a blank second line on every row - and
+                // it is pushed to the right edge, under the time, by the same growing spacer the title
+                // line uses. The two facts a row carries about the revision itself then read down one
+                // edge, and what it is called down the other.
                 if (author is object)
                 {
-                    body.Add(HStack().WS().NoWrap().AlignItemsCenter().PL(20).Children(author));
+                    body.Add(HStack().WS().NoWrap().AlignItemsCenter().Children(Raw().Grow(), author));
                 }
 
                 // The padding and the selected wash are the surface's, not the button's - see Select.

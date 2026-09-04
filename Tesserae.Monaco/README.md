@@ -268,7 +268,7 @@ answers in its own order, so the ordering is re-established over the union rathe
 |---|---|
 | Origin | A glyph on the title's own line: a browser window for what was typed here, a cloud for what came from outside it, in that origin's colour. The sentence is in its tooltip. |
 | When | Said the way a person would: `just now`, `40 min ago`, `06:21` for earlier today, `yesterday 09:12`, `3 Sep, 11:32`. The exact stamp is in the tooltip. |
-| Author | Under the title, and whatever you want it to be — see below. Absent when no author was recorded. |
+| Author | Under the time, against the same edge, and whatever you want it to be — see below. Absent when no author was recorded. |
 
 The row itself is a `Button` with its content replaced, so the hover, the pressed state, the pointer,
 the focus ring and Enter/Space are the toolkit's; the selected row takes the pressed background and a
