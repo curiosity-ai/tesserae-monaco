@@ -192,11 +192,12 @@ namespace Tesserae.Monaco
         #region Worker-safe values
 
         /// <summary>
-        /// A structured-clone-safe copy of <paramref name="value"/> - plain objects and arrays only, no
-        /// prototypes and no functions.
+        /// A structured-clone-safe deep copy of <paramref name="value"/> - fresh plain objects and arrays
+        /// carrying the data alone, no prototypes and no functions.
         ///
-        /// Anything Monaco forwards to a web worker has to survive <c>postMessage</c>, and values built
-        /// from C# do not. Two separate reasons, both measured:
+        /// Anything Monaco forwards to a web worker has to survive <c>postMessage</c>, and anything the
+        /// history stores has to survive <c>structuredClone</c> into IndexedDB; values built from C# do
+        /// neither. Two separate reasons, both measured:
         ///
         /// <list type="bullet">
         /// <item>A typed array carries a <c>$type</c> property holding a <b>function</b> - Transpose's
@@ -209,22 +210,15 @@ namespace Tesserae.Monaco
         ///
         /// The failure is a <c>DataCloneError</c> thrown from inside Monaco, naming a function body and
         /// nothing else - so the wrapper normalises the values it forwards rather than leaving the trap.
+        ///
+        /// This is <see cref="Script.ToPlainObjectCopy{T}"/>, Transpose's own deep copy, which replaced
+        /// the <c>JSON.parse(JSON.stringify(value))</c> round trip an earlier version did here. It keeps
+        /// what the text form lost - a <c>Date</c> stays a <c>Date</c>, a typed array and an
+        /// <c>ArrayBuffer</c> pass through, <c>NaN</c> and the infinities survive - and a shared reference
+        /// or a cycle is copied with the same shape rather than throwing. What Monaco's own view state
+        /// carries is exactly the plain data either form produces.
         /// </summary>
-        public static object ToPlainObject(object value)
-        {
-            if (value is null) return null;
-
-            try
-            {
-                return es5.JSON.parse(es5.JSON.stringify(value));
-            }
-            catch (Exception exception)
-            {
-                console.error("Tesserae.Monaco: a value could not be normalised for a worker", exception);
-
-                return value;
-            }
-        }
+        public static object ToPlainObject(object value) => Script.ToPlainObjectCopy(value);
 
         #endregion
     }

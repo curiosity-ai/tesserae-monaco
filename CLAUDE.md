@@ -537,8 +537,11 @@ stops matching Monaco), which is why `getOption` is wrapped once as `getNumberOp
 `setSelection` takes `object` rather than having a range and a selection overload. And a C# array still
 needs `Script.ToArray` before it crosses to a worker — Transpose stamps a `$type` **function** onto
 typed arrays, and `postMessage` refuses the whole value with a `DataCloneError` that quotes a function
-body and names nothing useful. `MonacoEditor.ToPlainObject` is the JSON round trip for a whole object
-graph, which anonymous types need too.
+body and names nothing useful. `MonacoEditor.ToPlainObject` is the deep copy for a whole object graph,
+which anonymous types need too — it is `Script.ToPlainObjectCopy` (`Transpose.toPlainCopy`, BCL
+26.9.4791 and later), which replaced the `JSON.parse(JSON.stringify(...))` round trip an earlier
+version did here: it keeps a `Date` a `Date`, passes typed arrays and `ArrayBuffer`s through, keeps
+`NaN`, and copies a shared reference or a cycle with the same shape rather than throwing.
 
 ## Other Transpose gotchas
 

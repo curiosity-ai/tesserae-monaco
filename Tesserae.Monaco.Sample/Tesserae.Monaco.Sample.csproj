@@ -9,7 +9,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Transpose.BCL" Version="26.9.4757" />
+    <PackageReference Include="Transpose.BCL" Version="26.9.4791" />
     <PackageReference Include="Transpose.Core" Version="26.9.4756" />
     <PackageReference Include="Tesserae" Version="2026.9.70317" />
   </ItemGroup>
