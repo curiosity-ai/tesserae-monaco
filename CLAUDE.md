@@ -425,6 +425,66 @@ prompts and "Close without saving" discards, a content search filters the tree t
 document turns its icon red, a form in a tab reports its own dirty state, Ctrl+P opens by name, and an
 untitled document joins the tree and the URL when saved.
 
+### Views: a named subset of the catalog
+
+`Views(scope, store)` adds *views* to the shell: a view (`EditorView`) is a name plus document ids plus
+folder paths, and picking one filters the tree to it. A catalog of any size has more in it than one
+piece of work needs, and a view is the set someone wants in front of them while doing that work. What
+shaped it:
+
+- **A view holds ids and paths, never documents.** The catalog is the host's and may arrive after the
+  view does, so an id the catalog lacks is kept and simply matches nothing until the document comes back.
+  A folder member is a *prefix* — `endpoints/search` covers everything at or beneath it, including
+  documents created later — which is what keeps "everything under this folder" true as a feature grows.
+- **Membership is edited from the row's right-click menu**, not from a bulk checkbox mode: "Add to view ▸"
+  lists the views that do not already cover the row, then "New view…"; "Remove from '<active>'" appears
+  when the active view lists the row *directly*, and a document covered through a folder gets a disabled
+  line saying which folder, so nobody wonders why Remove is missing. A view made from a row is **not**
+  switched to — whoever is doing this is picking rows out of the full list, and switching would hide every
+  row they were about to add next. The header's ⋯ menu ("New view…", which does switch, then shows the
+  empty-view hint; "Rename view…"; "Delete view") and the `Dropdown` above the filter are the other half.
+  Tree rows nest, so a right-click bubbles through every ancestor's `OnContextMenu`: the handler answers
+  only when `e.target.closest(".tss-tree-item")` is its own element, calls `preventDefault` itself
+  (Tesserae's listener does not), and subscribes with `clearPrevious: false` so a host `TreeCommand` that
+  `HookToParentContextMenu()` keeps working.
+- **`localStorage` by default, and that is not the history decision reversed.** Every reason history
+  needed IndexedDB is absent: a scope's views are a few hundred bytes, read once per mount and written on
+  a gesture, with nothing to index or prune. `LocalStorageViewStore` keeps one JSON array per scope under
+  `tesserae-monaco-views:<scope>`; `IEditorViewStore` is the seam and `DelegateEditorViewStore` (three
+  optional lambdas) is how a host puts views on a server — the package makes no HTTP call itself, as with
+  history. The record (`ViewRecord`, an `[ObjectLiteral]`) types its arrays as `ReadOnlyArray<string>`,
+  which is the bare JavaScript array at runtime — written through `Script.ToArray` so no `$type` stamp
+  leaks, and read back by index rather than enumerated, because what `JSON.parse` hands over has none of
+  a C# array's bookkeeping. `Guid.NewGuid().ToString("N")` is the id.
+- **One filter, composed.** `RefreshFilter()` is the only place the tree's filter is set or cleared: a
+  search term, an active view, or both. `ApplySearch`'s empty-term branch used to `ClearFilter()`
+  unconditionally, which would have dropped the view. A folder the view lists "matches" the predicate, so
+  an empty one stays visible and its subtree keeps the user's expansion — but only while nothing is
+  searched, since a match keeps its whole subtree and would defeat the search. `RebuildTree` lifts the
+  filter first (`Tree.Clear` keeps it, and every `Add` would re-apply it per row) and applies it once at
+  the end. Ctrl+P still lists the whole catalog: it is how a hidden document is reached, and opening one
+  works normally — only its row is hidden.
+- **The picker is rebuilt, never poked.** `Dropdown` reports a change through a `setTimeout`, so marking
+  a live item selected comes back around as an `OnChange` after any re-entrancy flag has cleared.
+  `RefreshViewPicker` always goes through `Items(...)` with `SelectedIf`, which fires nothing, and
+  `SelectView` is idempotent so the echo is a no-op — and still rewrites the URL, which is how an id the
+  scope does not have gets dropped from `?view=`.
+- **The active view is restored through one hand-off.** The list arrives asynchronously, so
+  `RestoreFromUrl` and `RestoreLayout` only set `_pendingViewId` (URL wins: the layout path defers when the
+  URL names a view) and `LoadViewsAsync` applies it. `UpdateUrl` writes the *pending* id too — re-opening
+  the tabs rewrites the query string several times before the store answers, and each rewrite would have
+  erased it. `SaveActiveViewToLayout` writes `<layoutKey>:view` from `SelectView`, not from `SaveLayout`,
+  which only runs on expand/collapse.
+
+Verified in the gallery with Playwright: a view made from a row leaves the picker on All documents; a
+folder and a file join it from their menus; picking it shows exactly `endpoints > search > *` and the
+file, writes `?view=<id>` and the layout key, and both restore it through a reload (URL first, layout
+without the URL, a bogus id falling back to all and leaving the URL); a search inside the view finds
+`people.cs` and not `people.json`, and clearing it returns to the view; Ctrl+P opens the hidden
+`upload.cs`; a document covered through its folder explains itself; removing the folder leaves the
+directly listed file; the hint appears once the last member goes; rename shows in the picker, delete
+returns to all and removes the storage key; and navigating away and back is clean.
+
 ## No language intelligence
 
 The package ships **no** completion, hover or formatting logic — those are delegates the host supplies

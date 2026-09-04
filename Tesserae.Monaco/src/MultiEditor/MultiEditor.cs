@@ -12,7 +12,8 @@ namespace Tesserae.Monaco
     /// A tabbed editor shell: a tree of documents on the left, one tab per open document on the right, and
     /// everything that has to hold between them - unsaved-changes markers and the prompt before a dirty tab
     /// closes, Ctrl+S, the open set and the active tab mirrored into the URL, the tree's folders and the
-    /// split width remembered across visits, a filter over the tree, and a quick-open palette.
+    /// split width remembered across visits, a filter over the tree, a quick-open palette, and named
+    /// <i>views</i> - saved subsets of the catalog to show while working on one thing (<see cref="Views"/>).
     ///
     /// It is composed from Tesserae rather than drawn from scratch: <see cref="SplitView"/>, <see cref="Tree"/>,
     /// <see cref="Pivot"/> (closeable, reorderable, cached tabs), <see cref="SearchBox"/>,
@@ -76,6 +77,22 @@ namespace Tesserae.Monaco
         private string                             _searchTerm = "";
         private HashSet<string>                    _searchHits;
 
+        // Views: named subsets of the catalog, kept in a store the host may replace.
+        private readonly List<EditorView>              _views        = new List<EditorView>();
+        private readonly Dictionary<Tree.Item, string> _folderByItem = new Dictionary<Tree.Item, string>();
+        private readonly Stack                         _viewHeader;
+        private readonly TextBlock                     _viewEmptyHint;
+        private IEditorViewStore                       _viewStore;
+        private string                                 _viewScope;
+        private EditorView                             _activeView;
+        private string                                 _pendingViewId;
+        private bool                                   _viewsLoaded;
+        private int                                    _viewsGeneration;
+        private string                                 _urlViewKey;
+        private Action<EditorView>                     _onViewChanged;
+        private Dropdown                               _viewPicker;
+        private Dropdown.Item                          _allDocumentsItem;
+
         /// <summary>
         /// Creates an empty shell. Give it documents with <see cref="Documents"/>, and size it with the
         /// usual helpers - it fills whatever it is given.
@@ -86,11 +103,17 @@ namespace Tesserae.Monaco
 
             _searchBox = SearchBox("Filter...").SearchAsYouType().OnSearch((s, term) => ApplySearch(term));
 
-            _treeScroll = VStack().WS().H(10).Grow().ScrollY().Children(_tree);
+            _viewEmptyHint = TextBlock("This view is empty. Switch to All documents and right-click a file or folder to add it.").Small().Secondary().P(12).Collapse();
+
+            _treeScroll = VStack().WS().H(10).Grow().ScrollY().Children(_tree, _viewEmptyHint);
 
             _treeScroll.Render().addEventListener("scroll", _ => ScheduleScrollSave());
 
+            // The views row is built and shown by Views(...); until then it takes no room.
+            _viewHeader = HStack().WS().NoShrink().PL(8).PR(8).PT(8).AlignItemsCenter().Gap(4.px()).Collapse();
+
             _treePane = VStack().S().Children(
+                _viewHeader,
                 HStack().WS().NoShrink().P(8).AlignItemsCenter().Children(_searchBox.WS().Grow()),
                 _treeScroll);
 
@@ -442,11 +465,13 @@ namespace Tesserae.Monaco
         /// link lands on the same editors. The active tab is written under its own key and read back before
         /// the tabs are re-opened, since re-opening selects each in turn and would otherwise overwrite it.
         /// Only documents in the catalog are written; an id in the URL the catalog does not know is ignored.
+        /// With <see cref="Views"/> on, the active view's id travels under <paramref name="viewKey"/> too.
         /// </summary>
-        public MultiEditor PersistInUrl(string openKey = "open", string activeKey = "active")
+        public MultiEditor PersistInUrl(string openKey = "open", string activeKey = "active", string viewKey = "view")
         {
             _urlOpenKey   = openKey;
             _urlActiveKey = activeKey;
+            _urlViewKey   = string.IsNullOrEmpty(viewKey) ? null : viewKey;
 
             if (_mounted) RestoreFromUrl();
 
@@ -513,16 +538,489 @@ namespace Tesserae.Monaco
 
         #endregion
 
+        #region Views
+
+        /// <summary>
+        /// Turns on views: named subsets of the catalog - the documents and folders someone wants to see
+        /// while working on one thing. A row above the filter box picks the view, or "All documents"; the
+        /// right-click menu of a file or folder adds it to a view or takes it out; a folder stands for
+        /// everything under it, including documents created later.
+        ///
+        /// Views are kept per <paramref name="scope"/> - a user, a workspace, a project - in
+        /// <paramref name="store"/>, which is the browser's local storage unless a host supplies another
+        /// (<see cref="DelegateEditorViewStore"/> for a server). The list is loaded asynchronously; with
+        /// <see cref="PersistInUrl"/> the active view follows the URL, and with <see cref="PersistLayout"/>
+        /// the last one picked comes back on the next visit.
+        /// </summary>
+        public MultiEditor Views(string scope, IEditorViewStore store = null)
+        {
+            _viewScope = string.IsNullOrWhiteSpace(scope) ? "" : scope;
+            _viewStore = store ?? LocalStorageViewStore.Default;
+
+            _views.Clear();
+            _viewsLoaded = false;
+
+            if (_viewPicker is null) BuildViewHeader();
+
+            _viewHeader.Show();
+            RefreshViewPicker();
+
+            // Rows built before this call have no view menu yet.
+            RebuildTree();
+            RefreshPalette();
+
+            var generation = ++_viewsGeneration;
+
+            LoadViewsAsync(generation).FireAndForget();
+
+            return this;
+        }
+
+        /// <summary>The views loaded for the scope, sorted by name. Empty until the store has answered.</summary>
+        public IReadOnlyList<EditorView> ViewList => _views;
+
+        /// <summary>The view the tree is filtered to, or null for all documents.</summary>
+        public EditorView ActiveView => _activeView;
+
+        /// <summary>
+        /// Filters the tree to the view with this id; null, or an id the scope does not have, shows all
+        /// documents. Called before the list has loaded, the choice waits and is applied when it does.
+        /// </summary>
+        public MultiEditor SelectView(string id)
+        {
+            if (_viewStore is null) return this;
+
+            if (!_viewsLoaded)
+            {
+                _pendingViewId = string.IsNullOrEmpty(id) ? null : id;
+                UpdateUrl();
+
+                return this;
+            }
+
+            var view = FindView(id);
+
+            _pendingViewId = null;
+
+            // Idempotent on purpose: the picker echoes a selection it was handed back through OnChange. The
+            // URL is still rewritten, so an id the scope does not have is dropped from it.
+            if ((view?.Id) == (_activeView?.Id))
+            {
+                UpdateUrl();
+
+                return this;
+            }
+
+            _activeView = view;
+
+            RefreshViewPicker();
+            RefreshFilter();
+            RefreshPalette();
+            UpdateUrl();
+            SaveActiveViewToLayout();
+
+            _onViewChanged?.Invoke(view);
+
+            return this;
+        }
+
+        /// <summary>The active view changed; null when it went back to all documents.</summary>
+        public MultiEditor OnViewChanged(Action<EditorView> handler)
+        {
+            _onViewChanged += handler;
+
+            return this;
+        }
+
+        /// <summary>
+        /// Writes a view to the store - a new one, or one whose members or name changed - and shows the
+        /// change: the picker, the palette and, when it is the active view, the tree. Fills in the scope,
+        /// the id and the timestamp when they are missing. A store that fails is reported to the console
+        /// and the view still takes effect for this session.
+        /// </summary>
+        public async Task<EditorView> SaveViewAsync(EditorView view)
+        {
+            if (view is null || _viewStore is null) return view;
+
+            if (string.IsNullOrEmpty(view.Scope)) view.Scope = _viewScope;
+            if (string.IsNullOrEmpty(view.Id))    view.Id    = EditorView.NewId();
+            if (string.IsNullOrEmpty(view.Name))  view.Name  = "Untitled view";
+
+            view.Timestamp = EditorHistory.Now();
+
+            try
+            {
+                await _viewStore.SaveAsync(view);
+            }
+            catch (Exception exception)
+            {
+                console.warn("Tesserae.Monaco views: the store could not save a view", exception);
+            }
+
+            var index = _views.FindIndex(v => v.Id == view.Id);
+
+            if (index >= 0)
+            {
+                _views[index] = view;
+            }
+            else
+            {
+                _views.Add(view);
+            }
+
+            SortViews();
+
+            if (_activeView is object && _activeView.Id == view.Id)
+            {
+                _activeView = view;
+                RefreshFilter();
+            }
+
+            RefreshViewPicker();
+            RefreshPalette();
+
+            return view;
+        }
+
+        /// <summary>Removes a view from the store. Deleting the active one shows all documents again.</summary>
+        public async Task DeleteViewAsync(string id)
+        {
+            if (_viewStore is null || string.IsNullOrEmpty(id)) return;
+
+            try
+            {
+                await _viewStore.DeleteAsync(_viewScope, id);
+            }
+            catch (Exception exception)
+            {
+                console.warn("Tesserae.Monaco views: the store could not delete a view", exception);
+            }
+
+            _views.RemoveAll(v => v.Id == id);
+
+            if (_activeView is object && _activeView.Id == id)
+            {
+                SelectView(null);
+            }
+            else
+            {
+                RefreshViewPicker();
+                RefreshPalette();
+            }
+        }
+
+        /// <summary>
+        /// Adds a document, a folder, or both to a view and saves it. The folder is slash-separated like
+        /// <see cref="EditorDocument.Folder"/> and stands for everything under it. Returns null for an
+        /// unknown view.
+        /// </summary>
+        public Task<EditorView> AddToViewAsync(string viewId, string documentId = null, string folder = null)
+        {
+            var view = FindView(viewId);
+
+            if (view is null) return Task.FromResult<EditorView>(null);
+
+            if (documentId is object) view.AddDocument(documentId);
+            if (folder is object)     view.AddFolder(folder);
+
+            return SaveViewAsync(view);
+        }
+
+        /// <summary>
+        /// Takes a document, a folder, or both out of a view and saves it. Only what the view lists
+        /// directly can be removed: a document that belongs through a folder member stays until the folder goes.
+        /// </summary>
+        public Task<EditorView> RemoveFromViewAsync(string viewId, string documentId = null, string folder = null)
+        {
+            var view = FindView(viewId);
+
+            if (view is null) return Task.FromResult<EditorView>(null);
+
+            if (documentId is object) view.RemoveDocument(documentId);
+            if (folder is object)     view.RemoveFolder(folder);
+
+            return SaveViewAsync(view);
+        }
+
+        private EditorView FindView(string id) => string.IsNullOrEmpty(id) ? null : _views.FirstOrDefault(v => v.Id == id);
+
+        private void SortViews()
+        {
+            _views.Sort((left, right) => string.Compare((left.Name ?? "").ToLowerInvariant(), (right.Name ?? "").ToLowerInvariant()));
+        }
+
+        private async Task LoadViewsAsync(int generation)
+        {
+            EditorView[] loaded = null;
+
+            try
+            {
+                loaded = await _viewStore.ListAsync(_viewScope);
+            }
+            catch (Exception exception)
+            {
+                console.warn("Tesserae.Monaco views: the store could not list the views", exception);
+            }
+
+            // A slower answer to an earlier Views(...) must not overwrite the current one.
+            if (generation != _viewsGeneration) return;
+
+            _views.Clear();
+
+            foreach (var view in loaded ?? new EditorView[0])
+            {
+                if (view is object && !string.IsNullOrEmpty(view.Id) && FindView(view.Id) is null) _views.Add(view);
+            }
+
+            SortViews();
+
+            _viewsLoaded = true;
+
+            var pending = _pendingViewId;
+
+            _pendingViewId = null;
+
+            if (pending is object) SelectView(pending);
+
+            // SelectView is a no-op for an id the scope does not have, so refresh here regardless - and drop
+            // such an id from the URL.
+            RefreshViewPicker();
+            RefreshPalette();
+            RefreshFilter();
+            UpdateUrl();
+        }
+
+        private void ApplyPendingView()
+        {
+            if (!_viewsLoaded || _pendingViewId is null) return;
+
+            SelectView(_pendingViewId);
+        }
+
+        private void BuildViewHeader()
+        {
+            _viewPicker = Dropdown().Single().WS().Grow();
+            _viewPicker.OnChange((s, e) => OnViewPicked());
+
+            var menu = Button(UIcons.MenuDots).NoShrink().Tooltip("New, rename or delete a view");
+
+            menu.OnClick(() => ShowViewMenu(menu));
+
+            _viewHeader.Add(_viewPicker);
+            _viewHeader.Add(menu);
+        }
+
+        private void OnViewPicked()
+        {
+            var item = _viewPicker.SelectedItems.FirstOrDefault();
+
+            SelectView(item is null || item == _allDocumentsItem ? null : item.Key);
+        }
+
+        // Always rebuilds through Items(...): marking a live item selected makes the dropdown report a change,
+        // deferred through a timer, which would come back around as a SelectView.
+        private void RefreshViewPicker()
+        {
+            if (_viewPicker is null) return;
+
+            var items = new List<Dropdown.Item>();
+
+            _allDocumentsItem = new Dropdown.Item("All documents", icon: UIcons.Folders).SelectedIf(_activeView is null);
+
+            items.Add(_allDocumentsItem);
+
+            foreach (var view in _views)
+            {
+                var id = view.Id;
+
+                items.Add(new Dropdown.Item(view.Name ?? "", icon: UIcons.Eye).SetKey(id).SelectedIf(_activeView is object && _activeView.Id == id));
+            }
+
+            _viewPicker.Items(items.ToArray());
+        }
+
+        private void ShowViewMenu(IComponent anchor)
+        {
+            var hasActive = _activeView is object;
+
+            ContextMenu().Items(
+                ContextMenuItem("New view...").OnClick(() => NewViewAsync(null, null, select: true).FireAndForget()),
+                ContextMenuItem("Rename view...").Disabled(!hasActive).OnClick(() => RenameActiveViewAsync().FireAndForget()),
+                ContextMenuItem().Divider(),
+                ContextMenuItem(TextBlock("Delete view").Danger()).Disabled(!hasActive).OnClick(() => DeleteActiveViewAsync().FireAndForget())
+            ).ShowFor(anchor);
+        }
+
+        // The right-click menu of a file or folder row: add it to a view, or take it out of the active one.
+        private void ShowRowViewMenu(MouseEvent e, Tree.Item item, string documentId, string folderPath)
+        {
+            if (_viewStore is null) return;
+
+            // Rows nest - a file's element sits inside its folder's - so one right-click bubbles through every
+            // ancestor's handler. Only the row that was clicked answers.
+            var target = e.target.As<HTMLElement>();
+
+            if (target is null || target.closest(".tss-tree-item") != item.Render()) return;
+
+            e.preventDefault();
+            e.stopPropagation();
+
+            var doc   = documentId is object ? GetDocument(documentId) : null;
+            var root  = ContextMenu();
+            var items = new List<ContextMenu.Item>();
+            var addTo = new List<ContextMenu.Item>();
+
+            foreach (var view in _views)
+            {
+                var covered = documentId is object ? view.Contains(doc) : view.ContainsFolder(folderPath);
+
+                if (covered) continue;
+
+                var target_ = view;
+
+                addTo.Add(ContextMenuItem(view.Name).OnClick(() =>
+                {
+                    root.Hide();
+                    AddToViewAsync(target_.Id, documentId, folderPath).FireAndForget();
+                }));
+            }
+
+            if (addTo.Count == 0 && _views.Count > 0) addTo.Add(ContextMenuItem("Already in every view").Disabled());
+            if (addTo.Count > 0) addTo.Add(ContextMenuItem().Divider());
+
+            // A view made from a row does not become the active one: whoever is doing this is picking rows
+            // out of the full list, and switching would hide every row they were about to add next.
+            addTo.Add(ContextMenuItem("New view...").OnClick(() =>
+            {
+                root.Hide();
+                NewViewAsync(documentId, folderPath, select: false).FireAndForget();
+            }));
+
+            items.Add(ContextMenuItem("Add to view").SubMenu(ContextMenu().Items(addTo.ToArray())));
+
+            var active = _activeView;
+
+            if (active is object)
+            {
+                var listed = documentId is object ? active.ListsDocument(documentId) : active.ListsFolder(folderPath);
+
+                if (listed)
+                {
+                    items.Add(ContextMenuItem("Remove from '" + active.Name + "'").OnClick(() =>
+                    {
+                        root.Hide();
+                        RemoveFromViewAsync(active.Id, documentId, folderPath).FireAndForget();
+                    }));
+                }
+                else
+                {
+                    var path = documentId is object ? doc?.FolderPath : folderPath;
+
+                    if (path is object && active.ContainsFolder(path))
+                    {
+                        items.Add(ContextMenuItem("In '" + active.Name + "' through folder " + CoveringFolder(active, path)).Disabled());
+                    }
+                }
+            }
+
+            root.Items(items.ToArray());
+            root.ShowAt((int)e.clientX, (int)e.clientY, 160);
+        }
+
+        private static string CoveringFolder(EditorView view, string path)
+        {
+            foreach (var folder in view.Folders)
+            {
+                if (path == folder || path.StartsWith(folder + "/")) return folder;
+            }
+
+            return path;
+        }
+
+        private async Task NewViewAsync(string documentId, string folderPath, bool select)
+        {
+            var name = await PromptNameAsync("New view", "");
+
+            if (name is null) return;
+
+            var view = new EditorView { Name = name, Scope = _viewScope };
+
+            if (documentId is object) view.AddDocument(documentId);
+            if (folderPath is object) view.AddFolder(folderPath);
+
+            await SaveViewAsync(view);
+
+            if (select) SelectView(view.Id);
+        }
+
+        private async Task RenameActiveViewAsync()
+        {
+            var view = _activeView;
+
+            if (view is null) return;
+
+            var name = await PromptNameAsync("Rename view", view.Name);
+
+            if (name is null || name == view.Name) return;
+
+            view.Name = name;
+
+            await SaveViewAsync(view);
+        }
+
+        private async Task DeleteActiveViewAsync()
+        {
+            var view = _activeView;
+
+            if (view is null) return;
+
+            var dialog = new Dialog(
+                TextBlock("Delete the view '" + view.Name + "'? The documents themselves are not touched."),
+                TextBlock("Delete view").SemiBold());
+
+            var response = await dialog.YesNoAsync(
+                btnYes: b => b.SetText("Delete").Danger(),
+                btnNo:  b => b.SetText("Cancel"));
+
+            if (response != Dialog.Response.Yes) return;
+
+            await DeleteViewAsync(view.Id);
+        }
+
+        private static async Task<string> PromptNameAsync(string title, string initial)
+        {
+            var name   = TextBox(initial ?? "").SetPlaceholder("View name").WS();
+            var dialog = new Dialog(
+                VStack().WS().Gap(8.px()).Children(TextBlock("Name").SemiBold(), name),
+                TextBlock(title).SemiBold(),
+                centerContent: false);
+
+            name.WhenMounted(() => name.Focus());
+
+            var response = await dialog.OkCancelAsync(btnOk: b => b.SetText("Save").Primary());
+
+            if (response != Dialog.Response.Ok) return null;
+
+            var text = (name.Text ?? "").Trim();
+
+            return text.Length == 0 ? null : text;
+        }
+
+        #endregion
+
         #region Tree
 
         private void RebuildTree()
         {
             var scrollTop = _treeScroll.Render().scrollTop;
 
+            // Tree.Clear keeps the filter, and every Add would re-apply it per row; lift it and apply once at the end.
             _tree.Clear();
+            _tree.ClearFilter();
             _docItems.Clear();
             _folderItems.Clear();
             _docByItem.Clear();
+            _folderByItem.Clear();
 
             foreach (var spec in _folderSpecs)
             {
@@ -548,6 +1046,8 @@ namespace Tesserae.Monaco
                 }
             }
 
+            RefreshFilter();
+
             // The tree was emptied and refilled, which puts its scroll offset back to zero.
             _treeScroll.Render().scrollTop = scrollTop;
         }
@@ -567,6 +1067,11 @@ namespace Tesserae.Monaco
 
             item.OnExpanded(_ => RememberExpanded(path, true));
             item.OnCollapsed(_ => RememberExpanded(path, false));
+
+            // clearPrevious: false keeps the handler Tree.Item adds for a host command that hooks the row's context menu.
+            item.OnContextMenu((s, e) => ShowRowViewMenu(e, s, null, path), clearPrevious: false);
+
+            _folderByItem[item] = path;
 
             if (parentPath.Length == 0)
             {
@@ -591,6 +1096,7 @@ namespace Tesserae.Monaco
             var item = new Tree.Item(doc.Title, doc.Icon ?? UIcons.File, commands);
 
             item.OnClick((s, e) => Open(doc.Id));
+            item.OnContextMenu((s, e) => ShowRowViewMenu(e, s, doc.Id, null), clearPrevious: false);
 
             ApplyStatus(item, doc);
 
@@ -644,16 +1150,9 @@ namespace Tesserae.Monaco
 
             clearTimeout(_searchTimeout);
 
-            if (_searchTerm.Length == 0)
-            {
-                _tree.ClearFilter();
+            RefreshFilter();
 
-                return;
-            }
-
-            ApplyFilter();
-
-            if (_searchProvider is null) return;
+            if (_searchTerm.Length == 0 || _searchProvider is null) return;
 
             var generation = ++_searchGeneration;
             var searched   = _searchTerm;
@@ -673,20 +1172,56 @@ namespace Tesserae.Monaco
             ApplyFilter();
         }
 
+        // The one place the tree's filter is set or cleared: a search term, an active view, or both.
+        private void RefreshFilter()
+        {
+            if (_searchTerm.Length == 0 && _activeView is null)
+            {
+                _tree.ClearFilter();
+            }
+            else
+            {
+                ApplyFilter();
+            }
+
+            var view  = _activeView;
+            var empty = view is object && _searchTerm.Length == 0 && !_catalog.Any(d => view.Contains(d));
+
+            if (empty)
+            {
+                _viewEmptyHint.Show();
+            }
+            else
+            {
+                _viewEmptyHint.Collapse();
+            }
+        }
+
         private void ApplyFilter()
         {
             var term = _searchTerm.ToLowerInvariant();
             var hits = _searchHits;
+            var view = _activeView;
 
             _tree.Filter(item =>
             {
-                if (!_docByItem.TryGetValue(item, out var id)) return false;
+                if (_folderByItem.TryGetValue(item, out var path))
+                {
+                    // A folder the view lists matches, so an empty one stays visible and its subtree keeps
+                    // the user's expansion - but only while nothing is searched: a match keeps its whole
+                    // subtree, which would defeat the search.
+                    return view is object && term.Length == 0 && hits is null && view.ContainsFolder(path);
+                }
 
-                if (hits is object && hits.Contains(id)) return true;
+                if (!_docByItem.TryGetValue(item, out var id)) return false;
 
                 var doc = GetDocument(id);
 
-                return doc is object && Matches(doc, term);
+                if (doc is null) return false;
+                if (view is object && !view.Contains(doc)) return false;
+                if (hits is object && hits.Contains(id)) return true;
+
+                return Matches(doc, term);
             });
         }
 
@@ -714,6 +1249,19 @@ namespace Tesserae.Monaco
                     Icon     = StatusIcon(doc),
                     Perform  = () => Open(id)
                 });
+            }
+
+            // The palette lists the whole catalog whatever the view - it is how a hidden document is reached - and the views themselves.
+            if (_viewStore is object && _views.Count > 0)
+            {
+                actions.Add(new CommandPaletteAction("view:", "All documents") { Section = "Views", Icon = UIcons.Folders, Perform = () => SelectView(null) });
+
+                foreach (var view in _views)
+                {
+                    var viewId = view.Id;
+
+                    actions.Add(new CommandPaletteAction("view:" + viewId, view.Name) { Section = "Views", Subtitle = "view", Icon = UIcons.Eye, Perform = () => SelectView(viewId) });
+                }
             }
 
             _palette.SetActions(actions);
@@ -848,6 +1396,12 @@ namespace Tesserae.Monaco
 
             var parameters = Router.GetQueryParameters();
 
+            if (_urlViewKey is object && parameters.TryGetValue(_urlViewKey, out var viewId) && !string.IsNullOrEmpty(viewId))
+            {
+                _pendingViewId = viewId;
+                ApplyPendingView();
+            }
+
             if (!parameters.TryGetValue(_urlOpenKey, out var open) || string.IsNullOrEmpty(open)) return;
 
             // Read before re-opening: each Select below rewrites the query string.
@@ -896,6 +1450,11 @@ namespace Tesserae.Monaco
             var activeId = _activeId is object && ids.Contains(_activeId) ? _activeId : null;
             var openKey  = _urlOpenKey;
             var active   = _urlActiveKey;
+            var viewKey  = _viewStore is object ? _urlViewKey : null;
+
+            // The view id still waiting for the list to load is written too: re-opening the tabs rewrites
+            // the query string several times before the store answers, and each rewrite would erase it.
+            var viewId = _activeView?.Id ?? _pendingViewId;
 
             Router.ReplaceQueryParameters(p =>
             {
@@ -904,6 +1463,11 @@ namespace Tesserae.Monaco
                 if (active is object)
                 {
                     p = activeId is object ? p.With(active, activeId) : p.Remove(active);
+                }
+
+                if (viewKey is object)
+                {
+                    p = viewId is object ? p.With(viewKey, viewId) : p.Remove(viewKey);
                 }
 
                 return p;
@@ -958,6 +1522,34 @@ namespace Tesserae.Monaco
             var scroll = window.localStorage.getItem(_layoutKey + ":scroll");
 
             if (double.TryParse(scroll ?? "", out var scrollTop)) _treeScroll.Render().scrollTop = scrollTop;
+
+            // The view last picked here, unless the URL names one - a shared link should show what it says.
+            var view = window.localStorage.getItem(_layoutKey + ":view");
+
+            if (!string.IsNullOrEmpty(view) && _pendingViewId is null && _activeView is null && !UrlNamesView())
+            {
+                _pendingViewId = view;
+                ApplyPendingView();
+            }
+        }
+
+        private bool UrlNamesView()
+        {
+            return _urlViewKey is object && Router.GetQueryParameters().TryGetValue(_urlViewKey, out var id) && !string.IsNullOrEmpty(id);
+        }
+
+        private void SaveActiveViewToLayout()
+        {
+            if (_layoutKey is null) return;
+
+            if (_activeView is object)
+            {
+                window.localStorage.setItem(_layoutKey + ":view", _activeView.Id);
+            }
+            else
+            {
+                window.localStorage.removeItem(_layoutKey + ":view");
+            }
         }
 
         private static string[] Split(string joined) => string.IsNullOrEmpty(joined) ? new string[0] : joined.Split('\n');
