@@ -277,8 +277,9 @@ namespace Tesserae.Monaco
         /// Monaco's own typings call the shape <c>saveViewState</c> returns "(serializable)" - it is
         /// cursor state, scroll offset and the folding contribution's state, nothing else - so it goes
         /// through <c>structuredClone</c> into IndexedDB and through <c>JSON.stringify</c> to a server
-        /// unchanged. The round trip here is what guarantees that: it strips anything Monaco may have
-        /// hung off it that would not clone.
+        /// unchanged. The copy here is what guarantees that: what Monaco hands out is not quite plain -
+        /// <c>viewState.firstPosition</c> is a <c>Position</c> instance, prototype and all - and the copy
+        /// flattens it to the data.
         /// </summary>
         public object ToPlainObject() => Native is null ? null : MonacoEditor.ToPlainObject(Native);
 

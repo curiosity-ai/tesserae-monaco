@@ -539,7 +539,7 @@ after the edit, so polling after typing reads the previous state.
 | `MonacoEditor.GetMarkers` / `OnMarkersChanged` | Every squiggle on the page, the host's own and the workers'. |
 | `MonacoEditor.Colorize` / `ColorizeAsync` / `ColorizeElement` | Syntax-highlighted HTML with no editor instance — much cheaper than a `CodeViewer` for a snippet nobody will interact with. |
 | `MonacoEditor.CreateWebWorker` | A Monaco-managed worker running your own module. |
-| `MonacoEditor.ToPlainObject` | A structured-clone-safe copy, for a whole object graph crossing to a worker. For a plain array, `Script.ToArray` is the cheaper fix — a Transpose array carries a `$type` **function**, which `postMessage` refuses. |
+| `MonacoEditor.ToPlainObject` | A structured-clone-safe copy of a whole object graph crossing to a worker or into storage: fresh plain objects and arrays, a type's own `toJSON` honoured, functions and undefined members dropped, boxed values unboxed, `Date`s and typed arrays kept, shared references and cycles preserved. One walk, no JSON text in between. For a bare array, `Script.ToArray` is the cheaper fix — a Transpose array carries a `$type` **function**, which `postMessage` refuses. |
 | `MonacoEditor.SetLocale` | Translations for Monaco's own UI strings. Must run before the first editor is built. |
 
 Suggest and hover popups render into a single shared, body-mounted host, so they are not clipped when

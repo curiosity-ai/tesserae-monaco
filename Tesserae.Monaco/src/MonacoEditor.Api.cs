@@ -193,7 +193,7 @@ namespace Tesserae.Monaco
 
         /// <summary>
         /// A structured-clone-safe copy of <paramref name="value"/> - plain objects and arrays only, no
-        /// prototypes and no functions.
+        /// prototypes, no functions and no Transpose bookkeeping.
         ///
         /// Anything Monaco forwards to a web worker has to survive <c>postMessage</c>, and values built
         /// from C# do not. Two separate reasons, both measured:
@@ -203,12 +203,24 @@ namespace Tesserae.Monaco
         /// element-type bookkeeping. <c>Array.isArray</c> is still true and the elements are fine, but
         /// <c>structuredClone</c> refuses the whole thing. <see cref="Script.ToArray"/> is the cheaper fix
         /// where the value is just an array.</item>
-        /// <item>An anonymous type is emitted as a real class unless the host sets Transpose's
-        /// <c>anonymousType: "Plain"</c> rule, and a class instance is not cloneable either.</item>
+        /// <item>A class instance - a host's own type handed over as worker data, or a boxed value - is
+        /// a prototype and a set of functions around the data, and what reaches the worker has to be
+        /// the data alone.</item>
         /// </list>
         ///
         /// The failure is a <c>DataCloneError</c> thrown from inside Monaco, naming a function body and
         /// nothing else - so the wrapper normalises the values it forwards rather than leaving the trap.
+        ///
+        /// This walks the graph once rather than going through <c>JSON.stringify</c> and back, and
+        /// keeps to what that round trip produced where the two can agree: a member whose value is a
+        /// function or <c>undefined</c> is left out, a type's own <c>toJSON</c> is honoured (which is how
+        /// the runtime serialises a class instance and a <c>List&lt;T&gt;</c>, and how Monaco's
+        /// <c>Uri</c> serialises itself), and every object and array in the result is a fresh one. Where
+        /// they differ, the copy keeps what the text form lost: a <c>Date</c> stays a <c>Date</c>, a
+        /// typed array (<c>Uint32Array</c> and the like) and an <c>ArrayBuffer</c> pass through untouched
+        /// since they are already clone-safe, a boxed value is unboxed, <c>NaN</c> and infinities are kept,
+        /// and a graph that shares an object or refers back to itself is copied with the same shape
+        /// instead of throwing.
         /// </summary>
         public static object ToPlainObject(object value)
         {
@@ -216,7 +228,7 @@ namespace Tesserae.Monaco
 
             try
             {
-                return es5.JSON.parse(es5.JSON.stringify(value));
+                return Plain(value, new es5.Map<object, object>());
             }
             catch (Exception exception)
             {
@@ -224,6 +236,121 @@ namespace Tesserae.Monaco
 
                 return value;
             }
+        }
+
+        /// <summary>
+        /// The recursive half of <see cref="ToPlainObject"/>. <paramref name="seen"/> maps every source
+        /// object already copied to its copy, which is what makes a shared reference come out shared
+        /// and a cycle come out as a cycle rather than as a stack overflow.
+        /// </summary>
+        private static object Plain(object value, es5.Map<object, object> seen, bool honourToJson = true)
+        {
+            // `is null` is emitted as == null, so this covers undefined too - which, as an array
+            // element, is what JSON turned into null as well.
+            if (value is null) return null;
+
+            var kind = Script.TypeOf(value);
+
+            // Strings, numbers, booleans (and a bigint or a symbol, which are theirs to have passed)
+            // are their own copy. A bare function has no plain form; a property holding one is skipped
+            // by the caller, an array slot holding one becomes null, as with JSON.
+            if (kind != "object") return kind == "function" ? null : value;
+
+            // A value type in an object-typed slot may be boxed - { $boxed: true, v: 5, ... } with a
+            // constructor and formatting functions around the value. The value is the data.
+            if (Script.Get<bool>(value, "$boxed")) return Plain(Script.Get(value, "v"), seen);
+
+            if (seen.has(value)) return seen.get(value);
+
+            // Already clone-safe, and copying them would be pointless or lossy: a Date's toJSON is an
+            // ISO string, and a typed array carries no Transpose bookkeeping (it is not a JS array, so
+            // System.Array.init never stamps it).
+            if (Script.InstanceOf(value, typeof(es5.Date)))
+            {
+                var date = new es5.Date(((es5.Date)value).getTime());
+
+                seen.set(value, date);
+
+                return date;
+            }
+
+            if (es5.ArrayBuffer.isView(value) || Script.InstanceOf(value, typeof(es5.ArrayBuffer))) return value;
+
+            if (es5.Array<object>.isArray(value))
+            {
+                var source = (es5.Array<object>)value;
+
+                // A fresh JavaScript array, not a C# one - `new object[n]` would come back stamped with
+                // the very $type this exists to drop.
+                var array = new es5.Array<object>();
+
+                seen.set(value, array);
+
+                for (var i = 0; i < source.length; i++)
+                {
+                    array.push(Plain(source[i], seen));
+                }
+
+                return array;
+            }
+
+            // A type that says how it serialises: the runtime's own class instances (their base toJSON
+            // collects the fields and properties and leaves the $-bookkeeping behind), List<T> (its
+            // items), System.Uri, System.Guid, Monaco's Uri. The result is whatever it chose to hand out,
+            // so it is walked in turn - a List's toJSON is a typed array - but, as with JSON.stringify,
+            // its own toJSON is not asked again; only its members' are.
+            if (honourToJson && Script.TypeOf(Script.Get(value, "toJSON")) == "function")
+            {
+                var serialised = Script.InvokeMethod(value, "toJSON");
+
+                if (!Script.StrictEquals(serialised, value))
+                {
+                    var copy = Plain(serialised, seen, false);
+
+                    seen.set(value, copy);
+
+                    return copy;
+                }
+            }
+
+            return PlainProperties(value, seen);
+        }
+
+        /// <summary>
+        /// Copies an object's own enumerable properties onto a fresh plain object, skipping members
+        /// whose value is a function or undefined - the two JSON leaves out, and the two a worker
+        /// cannot take. Keys are copied as they are: a JSON schema's <c>$schema</c> and <c>$ref</c> are
+        /// data, so nothing is filtered by name.
+        /// </summary>
+        private static object PlainProperties(object value, es5.Map<object, object> seen)
+        {
+            var copy = new PlainObject();
+
+            seen.set(value, copy);
+
+            var keys = Transpose.Core.Object.keys(value);
+
+            for (var i = 0; i < keys.Length; i++)
+            {
+                var key  = keys[i];
+                var item = Script.Get(value, key);
+                var kind = Script.TypeOf(item);
+
+                if (kind == "undefined" || kind == "function") continue;
+
+                Script.Set(copy, key, Plain(item, seen));
+            }
+
+            return copy;
+        }
+
+        /// <summary>
+        /// An empty object literal. <c>new PlainObject()</c> is emitted as <c>{}</c> - a fresh object
+        /// with no prototype beyond <c>Object.prototype</c>, which is exactly what a copy is built on.
+        /// </summary>
+        [ObjectLiteral]
+        private sealed class PlainObject
+        {
         }
 
         #endregion

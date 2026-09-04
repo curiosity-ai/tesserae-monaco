@@ -537,8 +537,38 @@ stops matching Monaco), which is why `getOption` is wrapped once as `getNumberOp
 `setSelection` takes `object` rather than having a range and a selection overload. And a C# array still
 needs `Script.ToArray` before it crosses to a worker — Transpose stamps a `$type` **function** onto
 typed arrays, and `postMessage` refuses the whole value with a `DataCloneError` that quotes a function
-body and names nothing useful. `MonacoEditor.ToPlainObject` is the JSON round trip for a whole object
-graph, which anonymous types need too.
+body and names nothing useful. `MonacoEditor.ToPlainObject` is the fix for a whole object graph — a
+JSON schema, a worker's `createData`, a view state going into IndexedDB — and it is a **structural
+copy**, not the `JSON.parse(JSON.stringify(...))` round trip it used to be. Things learned replacing it,
+each confirmed in the browser by the Plain Objects page (below):
+
+- **What breaks `structuredClone` is a function, not a prototype.** A class instance clones — the
+  prototype is simply dropped — so the failure was always the `$type` *function* on every C# array,
+  a delegate field, or a box's `constructor`. The copy therefore skips function-valued and undefined
+  members and rebuilds arrays; the test checks plainness (prototype, no functions, no undefined)
+  separately, because `structuredClone` passing does not prove it.
+- **Honour `toJSON`.** The Transpose runtime puts a `toJSON` on every class instance's base prototype
+  (own fields plus property descriptors, `$`-bookkeeping left out) and on `List<T>` (its items); Monaco's
+  `Uri`, `System.Uri` and `System.Guid` have their own. Calling it and walking its result is what keeps
+  a class instance serialising exactly as the round trip did.
+- **Never filter keys by a leading `$`.** `$type` is only ever on arrays, which are rebuilt rather than
+  copied, and a JSON schema's `$schema`, `$ref` and `$defs` are data that has to arrive.
+- **A boxed value is `{ $boxed: true, v, ... }`** with functions around it; the round trip turned it
+  into that object minus the functions. The copy unboxes it.
+- **The copy must not allocate a C# array.** `new object[n]` comes back stamped with the very `$type`
+  being removed — the fresh array is `new es5.Array<object>()`, and the fresh object is an empty
+  `[ObjectLiteral]` type, which emits `{}`.
+- **Monaco's view state is not plain either.** `saveViewState()` hands out `Position` instances inside
+  `viewState.firstPosition`, which is why `EditorViewState.ToPlainObject` still copies rather than
+  passing the object through.
+- **`Object.keys`, `getOwnPropertyNames` and `getPrototypeOf` are on `Transpose.Core.Object`** — written
+  fully qualified, since a bare `Object` is ambiguous with `System.Object` — and `es5.Map` and
+  `window.structuredClone` are bound too, so nothing platform-level was declared for any of this.
+- Where the copy and the round trip disagree it keeps what the text form lost: a `Date` stays a `Date`,
+  a `Uint32Array` and an `ArrayBuffer` pass through as themselves, `NaN` and infinities are kept, and a
+  shared reference or a cycle is copied with the same shape instead of throwing. Measured on 200 copies
+  of 40 schemas it is also a little faster than the round trip, not dramatically — the win is the
+  dropped text intermediate and the cases that no longer fail, not speed.
 
 ## Other Transpose gotchas
 
@@ -701,12 +731,13 @@ Two things this depends on, both easy to break:
   one visit creates one page's editors rather than every page's at startup — and leaving a page unmounts
   them. That is a feature: it exercises the components' disposal on every click.
 
-There are 30 pages in four groups: **Editors** (the components themselves, plus the diff's own API and
+There are 31 pages in four groups: **Editors** (the components themselves, plus the diff's own API and
 `Colorize`), **Language services** (one page per provider — completion, signature help, inline
 completion, formatting, diagnostics, code actions, navigation, inlay hints and lenses, folding, links
 and colours, semantic tokens, a custom language, deferred grammars, and Monaco's bundled workers),
 **Decorations and widgets**, and **Runtime and hosting** (options, events, actions and commands,
-several documents, themes, a modal, remount, persisted history, the multi-editor shell). The sidebar sorts groups
+several documents, themes, a modal, remount, persisted history, the multi-editor shell, and the plain-object
+copy's own test page). The sidebar sorts groups
 alphabetically and pages by their `Order`.
 
 Two consequences of a page being rebuilt on every visit, both of which cost a debugging round:
@@ -775,6 +806,23 @@ invalid to begin with: markers owned by `json` (against a schema) and by `typesc
 handed to the worker) should both be there without touching anything. Its schema is scoped by
 `fileMatch` to that page's own model URI on purpose — `"*"` would validate every JSON document in the
 app, and the Diagnostics page's valid JSON would start reporting errors.
+
+**Plain Objects is a test page, and there is a script for it.** Every kind of value the package hands to
+`MonacoEditor.ToPlainObject` — a C# `string[]`, an anonymous JSON schema with `$ref` keys, an
+`[ObjectLiteral]`, a host's class instance, a boxed value, a shared reference and a cycle, a `Date`, a
+`Uint32Array`, Monaco's `Uri`, a real `saveViewState()`, and the history records — is normalised there
+and checked in the browser: `structuredClone` accepts the copy, the copy is a plain graph, it stringifies
+to what the JSON round trip produced where the two can agree, and it shares no object with its source.
+The page marks its result container with `data-status="done"`, `data-passed` and `data-failed`, so
+
+```bash
+NODE_PATH="$(npm root -g)" node scripts/check-plain-objects.mjs http://localhost:5002/
+```
+
+opens it headlessly, prints one line per row and exits non-zero on a red row or a console error. It was
+proven against two mutants before being trusted: an identity `ToPlainObject` turns 13 rows red, and the
+old JSON round trip fails exactly the rows that assert the new semantics (box, cycle, `Date`, typed
+array, `NaN`) and no others. Adding a kind of value that crosses to a worker means adding a row here.
 
 Navigating between pages is itself a check the old single-page sample could not make: every page is
 built when it is opened and disposed when it is left, so a leak or a bad teardown shows up as a console
