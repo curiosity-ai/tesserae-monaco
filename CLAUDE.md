@@ -519,6 +519,79 @@ without the URL, a bogus id falling back to all and leaving the URL); a search i
 directly listed file; the hint appears once the last member goes; rename shows in the picker, delete
 returns to all and removes the storage key; and navigating away and back is clean.
 
+### Settings attached to a document
+
+Code rarely stands alone: an endpoint has a route, a method and an authorization level, a task has a
+schedule, an index has a field and a model. `EditorDocument.Settings` is that half —
+a `Func<IComponent>` the host builds — and setting it puts a **`DocumentHeader`** strip above the editor
+and lets `ShowSettings(id)` open the component in a **`DocumentSettingsModal`**.
+
+**The shell does not draw the form, and cannot see inside it.** Same rule as the language providers: the
+host builds the fields (Tesserae's `PropertyGrid<T>` over a plain object is the short way, and the
+gallery's task document does exactly that) and reports what changed with
+`MarkSettingsDirty(id, names)` / `MarkSettingsClean(id)`. That one call is the whole seam — the values,
+the form and the baseline all stay with the host. Reproducing `SettingsHolder` in the package was the
+alternative and is the wrong trade: Mosaik's own editor shows how much of a real settings form is
+domain-shaped (node-type pickers, embedding-model lists, code-typed settings), and none of that could
+live here.
+
+Four decisions, each of which a different arrangement gets wrong:
+
+- **The strip is where the button goes.** It is the only always-visible place the shell owns — a tab
+  title has room for an icon, a name and its unsaved marker and nothing else (it ellipsizes at 220px),
+  and a click inside a tab fights tab selection. `Pivot`'s titlebar would be the nicer home — VS Code's
+  editor-group actions sit there and it costs no vertical space — but its wrapper is closed, holding
+  only the two scroll buttons and the overflow `⋯`; opening it up is a Tesserae change, not a local one.
+  A Monaco overlay widget collides with the scrollbar and the minimap, and the tree row's `⋯` menu and
+  the palette are secondary paths, not affordances. **And the strip is a summary, not just a button**:
+  `SettingsSummary` draws the identity-defining settings as chips, so the important ones are readable
+  without opening anything and it is obvious the document *has* settings.
+- **The overlay is an editing surface, not a transaction.** Editing a setting makes the *document*
+  unsaved, exactly as typing does, so there is no Cancel that discards and no second save: closing keeps
+  the pending edits, Save is the document's own save (the one Ctrl+S runs, which persists the code and
+  the settings together through `EditorDocument.Save`), and `RevertSettings` is how edits are given up
+  deliberately — the button is absent when the host supplies no delegate, since an overlay that cannot
+  revert should not pretend it can. A modal Save/Cancel *plus* a tab that goes dirty is the confusing
+  arrangement this exists to avoid: two saves that can disagree about what "saved" means, and a Cancel
+  that contradicts the marker it just raised.
+- **The tab's marker cannot say which half changed, so the strip does.** `TabSaveIndicator.MarkDirty`
+  adds a class and the CSS replaces the tab's `×` with one 7px dot — a boolean, and rightly so
+  ("this document needs saving" either way). *Which* is carried by four other places: the settings
+  button turns brand-coloured and counts (`Settings - 2 changes`, its tooltip naming them), a changed
+  chip shows the **pending** value in the same colour, the overlay banners them, and the close prompt
+  says whether the code changed as well. The dot beside the button is deliberately the same dot in the
+  same colour as the tab's. A host that does not track names can report dirty alone and still get the
+  marker, without a count.
+- **Dirty is composed, not overwritten.** `OpenTab` keeps a *body* half (the editor's text, or a
+  `Content` tab reporting itself through `MarkDirty`) and a *settings* half, and `IsDirty` is the OR —
+  so `MarkDirty(id, false)` does not clear a pending settings edit, `OnDirtyChanged` fires only when the
+  composed value flips, and a successful save clears both. The button flat-and-then-brand is one class
+  toggle rather than an inline style: a default `Button` already carries `tss-btn-default`
+  (transparent, no shadow, themed hover), `NoBackground` keeps it flat once `IsPrimary` is on, and
+  `.tss-btn-primary.tss-btn-nobg` is a stylesheet rule that colours the label and the icon. No CSS
+  ships with this.
+
+Two smaller ones: **"changed" means against what was saved**, never against a setting's default — a
+document opened and left alone has nothing changed however far its values sit from the defaults — and
+the overlay is **kept across openings rather than rebuilt**, so a half-typed value survives closing it,
+the same way a hidden tab keeps its editor. `Rebuild()` runs only after a revert, which is what makes
+the restored values appear in the fields.
+
+Ctrl+comma opens it, bound **twice** for the same reason Ctrl+S is: Monaco answers keys first, so the
+editor gets its own `AddCommand` and the shell's `keydown` skips a press that came from inside
+`.monaco-editor`. The palette lists every document with settings under a `Settings` section, which is
+the only way in for a document whose tab is not open yet.
+
+Verified in the gallery with Playwright, Debug and Release: the strip appears only for a document with
+settings and shows its chips; editing the path turns the button brand-coloured with `1 change`, accents
+that chip with the pending value, raises the tab's dot and banners the name; the tab's tooltip
+distinguishes settings-only from both halves and the close prompt says which
+("`1 setting (Path) changed; the code itself did not.`" against "`The code and 1 setting (Path)
+changed.`"); Save clears both halves and closes; Revert restores the saved value and rebuilds the
+fields; Ctrl+comma opens it from inside the editor; the palette's Settings entry opens it; the
+`PropertyGrid` form reports through the same seam; and a pending edit survives navigating away and
+back, re-reported from `OnOpened`.
+
 ## No language intelligence
 
 The package ships **no** completion, hover or formatting logic — those are delegates the host supplies
@@ -798,12 +871,13 @@ Two things this depends on, both easy to break:
   one visit creates one page's editors rather than every page's at startup — and leaving a page unmounts
   them. That is a feature: it exercises the components' disposal on every click.
 
-There are 30 pages in four groups: **Editors** (the components themselves, plus the diff's own API and
+There are 31 pages in four groups: **Editors** (the components themselves, plus the diff's own API and
 `Colorize`), **Language services** (one page per provider — completion, signature help, inline
 completion, formatting, diagnostics, code actions, navigation, inlay hints and lenses, folding, links
 and colours, semantic tokens, a custom language, deferred grammars, and Monaco's bundled workers),
 **Decorations and widgets**, and **Runtime and hosting** (options, events, actions and commands,
-several documents, themes, a modal, remount, persisted history, the multi-editor shell). The sidebar sorts groups
+several documents, themes, a modal, remount, persisted history, the multi-editor shell, a document's
+settings). The sidebar sorts groups
 alphabetically and pages by their `Order`.
 
 Two consequences of a page being rebuilt on every visit, both of which cost a debugging round:

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using Tesserae;
 
@@ -90,6 +91,43 @@ namespace Tesserae.Monaco
         /// alive while it stays open - so the component keeps its state across tab switches.
         /// </summary>
         public Func<IComponent> Content { get; set; }
+
+        /// <summary>
+        /// Builds the document's <i>settings</i> - the structured configuration attached to the code, which
+        /// the code alone cannot express: an endpoint's route and authorization, a task's schedule, an
+        /// index's field and model. Set it and the shell puts a header strip above the editor with a settings
+        /// button on it, and <see cref="MultiEditor.ShowSettings"/> opens the component this builds in a
+        /// <see cref="DocumentSettingsModal"/>.
+        ///
+        /// The shell knows nothing about the fields, exactly as it knows nothing about a language's
+        /// completions: the host builds the form (Tesserae's <c>PropertyGrid</c> over a plain object is the
+        /// short way to one) and reports what the user changed with
+        /// <see cref="MultiEditor.MarkSettingsDirty"/>. Called when the overlay opens and again after a
+        /// revert, so it has to read the host's current values rather than close over a snapshot.
+        ///
+        /// Settings are saved by <see cref="Save"/>, together with the text - there is one save for the whole
+        /// document. See <see cref="DocumentSettingsModal"/> for why.
+        /// </summary>
+        public Func<IComponent> Settings { get; set; }
+
+        /// <summary>The settings overlay's heading. <c>"Settings - {Title}"</c> when unset.</summary>
+        public string SettingsTitle { get; set; }
+
+        /// <summary>
+        /// The settings worth reading without opening the overlay, drawn as chips beside the settings
+        /// button - the method and path of an endpoint, the cron of a task. Called whenever the changed set
+        /// moves, so a chip shows the pending value, and one whose <see cref="SettingSummary.Name"/> is in
+        /// that set is accented.
+        /// </summary>
+        public Func<IEnumerable<SettingSummary>> SettingsSummary { get; set; }
+
+        /// <summary>
+        /// Puts the settings back to what was last saved. Given one, the overlay offers "Revert settings";
+        /// without one it does not, since an overlay that cannot revert should not pretend it can. The host
+        /// restores its own values; the shell then marks the settings clean and rebuilds the form from
+        /// <see cref="Settings"/>.
+        /// </summary>
+        public Func<Task> RevertSettings { get; set; }
 
         /// <summary>The entries of the row's "..." menu, built when it opens. No menu when unset.</summary>
         public Func<TreeCommand[]> Commands { get; set; }

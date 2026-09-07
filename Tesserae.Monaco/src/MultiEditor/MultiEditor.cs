@@ -391,12 +391,73 @@ namespace Tesserae.Monaco
         /// <summary>
         /// Reports the dirty state of a document that shows <see cref="EditorDocument.Content"/> of its own -
         /// the shell cannot see inside that, so the content says. A code editor's state is tracked for it.
+        ///
+        /// This is the document's <i>body</i>; its settings are reported separately through
+        /// <see cref="MarkSettingsDirty"/>, and the document is unsaved while either of them is. So marking
+        /// the body clean does not clear a pending settings edit.
         /// </summary>
         public MultiEditor MarkDirty(string id, bool dirty = true)
         {
             if (id is object && _open.TryGetValue(id, out var tab)) tab.SetDirty(dirty);
 
             return this;
+        }
+
+        /// <summary>
+        /// Reports that a document's <see cref="EditorDocument.Settings"/> differ from what was last saved,
+        /// naming the ones that do. This is the seam for settings: the shell does not draw the form and
+        /// cannot see inside it, so the host - which knows both the current values and the baseline it
+        /// loaded - says what changed.
+        ///
+        /// The document then reads as unsaved exactly as a typed-in editor does: the tab shows its marker,
+        /// Ctrl+S saves, and closing it asks first. What the names add is <i>which</i>: the settings button
+        /// counts them and lists them in its tooltip, a summary chip for a named setting is accented, the
+        /// overlay banners them, and the close prompt says whether the code changed as well. A host that
+        /// does not track names can pass none and still get the marker.
+        ///
+        /// "Changed" means against what was <b>saved</b>, not against a setting's default - a document
+        /// opened and left alone has nothing changed however far its values sit from the defaults.
+        /// </summary>
+        public MultiEditor MarkSettingsDirty(string id, params string[] changedSettings)
+        {
+            if (id is object && _open.TryGetValue(id, out var tab)) tab.SetSettingsDirty(true, changedSettings);
+
+            return this;
+        }
+
+        /// <summary>
+        /// Reports that a document's settings match what was saved - the counterpart of
+        /// <see cref="MarkSettingsDirty"/>, for a host that undoes an edit by hand. A successful save clears
+        /// it without being asked.
+        /// </summary>
+        public MultiEditor MarkSettingsClean(string id)
+        {
+            if (id is object && _open.TryGetValue(id, out var tab)) tab.SetSettingsDirty(false, null);
+
+            return this;
+        }
+
+        /// <summary>Whether a document's settings have changes not yet saved.</summary>
+        public bool AreSettingsDirty(string id) => id is object && _open.TryGetValue(id, out var tab) && tab.AreSettingsDirty;
+
+        /// <summary>The settings a host last reported as changed on a document, newest report wins. Empty when it has none.</summary>
+        public string[] ChangedSettings(string id) => id is object && _open.TryGetValue(id, out var tab) ? tab.ChangedSettings : new string[0];
+
+        /// <summary>
+        /// Opens a document's settings overlay - the active document's when no id is given, opening its tab
+        /// first if it is not already open. Answers null for a document with no
+        /// <see cref="EditorDocument.Settings"/>. The same thing the header's settings button, Ctrl+comma and
+        /// the palette's Settings entries reach.
+        /// </summary>
+        public DocumentSettingsModal ShowSettings(string id = null)
+        {
+            id = id ?? _activeId;
+
+            if (id is null) return null;
+
+            if (!IsOpen(id) && GetDocument(id) is object) Open(id);
+
+            return _open.TryGetValue(id, out var tab) ? tab.ShowSettings() : null;
         }
 
         /// <summary>Saves a document through its <see cref="EditorDocument.Save"/>; the active one when no id is given. Returns whether it saved.</summary>
@@ -1289,6 +1350,22 @@ namespace Tesserae.Monaco
                 });
             }
 
+            // A document with settings is reachable by them too, which is the other way in besides the
+            // header's button - and the only one for a document that is not open yet.
+            foreach (var doc in _catalog.Where(d => d.Settings is object))
+            {
+                var id = doc.Id;
+
+                actions.Add(new CommandPaletteAction("settings:" + id, doc.Title)
+                {
+                    Subtitle = "settings",
+                    Section  = "Settings",
+                    Keywords = doc.Keywords,
+                    Icon     = UIcons.Settings,
+                    Perform  = () => ShowSettings(id)
+                });
+            }
+
             // The palette lists the whole catalog whatever the view - it is how a hidden document is reached - and the views themselves.
             if (_viewStore is object && _views.Count > 0)
             {
@@ -1351,9 +1428,15 @@ namespace Tesserae.Monaco
         {
             if (!tab.IsDirty || !_confirmClose) return true;
 
-            var dialog = new Dialog(
-                TextBlock("Save the changes to " + tab.Document.Title + " before closing?"),
-                TextBlock("Unsaved changes").SemiBold());
+            var body = VStack().Gap(6.px()).Children(
+                TextBlock("Save the changes to " + tab.Document.Title + " before closing?"));
+
+            // Which half is unsaved, since the tab's marker is one dot for the whole document.
+            var what = tab.UnsavedSummaryLine();
+
+            if (what is object) body.Add(TextBlock(what).Small().Secondary());
+
+            var dialog = new Dialog(body, TextBlock("Unsaved changes").SemiBold());
 
             var response = await dialog.YesNoCancelAsync(
                 btnYes:    b => b.SetText("Save and close").Primary(),
@@ -1390,16 +1473,22 @@ namespace Tesserae.Monaco
 
         private void OnKeyDown(KeyboardEvent e)
         {
-            if (!KeyboardShortcut.Matches(e, "Ctrl", "S")) return;
+            var save     = KeyboardShortcut.Matches(e, "Ctrl", "S");
+            var settings = !save && KeyboardShortcut.Matches(e, "Ctrl", ",");
 
-            // Inside Monaco the editor's own binding already ran; outside it the browser would offer to save the page.
+            if (!save && !settings) return;
+
+            // Inside Monaco the editor's own binding already ran; outside it the browser would offer to save
+            // the page (Ctrl+S) or open its own settings (Ctrl+comma).
             var target = e.target.As<HTMLElement>();
 
             if (target is object && target.closest(".monaco-editor") is object) return;
 
             e.preventDefault();
 
-            if (_activeId is object) SaveAsync(_activeId).FireAndForget();
+            if (_activeId is null) return;
+
+            if (save) SaveAsync(_activeId).FireAndForget(); else ShowSettings(_activeId);
         }
 
         #endregion
@@ -1607,13 +1696,19 @@ namespace Tesserae.Monaco
         /// </summary>
         private sealed class OpenTab
         {
-            private readonly MultiEditor _owner;
-            private readonly string      _indicatorId;
-            private          Icon        _titleIcon;
-            private          TextBlock   _titleText;
-            private          string      _savedText;
-            private          bool        _dirty;
-            private          bool        _disposed;
+            private readonly MultiEditor           _owner;
+            private readonly string                _indicatorId;
+            private          Icon                  _titleIcon;
+            private          TextBlock             _titleText;
+            private          Stack                 _titleRoot;
+            private          DocumentHeader        _header;
+            private          DocumentSettingsModal _settingsModal;
+            private          string                _savedText;
+            private          bool                  _bodyDirty;
+            private          bool                  _settingsDirty;
+            private          string[]              _changedSettings = new string[0];
+            private          bool                  _dirty;
+            private          bool                  _disposed;
             private          bool        _focusWhenReady;
             private          IComponent  _content;
 
@@ -1628,7 +1723,12 @@ namespace Tesserae.Monaco
 
             public EditorDocument Document { get; private set; }
             public CodeEditor     Editor   { get; private set; }
-            public bool           IsDirty  => _dirty;
+
+            // A document is unsaved while either half is: its body (the editor's text, or a Content tab
+            // saying so) or its settings. One marker on the tab, two things that can raise it.
+            public bool     IsDirty          => _bodyDirty || _settingsDirty;
+            public bool     AreSettingsDirty => _settingsDirty;
+            public string[] ChangedSettings  => _changedSettings;
 
             /// <summary>
             /// Focuses the editor, or - while its text is still on its way - the editor that is about to
@@ -1653,6 +1753,7 @@ namespace Tesserae.Monaco
                 if (_titleText is object) _titleText.Text = document.Title;
 
                 ApplyStatus();
+                ApplyTabTooltip();
             }
 
             public IComponent BuildTitle()
@@ -1662,11 +1763,17 @@ namespace Tesserae.Monaco
 
                 ApplyStatus();
 
-                return HStack().AlignItemsCenter().Gap(6.px()).PT(6).PB(6).PL(12).PR(12).Id(_indicatorId).Children(_titleIcon, _titleText);
+                _titleRoot = HStack().AlignItemsCenter().Gap(6.px()).PT(6).PB(6).PL(12).PR(12).Id(_indicatorId).Children(_titleIcon, _titleText);
+
+                ApplyTabTooltip();
+
+                return _titleRoot;
             }
 
             public void ApplyStatus()
             {
+                ApplyTabTooltip();
+
                 if (_titleIcon is null) return;
 
                 _titleIcon.SetIcon(StatusIcon(Document));
@@ -1674,6 +1781,22 @@ namespace Tesserae.Monaco
             }
 
             public IComponent BuildContent()
+            {
+                var body = BuildBody();
+
+                if (Document.Settings is null) return body;
+
+                _header = new DocumentHeader().OnOpenSettings(() => ShowSettings());
+
+                RefreshSummary();
+                _header.Changed(_settingsDirty, _changedSettings);
+
+                // The editor grows under the strip; MinHeight(0) because a flex item's automatic minimum is
+                // its content's, and Monaco's scroll layer is 16.7 million pixels tall.
+                return VStack().S().Children(_header, VStack().WS().Grow().MinHeight(0.px()).Children(body));
+            }
+
+            private IComponent BuildBody()
             {
                 if (Document.Content is object)
                 {
@@ -1712,6 +1835,9 @@ namespace Tesserae.Monaco
 
                     if (Document.Save is object) editor.OnSave(() => SaveAsync());
 
+                    // Monaco answers keys before the shell does, so a focused editor needs its own binding.
+                    if (Document.Settings is object) editor.AddCommand(KeyMod.With(KeyMod.CtrlCmd, KeyCode.Comma), () => ShowSettings());
+
                     _owner._configureEditor?.Invoke(Document, editor);
 
                     Editor = editor;
@@ -1734,8 +1860,54 @@ namespace Tesserae.Monaco
                 return _content;
             }
 
+            /// <summary>The body half - the editor's text, or a Content tab reporting itself.</summary>
             public void SetDirty(bool dirty)
             {
+                if (dirty == _bodyDirty) return;
+
+                _bodyDirty = dirty;
+
+                ApplyDirty();
+            }
+
+            /// <summary>The settings half - what the host reports through MarkSettingsDirty.</summary>
+            public void SetSettingsDirty(bool dirty, string[] changedSettings)
+            {
+                var changed = changedSettings ?? new string[0];
+
+                if (dirty == _settingsDirty && SameSettings(changed)) return;
+
+                _settingsDirty   = dirty;
+                _changedSettings = dirty ? changed : new string[0];
+
+                ApplyDirty();
+            }
+
+            private bool SameSettings(string[] changed)
+            {
+                if (changed.Length != _changedSettings.Length) return false;
+
+                for (var i = 0; i < changed.Length; i++)
+                {
+                    if (changed[i] != _changedSettings[i]) return false;
+                }
+
+                return true;
+            }
+
+            private void ApplyDirty()
+            {
+                // The summary is re-read before the changed set is applied to it, so a chip shows the pending
+                // value and the accent lands on the right chip.
+                RefreshSummary();
+
+                _header?.Changed(_settingsDirty, _changedSettings);
+                _settingsModal?.SetState(_settingsDirty, _changedSettings, IsDirty && Document.Save is object);
+
+                ApplyTabTooltip();
+
+                var dirty = IsDirty;
+
                 if (dirty == _dirty) return;
 
                 _dirty = dirty;
@@ -1752,6 +1924,88 @@ namespace Tesserae.Monaco
                 _owner._onDirtyChanged?.Invoke(Document, dirty);
             }
 
+            private void RefreshSummary()
+            {
+                if (_header is null || Document.SettingsSummary is null) return;
+
+                _header.Summary(Document.SettingsSummary());
+            }
+
+            /// <summary>
+            /// Opens the settings overlay, building it the first time. It is kept across openings rather than
+            /// rebuilt: whatever the host's form holds - a half-typed value, a scroll offset - is still there
+            /// when it comes back, the same way a hidden tab keeps its editor.
+            /// </summary>
+            public DocumentSettingsModal ShowSettings()
+            {
+                if (Document.Settings is null || _disposed) return null;
+
+                if (_settingsModal is null)
+                {
+                    _settingsModal = new DocumentSettingsModal(
+                            Document.SettingsTitle ?? ("Settings - " + Document.Title),
+                            () => Document.Settings())
+                       .OnSave(SaveAsync);
+
+                    if (Document.RevertSettings is object)
+                    {
+                        _settingsModal.OnRevert(async () =>
+                        {
+                            await Document.RevertSettings();
+
+                            SetSettingsDirty(false, null);
+                        });
+                    }
+                }
+
+                _settingsModal.SetState(_settingsDirty, _changedSettings, IsDirty && Document.Save is object);
+
+                return _settingsModal.Show();
+            }
+
+            private void ApplyTabTooltip()
+            {
+                if (_titleRoot is null) return;
+
+                var unsaved = UnsavedDescription();
+                var status  = Document.Status != DocumentStatus.None ? Document.StatusMessage : null;
+
+                _titleRoot.Render().title = unsaved ?? status ?? Document.Id ?? "";
+            }
+
+            private string UnsavedDescription()
+            {
+                if (!IsDirty) return null;
+
+                if (_bodyDirty && _settingsDirty) return "Unsaved changes: the code and " + SettingsPhrase();
+                if (_settingsDirty)               return "Unsaved changes: " + SettingsPhrase() + " - the code itself is unchanged";
+
+                return "Unsaved changes in the code";
+            }
+
+            /// <summary>The line the close prompt adds, or null when the plain question already says it all.</summary>
+            public string UnsavedSummaryLine()
+            {
+                if (!_settingsDirty) return null;
+
+                return _bodyDirty
+                    ? "The code and " + SettingsPhrase() + " changed."
+                    : SettingsPhrase() + " changed; the code itself did not.";
+            }
+
+            private string SettingsPhrase()
+            {
+                if (_changedSettings.Length == 0) return "the settings";
+
+                const int LISTED = 4;
+
+                var listed = _changedSettings.Length <= LISTED
+                    ? string.Join(", ", _changedSettings)
+                    : string.Join(", ", _changedSettings.Take(LISTED)) + " and " + (_changedSettings.Length - LISTED) + " more";
+
+                return (_changedSettings.Length == 1 ? "1 setting (" : _changedSettings.Length + " settings (") + listed + ")";
+            }
+
             public async Task<bool> SaveAsync()
             {
                 if (Document.Save is null || _disposed) return false;
@@ -1760,6 +2014,9 @@ namespace Tesserae.Monaco
                 var saved = await Document.Save(text);
 
                 if (!saved) return false;
+
+                // The host's Save persists the code and the settings together, so both halves come clean.
+                SetSettingsDirty(false, null);
 
                 if (Editor is object)
                 {
@@ -1781,6 +2038,9 @@ namespace Tesserae.Monaco
                 _disposed = true;
 
                 TabSaveIndicator.Forget(_indicatorId);
+
+                _settingsModal?.Hide();
+                _settingsModal = null;
 
                 // The tab is gone for good: a plain removal would only tear the editor down until its next mount.
                 Editor?.Dispose();
