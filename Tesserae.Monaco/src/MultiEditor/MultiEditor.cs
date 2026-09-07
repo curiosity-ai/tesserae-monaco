@@ -265,32 +265,46 @@ namespace Tesserae.Monaco
         /// <summary>The editor showing a document, or null when it is not open or shows content of its own.</summary>
         public CodeEditor EditorOf(string id) => id is object && _open.TryGetValue(id, out var tab) ? tab.Editor : null;
 
-        /// <summary>Opens a document of the catalog in a tab, or brings its tab to the front. Unknown ids are ignored.</summary>
-        public MultiEditor Open(string id)
-        {
-            var doc = GetDocument(id);
-
-            if (doc is object) Open(doc);
-
-            return this;
-        }
+        /// <summary>
+        /// Opens a document of the catalog in a tab, or reveals the tab it is already open in. A document
+        /// is never open twice: a second open of an id already showing brings that tab to the front and
+        /// focuses its editor instead of building another one. Unknown ids are ignored.
+        /// </summary>
+        public MultiEditor Open(string id) => Open(GetDocument(id), focus: true);
 
         /// <summary>
         /// Opens a document in a tab, whether or not the catalog lists it - a "new file" that has no
-        /// identity yet, say. A document outside the catalog is not written to the URL, since nothing could
-        /// re-open it from there.
+        /// identity yet, say - or reveals the tab it is already open in, the same way <see cref="Open(string)"/>
+        /// does. A document outside the catalog is not written to the URL, since nothing could re-open it
+        /// from there.
         /// </summary>
-        public MultiEditor Open(EditorDocument document)
+        public MultiEditor Open(EditorDocument document) => Open(document, focus: true);
+
+        /// <summary>
+        /// One tab per document id, and one editor per tab. A document already open is revealed rather than
+        /// opened again - <paramref name="focus"/> is what separates a user asking for it, who wants the
+        /// caret where they clicked, from the URL restoring a tab set at load, which must not steal focus.
+        /// </summary>
+        private MultiEditor Open(EditorDocument document, bool focus)
         {
             if (document is null) return this;
 
             if (_open.TryGetValue(document.Id, out var existing))
             {
                 existing.Rebind(document);
-                Select(document.Id);
+                ShowTabs();
+                _tabs.Select(document.Id);
+
+                if (focus) existing.Focus();
 
                 return this;
             }
+
+            // A tab the strip still carries under this id - one whose close went through the pivot without
+            // coming back around - would otherwise sit beside the new one under the same key. Removing it
+            // first also disposes the editor it holds; the tab is not in _open, so OnTabClosed is a no-op
+            // beyond that.
+            if (_tabs.TabIds.Contains(document.Id)) _tabs.RemoveTab(document.Id);
 
             var tab = new OpenTab(this, document);
 
@@ -300,7 +314,16 @@ namespace Tesserae.Monaco
             _tabs.Pivot(document.Id, tab.BuildTitle, tab.BuildContent, cached: true, closeable: true, onClosed: () => OnTabClosed(tab), onBeforeClose: () => CanCloseAsync(tab));
 
             ShowTabs();
-            _tabs.Select(document.Id);
+
+            // refresh: true, because the pivot keeps the id of the last tab it selected even after that
+            // tab is closed - so re-opening the document that was closed last is a Select the pivot reads
+            // as "already selected" and skips, which leaves the new tab's content unrendered and the pane
+            // showing the closed tab's emptied-out cached node. A tab that has just been created has
+            // nothing cached to re-render, so the refresh costs it nothing.
+            _tabs.Select(document.Id, refresh: true);
+
+            if (focus) tab.Focus();
+
             UpdateUrl();
 
             return this;
@@ -310,6 +333,21 @@ namespace Tesserae.Monaco
         public MultiEditor Select(string id)
         {
             if (IsOpen(id)) _tabs.Select(id);
+
+            return this;
+        }
+
+        /// <summary>
+        /// Brings an open document's tab to the front and gives its editor keyboard focus - what clicking a
+        /// document that is already open does. An editor still on its way is focused as soon as it exists,
+        /// and a document that is not open is left alone: this reveals, it does not open.
+        /// </summary>
+        public MultiEditor Reveal(string id)
+        {
+            if (!_open.TryGetValue(id, out var tab)) return this;
+
+            _tabs.Select(id);
+            tab.Focus();
 
             return this;
         }
@@ -1429,7 +1467,7 @@ namespace Tesserae.Monaco
                 if (!_documents.ContainsKey(id)) continue;
 
                 _pendingOpen.Remove(id);
-                Open(id);
+                Open(GetDocument(id), focus: false);
                 opened = true;
             }
 
@@ -1576,6 +1614,8 @@ namespace Tesserae.Monaco
             private          string      _savedText;
             private          bool        _dirty;
             private          bool        _disposed;
+            private          bool        _focusWhenReady;
+            private          IComponent  _content;
 
             public OpenTab(MultiEditor owner, EditorDocument document)
             {
@@ -1589,6 +1629,22 @@ namespace Tesserae.Monaco
             public EditorDocument Document { get; private set; }
             public CodeEditor     Editor   { get; private set; }
             public bool           IsDirty  => _dirty;
+
+            /// <summary>
+            /// Focuses the editor, or - while its text is still on its way - the editor that is about to
+            /// exist. A tab showing content of its own has nothing to focus and is left to the component.
+            /// </summary>
+            public void Focus()
+            {
+                if (Editor is object)
+                {
+                    Editor.Focus();
+                }
+                else if (Document.Content is null)
+                {
+                    _focusWhenReady = true;
+                }
+            }
 
             public void Rebind(EditorDocument document)
             {
@@ -1623,12 +1679,14 @@ namespace Tesserae.Monaco
                 {
                     var content = Document.Content();
 
+                    _content = content;
+
                     _owner._onOpened?.Invoke(Document, null);
 
                     return content;
                 }
 
-                return Defer(async () =>
+                _content = Defer(async () =>
                 {
                     var text = Document.Load is object ? await Document.Load() : Document.Text;
 
@@ -1658,10 +1716,22 @@ namespace Tesserae.Monaco
 
                     Editor = editor;
 
+                    // Focus asked for before the editor existed, applied once it does - a click on a
+                    // document whose text was still loading still lands the caret in it.
+                    editor.OnRendered(e =>
+                    {
+                        if (!_focusWhenReady) return;
+
+                        _focusWhenReady = false;
+                        e.Focus();
+                    });
+
                     _owner._onOpened?.Invoke(Document, editor);
 
                     return editor.S();
                 }).S();
+
+                return _content;
             }
 
             public void SetDirty(bool dirty)
@@ -1715,6 +1785,13 @@ namespace Tesserae.Monaco
                 // The tab is gone for good: a plain removal would only tear the editor down until its next mount.
                 Editor?.Dispose();
                 Editor = null;
+
+                // The pivot removes a closed tab's title but not its cached content - hiding cached nodes is
+                // all it does with them - so the pane would keep this tab's content, live and hidden, for the
+                // rest of the session. Taking it out is also what lets a Content tab's component see that it
+                // has left the DOM.
+                _content?.Render().remove();
+                _content = null;
             }
         }
     }

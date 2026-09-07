@@ -394,6 +394,34 @@ published version number once it exists; the branch was verified against a local
 
 Decisions that shape it, each the cheapest way to a behaviour a user notices:
 
+- **A document opens once, and a second open reveals it.** Every route into a document - a tree row, the
+  Ctrl+P palette, `?open=`, a host's own `Open(...)` - goes through the one private
+  `Open(document, focus)`, which keys the open set by `EditorDocument.Id`: an id already open is re-bound
+  (a title or status that changed shows on the tab), brought to the front and *focused*, and no second tab
+  or editor is built. The id is the identity, which is why the constructor insists on one and why nothing
+  else - a title, a folder, a document instance - is compared: a host that re-creates its `EditorDocument`s
+  on every catalog refresh keeps its tabs, and a host that changes a document's id has renamed it as far as
+  the shell is concerned. Two things this costs a line each: the focus is what makes a repeat click *do*
+  something (selecting a tab that is already in front is invisible otherwise), so it is deliberately not
+  applied on the restore path - `OpenPending` passes `focus: false`, since a page load that steals the
+  caret into an editor is a page load that scrolls somewhere the user did not ask for - and a click on a
+  document whose text is still loading has no editor to focus yet, so `OpenTab.Focus` records the intent
+  and the editor's `OnRendered` spends it. `Reveal(id)` is that half on its own, for a host that wants to
+  bring an open document forward without opening one that is not. The strip is checked as well as the open
+  set (`_tabs.TabIds.Contains`) before a tab is added, so a tab the pivot still carries under an id the
+  shell has forgotten is removed rather than joined by a twin under the same key.
+- **Two pieces of the pivot's state outlive a closed tab, and both cost a bug.** `RemoveTab` leaves
+  `SelectedTab` naming the tab it just removed when that was the last one - so re-opening the document
+  that was closed *last* built its tab, then hit a `Select` the pivot read as "already selected" and
+  skipped, leaving the new tab's content unrendered: an empty pane, and no editor at all, until another
+  tab was opened. Measured as `monaco.editor.getEditors().length == 0` with the pivot's content div
+  holding one leftover node. Hence `refresh: true` on the select that follows a *newly created* tab -
+  a tab that has just been built has nothing cached to re-render, so the refresh is free there, while
+  passing it on the reveal path would tear a live editor's node out and put it back. And `RemoveTab`
+  does not remove the tab's cached *content* either - `ClearChildrenExceptCached` only ever hides a
+  cached node - so `OpenTab.Dispose` takes the content element out itself, which is both what keeps a
+  session's worth of closing tabs from piling up hidden nodes in the pane and what lets a `Content`
+  tab's component see that it has left the DOM.
 - **Hidden tabs stay mounted.** Tabs are `cached: true`, so the pivot only hides the ones not in
   front, and the editor in a hidden tab keeps its caret, scroll, undo history and markers for free.
   The alternative - one editor and `SetModel` per tab, with view state saved and restored - is what
@@ -423,7 +451,13 @@ Verified in the gallery with Playwright, Debug and Release: three tabs open with
 the URL carries the open set and the active tab through a reload, a middle click closes, a dirty tab
 prompts and "Close without saving" discards, a content search filters the tree to one folder, a flagged
 document turns its icon red, a form in a tab reports its own dirty state, Ctrl+P opens by name, and an
-untitled document joins the tree and the URL when saved.
+untitled document joins the tree and the URL when saved. Also that a document opens once: clicking a row
+a second and a third time leaves the tab and editor counts where they were and moves the caret into the
+editor that is already there (`monaco.editor.getEditors()` counted per click, `hasTextFocus()` naming
+which one has it), and a reload that re-opens three tabs leaves the focus on `document.body`. And that
+closing a document and opening it again - the last tab or one of several, a code editor or a form -
+comes back with a live editor and exactly one content node per open tab, through three open/close
+rounds, with the dirty prompt's Cancel keeping the editor it was asked about.
 
 ### Views: a named subset of the catalog
 
