@@ -558,8 +558,8 @@ Four decisions, each of which a different arrangement gets wrong:
   adds a class and the CSS replaces the tab's `×` with one 7px dot — a boolean, and rightly so
   ("this document needs saving" either way). *Which* is carried by four other places: the settings
   button turns brand-coloured and counts (`Settings - 2 changes`, its tooltip naming them), a changed
-  chip shows the **pending** value in the same colour, the overlay banners them, and the close prompt
-  says whether the code changed as well. The dot beside the button is deliberately the same dot in the
+  chip shows the **pending** value in the same colour, the overlay names them in its footer, and the
+  close prompt says whether the code changed as well. The dot beside the button is deliberately the same dot in the
   same colour as the tab's. A host that does not track names can report dirty alone and still get the
   marker, without a count.
 - **Dirty is composed, not overwritten.** `OpenTab` keeps a *body* half (the editor's text, or a
@@ -570,6 +570,16 @@ Four decisions, each of which a different arrangement gets wrong:
   (transparent, no shadow, themed hover), `NoBackground` keeps it flat once `IsPrimary` is on, and
   `.tss-btn-primary.tss-btn-nobg` is a stylesheet rule that colours the label and the icon. No CSS
   ships with this.
+
+**The overlay's own notice lives in the footer, not above the fields.** A notice that comes and goes in
+the content flow shoves every field down the moment something changes, and a settings form is the one
+place that must stay still — the pointer is on the control that just moved. `Modal`'s middle footer slot
+(`.tss-modal-footer-content`) is a fixed-height, no-wrap, clipping row beside Save, so a line there can
+appear, change and go without moving anything; measured across clean → dirty → reverted, the modal
+height, the first field and the footer all stay at the same pixel. It is also **always present** —
+saying how saving works while nothing is pending — so even its own row never reflows, and it takes the
+brand colour rather than a warning tone, since nothing is wrong. Reserving the space for a `Banner`
+instead would mean a permanently empty 90px box.
 
 Two smaller ones: **"changed" means against what was saved**, never against a setting's default — a
 document opened and left alone has nothing changed however far its values sit from the defaults — and
@@ -584,7 +594,8 @@ the only way in for a document whose tab is not open yet.
 
 Verified in the gallery with Playwright, Debug and Release: the strip appears only for a document with
 settings and shows its chips; editing the path turns the button brand-coloured with `1 change`, accents
-that chip with the pending value, raises the tab's dot and banners the name; the tab's tooltip
+that chip with the pending value, raises the tab's dot and names it in the overlay's footer; the
+tab's tooltip
 distinguishes settings-only from both halves and the close prompt says which
 ("`1 setting (Path) changed; the code itself did not.`" against "`The code and 1 setting (Path)
 changed.`"); Save clears both halves and closes; Revert restores the saved value and rebuilds the

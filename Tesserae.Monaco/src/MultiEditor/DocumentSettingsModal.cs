@@ -18,14 +18,26 @@ namespace Tesserae.Monaco
     /// and Revert, when the host offers one, is how the edits are given up deliberately. Two saves that could
     /// disagree about what "saved" means is the thing this shape exists to avoid.
     ///
-    /// A banner says how many settings are waiting whenever any are, since a user who closed the overlay has
-    /// only the tab's one dot to go on otherwise.
+    /// A line in the footer, beside Save, says how many settings are waiting - a user who closed the overlay
+    /// has only the tab's one dot to go on otherwise. It lives there rather than above the fields because a
+    /// notice that comes and goes in the content flow shoves every field down the moment something changes,
+    /// which is the one place a settings form must stay still: the pointer is on the control that just moved.
+    /// The footer's middle slot is a fixed-height, no-wrap, clipping row, so the line can appear, change and
+    /// go without moving anything, and it is always present - saying how saving works while nothing is
+    /// pending - so even its own row never reflows.
     /// </summary>
     public sealed class DocumentSettingsModal
     {
+        // Short enough for the footer's slot, which clips rather than wraps; the whole sentence is the
+        // line's hover text.
+        private const string SAVE_MODEL      = "Code and settings save together";
+        private const string SAVE_MODEL_LONG = "Saving the document saves the code and the settings together";
+
         private readonly Modal            _modal;
         private readonly Stack            _host;
-        private readonly Banner           _pending;
+        private readonly Stack            _status;
+        private readonly Icon             _statusIcon;
+        private readonly TextBlock        _statusText;
         private readonly Button           _save;
         private readonly Button           _revert;
         private readonly Func<IComponent> _content;
@@ -42,9 +54,15 @@ namespace Tesserae.Monaco
         {
             _content = content;
 
-            _pending = Banner().Warning().Compact().SetIcon(UIcons.Disk).Collapse();
+            _statusIcon = Icon(UIcons.Disk, Theme.Secondary.Foreground);
+            _statusText = TextBlock("").Small().NoWrap().Ellipsis();
 
-            _host = VStack().WS().Grow().MinHeight(0.px()).ScrollY();
+            // The native title rather than a tooltip: it is rewritten on every state change, and a Tippy
+            // instance is built once.
+            _status = HStack().NoWrap().AlignItemsCenter().Gap(6.px()).MinWidth(0.px()).PL(8).PR(8)
+               .Children(_statusIcon, _statusText);
+
+            _host = VStack().S().ScrollY();
 
             _save = Button("Save").Primary().SetIcon(UIcons.Disk).Disabled().OnClick(() => SaveAsync().FireAndForget());
 
@@ -58,8 +76,9 @@ namespace Tesserae.Monaco
                .LightDismiss()
                .ShowCloseButton()
                .SetLeftFooterCommands(_revert)
+               .SetFooter(_status)
                .SetFooterCommands(Button("Close").OnClick(() => _modal.Hide()), _save)
-               .Content(VStack().S().Gap(8.px()).Children(_pending, _host));
+               .Content(_host);
 
             Rebuild();
         }
@@ -107,22 +126,21 @@ namespace Tesserae.Monaco
             _save.IsEnabled   = canSave && _onSave is object;
             _revert.IsEnabled = dirty;
 
-            if (dirty)
-            {
-                _pending.SetTitle(changed.Length > 0
-                    ? DocumentHeader.ChangedLabel(changed) + " not saved yet"
-                    : "The settings have unsaved changes");
+            // The brand colour, the same one the header's settings button, the accented chip and the tab's
+            // own dot use for "unsaved" - not a warning tone, which would say something is wrong.
+            var colour = dirty ? Theme.Primary.Background : Theme.Secondary.Foreground;
 
-                _pending.SetText(changed.Length > 0
-                    ? "Waiting to be saved: " + string.Join(", ", changed) + ". Saving the document saves the code and the settings together."
-                    : "Saving the document saves the code and the settings together.");
+            var pending = changed.Length > 0
+                ? DocumentHeader.ChangedLabel(changed) + " not saved yet: " + string.Join(", ", changed)
+                : "The settings have unsaved changes";
 
-                _pending.Show();
-            }
-            else
-            {
-                _pending.Collapse();
-            }
+            _statusText.Text   = dirty ? pending : SAVE_MODEL;
+            _statusText.Weight = dirty ? TextWeight.SemiBold : TextWeight.Regular;
+
+            _status.Render().title = dirty ? pending + ". " + SAVE_MODEL_LONG + "." : SAVE_MODEL_LONG;
+
+            _statusText.Foreground(colour);
+            _statusIcon.Foreground(colour);
 
             return this;
         }
