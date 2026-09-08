@@ -67,6 +67,7 @@ namespace Tesserae.Monaco
         private string                             _urlActiveKey;
         private bool                               _urlRestored;
         private string                             _layoutKey;
+        private DocumentSettingsText               _settingsText = new DocumentSettingsText();
         private bool                               _confirmClose = true;
         private bool                               _quickOpen    = true;
         private bool                               _showingTabs;
@@ -433,6 +434,20 @@ namespace Tesserae.Monaco
         public MultiEditor MarkSettingsClean(string id)
         {
             if (id is object && _open.TryGetValue(id, out var tab)) tab.SetSettingsDirty(false, null);
+
+            return this;
+        }
+
+        /// <summary>
+        /// Every word the settings surface says - the button's two labels, the overlay's buttons and its
+        /// footer line, the dirty tab's hover text, the line the close prompt adds, and the palette
+        /// section. The package ships the scaffold and none of the copy, so an application that translates
+        /// its interface supplies its own; see <see cref="DocumentSettingsText"/>. Set it before the
+        /// documents open - a tab already open keeps the text its surface was built with.
+        /// </summary>
+        public MultiEditor SettingsText(DocumentSettingsText text)
+        {
+            _settingsText = text ?? new DocumentSettingsText();
 
             return this;
         }
@@ -1358,8 +1373,8 @@ namespace Tesserae.Monaco
 
                 actions.Add(new CommandPaletteAction("settings:" + id, doc.Title)
                 {
-                    Subtitle = "settings",
-                    Section  = "Settings",
+                    Subtitle = _settingsText.PaletteSubtitle,
+                    Section  = _settingsText.PaletteSection,
                     Keywords = doc.Keywords,
                     Icon     = UIcons.Settings,
                     Perform  = () => ShowSettings(id)
@@ -1431,10 +1446,11 @@ namespace Tesserae.Monaco
             var body = VStack().Gap(6.px()).Children(
                 TextBlock("Save the changes to " + tab.Document.Title + " before closing?"));
 
-            // Which half is unsaved, since the tab's marker is one dot for the whole document.
+            // Which half is unsaved, since the tab's marker is one dot for the whole document. The wording
+            // is the host's - see DocumentSettingsText.
             var what = tab.UnsavedSummaryLine();
 
-            if (what is object) body.Add(TextBlock(what).Small().Secondary());
+            if (!string.IsNullOrEmpty(what)) body.Add(TextBlock(what).Small().Secondary());
 
             var dialog = new Dialog(body, TextBlock("Unsaved changes").SemiBold());
 
@@ -1786,7 +1802,7 @@ namespace Tesserae.Monaco
 
                 if (Document.Settings is null) return body;
 
-                _header = new DocumentHeader().OnOpenSettings(() => ShowSettings());
+                _header = new DocumentHeader(_owner._settingsText).OnOpenSettings(() => ShowSettings());
 
                 RefreshSummary();
                 _header.Changed(_settingsDirty, _changedSettings);
@@ -1943,8 +1959,9 @@ namespace Tesserae.Monaco
                 if (_settingsModal is null)
                 {
                     _settingsModal = new DocumentSettingsModal(
-                            Document.SettingsTitle ?? ("Settings - " + Document.Title),
-                            () => Document.Settings())
+                            Document.SettingsTitle ?? DocumentSettingsText.Of(_owner._settingsText.Title, Document.Title),
+                            () => Document.Settings(),
+                            _owner._settingsText)
                        .OnSave(SaveAsync);
 
                     if (Document.RevertSettings is object)
@@ -1970,40 +1987,22 @@ namespace Tesserae.Monaco
                 var unsaved = UnsavedDescription();
                 var status  = Document.Status != DocumentStatus.None ? Document.StatusMessage : null;
 
-                _titleRoot.Render().title = unsaved ?? status ?? Document.Id ?? "";
+                _titleRoot.Render().title = (string.IsNullOrEmpty(unsaved) ? null : unsaved) ?? status ?? Document.Id ?? "";
             }
 
             private string UnsavedDescription()
             {
                 if (!IsDirty) return null;
 
-                if (_bodyDirty && _settingsDirty) return "Unsaved changes: the code and " + SettingsPhrase();
-                if (_settingsDirty)               return "Unsaved changes: " + SettingsPhrase() + " - the code itself is unchanged";
-
-                return "Unsaved changes in the code";
+                return DocumentSettingsText.Of(_owner._settingsText.TabTooltip, _bodyDirty, _changedSettings);
             }
 
-            /// <summary>The line the close prompt adds, or null when the plain question already says it all.</summary>
+            /// <summary>The line the close prompt adds, or null when the host has nothing to say about it.</summary>
             public string UnsavedSummaryLine()
             {
-                if (!_settingsDirty) return null;
+                if (!IsDirty) return null;
 
-                return _bodyDirty
-                    ? "The code and " + SettingsPhrase() + " changed."
-                    : SettingsPhrase() + " changed; the code itself did not.";
-            }
-
-            private string SettingsPhrase()
-            {
-                if (_changedSettings.Length == 0) return "the settings";
-
-                const int LISTED = 4;
-
-                var listed = _changedSettings.Length <= LISTED
-                    ? string.Join(", ", _changedSettings)
-                    : string.Join(", ", _changedSettings.Take(LISTED)) + " and " + (_changedSettings.Length - LISTED) + " more";
-
-                return (_changedSettings.Length == 1 ? "1 setting (" : _changedSettings.Length + " settings (") + listed + ")";
+                return DocumentSettingsText.Of(_owner._settingsText.ClosePrompt, _bodyDirty, _changedSettings);
             }
 
             public async Task<bool> SaveAsync()

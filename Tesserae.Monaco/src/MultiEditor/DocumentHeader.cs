@@ -8,7 +8,7 @@ using static Transpose.Core.dom;
 namespace Tesserae.Monaco
 {
     /// <summary>
-    /// One setting worth reading without opening the settings modal - the method and the path of an
+    /// One setting worth reading without opening the settings overlay - the method and the path of an
     /// endpoint, the schedule of a task. <see cref="DocumentHeader"/> draws these as chips beside the
     /// settings button, and accents the ones the host reports as changed.
     /// </summary>
@@ -39,6 +39,9 @@ namespace Tesserae.Monaco
         /// <summary>An icon before the label. None when unset.</summary>
         public UIcons? Icon { get; set; }
 
+        /// <summary>Hover text for the chip. None when unset.</summary>
+        public string Tooltip { get; set; }
+
         internal string Key => string.IsNullOrEmpty(Name) ? Label : Name;
     }
 
@@ -49,44 +52,47 @@ namespace Tesserae.Monaco
     /// affordance.
     ///
     /// It also carries the answer to "what is unsaved?": the tab's marker is one dot for the whole
-    /// document, so when settings change it is this button that says <i>settings</i>, by turning the brand
-    /// colour, naming the count, and listing the names in its tooltip - while a changed chip shows the
-    /// pending value in the same colour.
+    /// document, so when settings change it is this button that says <i>settings</i>, by going from a flat
+    /// button to a filled brand-coloured one - while a changed chip shows the pending value in the accent
+    /// colour.
+    ///
+    /// Every word it says comes from the <see cref="DocumentSettingsText"/> it is given; it ships no copy
+    /// of its own, so a button with no label supplied is drawn as its gear alone.
     ///
     /// <see cref="MultiEditor"/> builds one for every document that has <see cref="EditorDocument.Settings"/>
     /// and keeps it in step. A host putting a bare <see cref="CodeEditor"/> on a page can compose one itself.
     /// </summary>
     public sealed class DocumentHeader : IComponent
     {
-        private readonly Stack    _chips;
-        private readonly Stack    _root;
-        private readonly Button   _button;
-        private readonly Icon     _marker;
-        private readonly string   _buttonText;
-        private          Action   _onOpen;
-        private          bool     _dirty;
-        private          string[] _changed = new string[0];
+        private readonly Stack                _chips;
+        private readonly Stack                _root;
+        private readonly Button               _button;
+        private readonly DocumentSettingsText _text;
+        private          Action               _onOpen;
+        private          bool                 _dirty;
+        private          string[]             _changed = new string[0];
 
         private IEnumerable<SettingSummary> _summary;
 
-        /// <param name="buttonText">The button's label. "Settings" when unset.</param>
-        public DocumentHeader(string buttonText = null)
+        /// <param name="text">Where every label and tooltip comes from. An empty one says nothing at all.</param>
+        public DocumentHeader(DocumentSettingsText text = null)
         {
-            _buttonText = string.IsNullOrEmpty(buttonText) ? "Settings" : buttonText;
+            _text = text ?? new DocumentSettingsText();
 
-            // A default button is already flat and brings the themed hover with it; NoBackground keeps it
-            // flat once IsPrimary is switched on, which is what turns the label and the gear brand-coloured
-            // rather than filling the button in.
-            _button = Button(_buttonText).SetIcon(UIcons.Settings).NoBackground().OnClick(() => _onOpen?.Invoke());
-
-            _marker = Icon(UIcons.Circle, UIconsWeight.Solid, TextSize.Tiny, Theme.Primary.Background).Collapse();
+            // A default Button is already flat - transparent, no shadow, with the themed hover - and turning
+            // IsPrimary on fills it in the brand colour with a legible foreground. NoBackground is
+            // deliberately NOT used: tss-btn-primary's background rule carries a :not(.tss-disabled) and so
+            // out-specifies tss-btn-nobg's transparent, while the label takes the brand colour - which is
+            // brand text on a brand fill, i.e. an invisible label in a coloured block.
+            _button = Button().SetIcon(UIcons.Settings).OnClick(() => _onOpen?.Invoke());
 
             _chips = HStack().NoWrap().AlignItemsCenter().Gap(14.px()).Grow().MinWidth(0.px()).Style(s => s.overflow = "hidden");
 
-            _root = HStack().WS().NoShrink().NoWrap().AlignItemsCenter().Gap(8.px()).PL(12).PR(8)
+            // A stable hook for a host that wants to restyle the strip, and for a test that wants to find it.
+            _root = HStack().Class("tssm-document-header").WS().NoShrink().NoWrap().AlignItemsCenter().Gap(8.px()).PL(12).PR(8)
                .Background(Theme.Secondary.Background)
                .Style(s => s.borderBottom = "1px solid " + Theme.Default.Border)
-               .Children(_chips, _marker, _button);
+               .Children(_chips, _button);
 
             ApplyState();
         }
@@ -117,9 +123,9 @@ namespace Tesserae.Monaco
 
         /// <summary>
         /// Whether the settings differ from what was last saved, and which ones. The names are what the
-        /// button counts and the tooltip lists, and a chip whose setting is named is accented - a host that
-        /// does not track them can report <paramref name="dirty"/> alone and get the dot without a count.
-        /// Names nothing in the summary knows about still count.
+        /// host's <see cref="DocumentSettingsText.ChangedButton"/> formats, and a chip whose setting is
+        /// named is accented - a host that does not track them can report <paramref name="dirty"/> alone.
+        /// Names nothing in the summary knows about still reach the label.
         /// </summary>
         public DocumentHeader Changed(bool dirty, params string[] changedSettings)
         {
@@ -145,20 +151,12 @@ namespace Tesserae.Monaco
         {
             var dirty = _dirty || _changed.Length > 0;
 
-            _button.Text      = dirty && _changed.Length > 0 ? _buttonText + " - " + ChangedLabel(_changed) : _buttonText;
+            _button.Text      = dirty ? DocumentSettingsText.Of(_text.ChangedButton, _changed) : DocumentSettingsText.Of(_text.SettingsButton);
             _button.IsPrimary = dirty;
 
-            _button.SetTitle(!dirty
-                ? "Edit the settings attached to this document"
-                : _changed.Length > 0
-                    ? "Unsaved settings: " + string.Join(", ", _changed)
-                    : "The settings have unsaved changes");
-
-            // The same dot the tab shows, in the same colour, next to the thing that changed.
-            if (dirty) _marker.Show(); else _marker.Collapse();
-
-            // The gear follows the label, so the whole button reads as one state rather than two.
-            _button.SetIcon(UIcons.Settings, dirty ? Theme.Primary.Background : "");
+            _button.SetTitle(dirty
+                ? DocumentSettingsText.Of(_text.ChangedTooltip, _changed)
+                : DocumentSettingsText.Of(_text.SettingsTooltip));
         }
 
         private void RebuildChips()
@@ -192,14 +190,7 @@ namespace Tesserae.Monaco
 
             var chip = HStack().NoWrap().AlignItemsCenter().Gap(4.px()).Children(parts.ToArray());
 
-            return changed ? chip.Tooltip(setting.Key + " has unsaved changes") : chip;
-        }
-
-        internal static string ChangedLabel(string[] changed)
-        {
-            if (changed.Length == 1) return "1 change";
-
-            return changed.Length + " changes";
+            return string.IsNullOrEmpty(setting.Tooltip) ? chip : chip.Tooltip(setting.Tooltip);
         }
     }
 }

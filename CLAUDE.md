@@ -530,7 +530,20 @@ and lets `ShowSettings(id)` open the component in a **`DocumentSettingsModal`**.
 host builds the fields (Tesserae's `PropertyGrid<T>` over a plain object is the short way, and the
 gallery's task document does exactly that) and reports what changed with
 `MarkSettingsDirty(id, names)` / `MarkSettingsClean(id)`. That one call is the whole seam — the values,
-the form and the baseline all stay with the host. Reproducing `SettingsHolder` in the package was the
+the form and the baseline all stay with the host.
+
+**And it says nothing of its own.** Every label, tooltip and line comes from the
+`DocumentSettingsText` handed to `SettingsText(...)`; the package ships the scaffold and none of the
+copy, because an application that translates its interface cannot use English baked into a component
+(in Mosaik each of these strings carries `.t()`). The *phrasing* of "what changed" is host-side too —
+`TabTooltip` and `ClosePrompt` are given the facts (whether the code changed as well, and which
+settings did) and return the sentence — so the pluralising and the "1 setting (Path)" listing live with
+whoever owns the language. Nothing has a default: a member left null is simply not said, and the
+surface degrades to its structure rather than to English — a button with no label is drawn as its gear
+alone (verified: icon-only 36px, still filling brand-coloured when dirty), an absent tooltip is no
+tooltip, an absent footer line leaves that row empty at the same height, and an absent close-prompt
+line leaves the prompt as it is for a document with no settings. The strip carries
+`tssm-document-header` as a stable hook. Reproducing `SettingsHolder` in the package was the
 alternative and is the wrong trade: Mosaik's own editor shows how much of a real settings form is
 domain-shaped (node-type pickers, embedding-model lists, code-typed settings), and none of that could
 live here.
@@ -557,11 +570,10 @@ Four decisions, each of which a different arrangement gets wrong:
 - **The tab's marker cannot say which half changed, so the strip does.** `TabSaveIndicator.MarkDirty`
   adds a class and the CSS replaces the tab's `×` with one 7px dot — a boolean, and rightly so
   ("this document needs saving" either way). *Which* is carried by four other places: the settings
-  button turns brand-coloured and counts (`Settings - 2 changes`, its tooltip naming them), a changed
-  chip shows the **pending** value in the same colour, the overlay names them in its footer, and the
-  close prompt says whether the code changed as well. The dot beside the button is deliberately the same dot in the
-  same colour as the tab's. A host that does not track names can report dirty alone and still get the
-  marker, without a count.
+  button goes from flat to a **filled** brand-coloured one and counts (`Settings - 2 changes`, its
+  tooltip naming them), a changed chip shows the **pending** value in the accent colour, the overlay
+  names them in its footer, and the close prompt says whether the code changed as well. A host that
+  does not track names can report dirty alone and still get the marker, without a count.
 - **Dirty is composed, not overwritten.** `OpenTab` keeps a *body* half (the editor's text, or a
   `Content` tab reporting itself through `MarkDirty`) and a *settings* half, and `IsDirty` is the OR —
   so `MarkDirty(id, false)` does not clear a pending settings edit, `OnDirtyChanged` fires only when the
@@ -593,7 +605,7 @@ editor gets its own `AddCommand` and the shell's `keydown` skips a press that ca
 the only way in for a document whose tab is not open yet.
 
 Verified in the gallery with Playwright, Debug and Release: the strip appears only for a document with
-settings and shows its chips; editing the path turns the button brand-coloured with `1 change`, accents
+settings and shows its chips; editing the path fills the button brand-coloured with `1 change`, accents
 that chip with the pending value, raises the tab's dot and names it in the overlay's footer; the
 tab's tooltip
 distinguishes settings-only from both halves and the close prompt says which
