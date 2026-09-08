@@ -1848,7 +1848,6 @@ namespace Tesserae.Monaco
                 RefreshSummary();
 
                 _header?.Changed(_settingsDirty, _changedSettings);
-                _settingsModal?.SetState(_settingsDirty, _changedSettings, IsDirty && Document.Save is object);
 
                 ApplyTabTooltip();
 
@@ -1878,9 +1877,10 @@ namespace Tesserae.Monaco
             }
 
             /// <summary>
-            /// Opens the settings overlay, building it the first time. It is kept across openings rather than
-            /// rebuilt: whatever the host's form holds - a half-typed value, a scroll offset - is still there
-            /// when it comes back, the same way a hidden tab keeps its editor.
+            /// Opens the settings overlay, building it the first time. Both it and the host's form are kept
+            /// for as long as the tab is, rather than rebuilt per opening: whatever the form holds - a
+            /// half-typed value, a scroll offset - is still there when it comes back, the same way a hidden
+            /// tab keeps its editor.
             /// </summary>
             public DocumentSettingsModal ShowSettings()
             {
@@ -1890,22 +1890,10 @@ namespace Tesserae.Monaco
                 {
                     _settingsModal = new DocumentSettingsModal(
                             Document.SettingsTitle ?? DocumentSettingsText.Of(_owner._settingsText.Title, Document.Title),
-                            () => Document.Settings(),
-                            _owner._settingsText)
+                            Document.Settings(),
+                            _owner._settingsText.SaveButton)
                        .OnSave(SaveAsync);
-
-                    if (Document.RevertSettings is object)
-                    {
-                        _settingsModal.OnRevert(async () =>
-                        {
-                            await Document.RevertSettings();
-
-                            SetSettingsDirty(false, null);
-                        });
-                    }
                 }
-
-                _settingsModal.SetState(_settingsDirty, _changedSettings, IsDirty && Document.Save is object);
 
                 return _settingsModal.Show();
             }
