@@ -23,16 +23,14 @@ namespace Tesserae.Monaco
     /// notice that comes and goes in the content flow shoves every field down the moment something changes,
     /// which is the one place a settings form must stay still: the pointer is on the control that just moved.
     /// The footer's middle slot is a fixed-height, no-wrap, clipping row, so the line can appear, change and
-    /// go without moving anything, and it is always present - saying how saving works while nothing is
-    /// pending - so even its own row never reflows.
+    /// go without moving anything, and it keeps its height whatever it says - so even its own row never
+    /// reflows.
+    ///
+    /// Every word comes from the <see cref="DocumentSettingsText"/> it is given; the overlay ships no copy of
+    /// its own, so a button with no label supplied is drawn as its icon alone.
     /// </summary>
     public sealed class DocumentSettingsModal
     {
-        // Short enough for the footer's slot, which clips rather than wraps; the whole sentence is the
-        // line's hover text.
-        private const string SAVE_MODEL      = "Code and settings save together";
-        private const string SAVE_MODEL_LONG = "Saving the document saves the code and the settings together";
-
         private readonly Modal            _modal;
         private readonly Stack            _host;
         private readonly Stack            _status;
@@ -40,7 +38,8 @@ namespace Tesserae.Monaco
         private readonly TextBlock        _statusText;
         private readonly Button           _save;
         private readonly Button           _revert;
-        private readonly Func<IComponent> _content;
+        private readonly Func<IComponent>      _content;
+        private readonly DocumentSettingsText  _text;
 
         private Func<Task<bool>> _onSave;
         private Func<Task>       _onRevert;
@@ -50,9 +49,11 @@ namespace Tesserae.Monaco
         /// Builds the settings themselves. Called now, and again after a revert - so it has to read the
         /// host's current values rather than close over a snapshot of them.
         /// </param>
-        public DocumentSettingsModal(string title, Func<IComponent> content)
+        /// <param name="text">Where every label and line comes from. An empty one says nothing at all.</param>
+        public DocumentSettingsModal(string title, Func<IComponent> content, DocumentSettingsText text = null)
         {
             _content = content;
+            _text    = text ?? new DocumentSettingsText();
 
             _statusIcon = Icon(UIcons.Disk, Theme.Secondary.Foreground);
             _statusText = TextBlock("").Small().NoWrap().Ellipsis();
@@ -64,20 +65,20 @@ namespace Tesserae.Monaco
 
             _host = VStack().S().ScrollY();
 
-            _save = Button("Save").Primary().SetIcon(UIcons.Disk).Disabled().OnClick(() => SaveAsync().FireAndForget());
+            _save = Button(DocumentSettingsText.Of(_text.SaveButton)).Primary().SetIcon(UIcons.Disk).Disabled().OnClick(() => SaveAsync().FireAndForget());
 
-            _revert = Button("Revert settings").SetIcon(UIcons.Undo).Disabled().Collapse().OnClick(() => RevertAsync().FireAndForget());
+            _revert = Button(DocumentSettingsText.Of(_text.RevertButton)).SetIcon(UIcons.Undo).Disabled().Collapse().OnClick(() => RevertAsync().FireAndForget());
 
             _modal = Modal(HStack().NoWrap().AlignItemsCenter().Gap(8.px()).Children(
                     Icon(UIcons.Settings),
-                    TextBlock(title ?? "Settings").SemiBold()))
+                    TextBlock(title ?? "").SemiBold()))
                .W(720.px())
                .MaxWidth(95.vw())
                .LightDismiss()
                .ShowCloseButton()
                .SetLeftFooterCommands(_revert)
                .SetFooter(_status)
-               .SetFooterCommands(Button("Close").OnClick(() => _modal.Hide()), _save)
+               .SetFooterCommands(Button(DocumentSettingsText.Of(_text.CloseButton)).SetIcon(UIcons.CrossSmall).OnClick(() => _modal.Hide()), _save)
                .Content(_host);
 
             Rebuild();
@@ -130,14 +131,12 @@ namespace Tesserae.Monaco
             // own dot use for "unsaved" - not a warning tone, which would say something is wrong.
             var colour = dirty ? Theme.Primary.Background : Theme.Secondary.Foreground;
 
-            var pending = changed.Length > 0
-                ? DocumentHeader.ChangedLabel(changed) + " not saved yet: " + string.Join(", ", changed)
-                : "The settings have unsaved changes";
-
-            _statusText.Text   = dirty ? pending : SAVE_MODEL;
+            _statusText.Text   = dirty ? DocumentSettingsText.Of(_text.PendingNotice, changed) : DocumentSettingsText.Of(_text.SaveModel);
             _statusText.Weight = dirty ? TextWeight.SemiBold : TextWeight.Regular;
 
-            _status.Render().title = dirty ? pending + ". " + SAVE_MODEL_LONG + "." : SAVE_MODEL_LONG;
+            _status.Render().title = dirty
+                ? DocumentSettingsText.Of(_text.PendingTooltip, changed)
+                : DocumentSettingsText.Of(_text.SaveModelTooltip);
 
             _statusText.Foreground(colour);
             _statusIcon.Foreground(colour);

@@ -33,6 +33,7 @@ namespace Tesserae.Monaco.Sample
             var log = TextBlock("").Small().Secondary();
 
             var shell = MonacoEditor.MultiEditor()
+               .SettingsText(Text())
                .PersistInUrl("dsopen", "dsactive")
                .FilterPlaceholder("Filter documents...")
                .Landing(() => VStack().AlignItemsCenter().Gap(8.px()).Children(
@@ -62,7 +63,7 @@ namespace Tesserae.Monaco.Sample
                     SettingsSummary = () => new[]
                     {
                         new SettingSummary("", _endpoint.Method, "Method") { Icon = UIcons.Globe },
-                        new SettingSummary("", _endpoint.Path,   "Path"),
+                        new SettingSummary("", _endpoint.Path,   "Path") { Tooltip = "Where the endpoint answers" },
                         new SettingSummary("auth", _endpoint.Auth, "Auth"),
                         new SettingSummary("", _endpoint.Enabled ? "enabled" : "disabled", "Enabled")
                     },
@@ -102,7 +103,8 @@ namespace Tesserae.Monaco.Sample
                .FlatSection(VStack().Children(
                     Card(VStack().WS().Children(
                         TextBlock("Code rarely stands alone: an endpoint has a route, a method and an authorization level, a task has a schedule, an index has a field and a model. Set EditorDocument.Settings and the shell puts a header strip above the editor - the settings worth seeing at a glance as chips, and a button that opens the rest in a DocumentSettingsModal. The strip is the always-visible home for them: a tab title has room for an icon, a name and its unsaved marker and nothing else, and a menu nobody opens is not an affordance."),
-                        TextBlock("The shell does not draw the form and knows nothing about the fields, exactly as it knows nothing about a language's completions. The host builds the component - a few Dropdowns, or Tesserae's PropertyGrid over a plain object - and reports what the user changed with .MarkSettingsDirty(id, names). That is the whole seam.").MT(8))).SetTitle("Overview")))
+                        TextBlock("The shell does not draw the form and knows nothing about the fields, exactly as it knows nothing about a language's completions. The host builds the component - a few Dropdowns, or Tesserae's PropertyGrid over a plain object - and reports what the user changed with .MarkSettingsDirty(id, names). That is the whole seam.").MT(8),
+                        TextBlock("The package ships no copy either: every label, tooltip and line comes from the DocumentSettingsText handed to .SettingsText(...), and the phrasing of \"what changed\" is composed by the host from the facts the shell passes it - whether the code changed as well, and which settings did. A member left unset is simply not said, so no fallback English can leak into a translated interface. This page's strings are all in one region of its own source.").MT(8))).SetTitle("Overview")))
                .FlatSection(VStack().Children(
                     Card(VStack().WS().Children(
                         TextBlock("The overlay is an editing surface, not a transaction. Editing a setting makes the document unsaved, exactly as typing in its editor does - so there is no Cancel that discards and no second save of its own: closing it keeps the pending edits and leaves the tab's marker up, Save is the document's own save (the one Ctrl+S runs, which persists the code and the settings together), and Revert - offered only when the host supplies RevertSettings - is how the edits are given up deliberately. Two saves that could disagree about what \"saved\" means is what this shape avoids."),
@@ -126,6 +128,78 @@ namespace Tesserae.Monaco.Sample
         private readonly IComponent _content;
 
         private static MultiEditor _shell;
+
+        #region Every word the settings surface says - the package ships none of it
+
+        // The package is scaffold only: it draws the strip, the overlay and the dirty plumbing, and says
+        // nothing. An application that translates its interface puts its own strings here (in Mosaik each
+        // of these would carry .t()), and the phrasing of "what changed" is composed from the facts the
+        // shell hands over - whether the code changed as well, and which settings did.
+        private static DocumentSettingsText Text()
+        {
+            return new DocumentSettingsText
+            {
+                SettingsButton   = "Settings",
+                SettingsTooltip  = "Edit the settings attached to this document",
+                ChangedButton    = changed => "Settings - " + Changes(changed),
+                ChangedTooltip   = changed => changed.Length > 0 ? "Unsaved settings: " + string.Join(", ", changed) : "The settings have unsaved changes",
+                Title            = title => "Settings - " + title,
+
+                SaveButton       = "Save",
+                CloseButton      = "Close",
+                RevertButton     = "Revert settings",
+
+                // Short enough for the footer's slot, which clips rather than wraps; the whole sentence is
+                // the line's hover text.
+                SaveModel        = "Code and settings save together",
+                SaveModelTooltip = SAVE_MODEL,
+                PendingNotice    = changed => changed.Length > 0
+                    ? Changes(changed) + " not saved yet: " + string.Join(", ", changed)
+                    : "The settings have unsaved changes",
+                PendingTooltip   = changed => changed.Length > 0
+                    ? Changes(changed) + " not saved yet: " + string.Join(", ", changed) + ". " + SAVE_MODEL + "."
+                    : SAVE_MODEL,
+
+                TabTooltip = (codeChanged, changed) =>
+                {
+                    if (changed.Length == 0 && !codeChanged) return "Unsaved changes in the settings";
+                    if (changed.Length == 0)                 return "Unsaved changes in the code";
+
+                    return codeChanged
+                        ? "Unsaved changes: the code and " + Settings(changed)
+                        : "Unsaved changes: " + Settings(changed) + " - the code itself is unchanged";
+                },
+
+                ClosePrompt = (codeChanged, changed) =>
+                {
+                    if (changed.Length == 0) return null; // the prompt's own question already says it
+
+                    return codeChanged
+                        ? "The code and " + Settings(changed) + " changed."
+                        : Settings(changed) + " changed; the code itself did not.";
+                },
+
+                PaletteSection  = "Settings",
+                PaletteSubtitle = "settings"
+            };
+        }
+
+        private const string SAVE_MODEL = "Saving the document saves the code and the settings together";
+
+        private static string Changes(string[] changed) => changed.Length == 1 ? "1 change" : changed.Length + " changes";
+
+        private static string Settings(string[] changed)
+        {
+            const int LISTED = 4;
+
+            var listed = changed.Length <= LISTED
+                ? string.Join(", ", changed)
+                : string.Join(", ", changed.Take(LISTED)) + " and " + (changed.Length - LISTED) + " more";
+
+            return (changed.Length == 1 ? "1 setting (" : changed.Length + " settings (") + listed + ")";
+        }
+
+        #endregion
 
         #region The settings themselves - the host's own state, which the shell never sees
 
