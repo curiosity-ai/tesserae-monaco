@@ -559,14 +559,16 @@ Four decisions, each of which a different arrangement gets wrong:
   the palette are secondary paths, not affordances. **And the strip is a summary, not just a button**:
   `SettingsSummary` draws the identity-defining settings as chips, so the important ones are readable
   without opening anything and it is obvious the document *has* settings.
-- **The overlay is an editing surface, not a transaction.** Editing a setting makes the *document*
-  unsaved, exactly as typing does, so there is no Cancel that discards and no second save: closing keeps
-  the pending edits, Save is the document's own save (the one Ctrl+S runs, which persists the code and
-  the settings together through `EditorDocument.Save`), and `RevertSettings` is how edits are given up
-  deliberately — the button is absent when the host supplies no delegate, since an overlay that cannot
-  revert should not pretend it can. A modal Save/Cancel *plus* a tab that goes dirty is the confusing
-  arrangement this exists to avoid: two saves that can disagree about what "saved" means, and a Cancel
-  that contradicts the marker it just raised.
+- **The overlay is almost nothing, on purpose.** A name, the close button in its corner, whatever the
+  host built, and Save. Everything a real settings form also wants — a Revert button, validation, sections,
+  help — goes in the host's component, which is what keeps one overlay usable for settings this package has
+  never heard of; the first version grew a Revert button, a Close beside Save and a status line, and each
+  of them was a guess about someone else's form. It is an **editing surface, not a transaction**: editing a
+  setting makes the *document* unsaved, exactly as typing does, so there is no Cancel that discards and no
+  second save — closing keeps the pending edits, and Save is the document's own save (the one Ctrl+S runs,
+  which persists the code and the settings together through `EditorDocument.Save`). A modal Save/Cancel
+  *plus* a tab that goes dirty is the confusing arrangement this avoids: two saves that can disagree about
+  what "saved" means, and a Cancel that contradicts the marker it just raised.
 - **The tab's marker cannot say which half changed, so the strip does.** `TabSaveIndicator.MarkDirty`
   adds a class and the CSS replaces the tab's `×` with one 7px dot — a boolean, and rightly so
   ("this document needs saving" either way). *Which* is carried by four other places: the settings
@@ -583,21 +585,22 @@ Four decisions, each of which a different arrangement gets wrong:
   `.tss-btn-primary.tss-btn-nobg` is a stylesheet rule that colours the label and the icon. No CSS
   ships with this.
 
-**The overlay's own notice lives in the footer, not above the fields.** A notice that comes and goes in
-the content flow shoves every field down the moment something changes, and a settings form is the one
-place that must stay still — the pointer is on the control that just moved. `Modal`'s middle footer slot
-(`.tss-modal-footer-content`) is a fixed-height, no-wrap, clipping row beside Save, so a line there can
-appear, change and go without moving anything; measured across clean → dirty → reverted, the modal
-height, the first field and the footer all stay at the same pixel. It is also **always present** —
-saying how saving works while nothing is pending — so even its own row never reflows, and it takes the
-brand colour rather than a warning tone, since nothing is wrong. Reserving the space for a `Banner`
-instead would mean a permanently empty 90px box.
+**The overlay says nothing about dirty state; the strip does.** A notice inside it was tried twice and
+dropped both times, and the second attempt is the useful record: as a `Banner` above the fields it shoved
+every field down the moment something changed — a settings form is the one place that must stay still,
+since the pointer is on the control that just moved — and moving it to `Modal`'s middle footer slot
+(`.tss-modal-footer-content`, a fixed-height, no-wrap, clipping row) did fix that completely, measured at
+the same pixel across clean → dirty → reverted. It went anyway: the settings button on the strip already
+carries the state, it is visible whether or not the overlay is open, and a second telling inside the
+overlay was furniture the host could not remove. If a form wants to say something about its own state, it
+says it — the overlay hands it the whole content area.
 
 Two smaller ones: **"changed" means against what was saved**, never against a setting's default — a
 document opened and left alone has nothing changed however far its values sit from the defaults — and
-the overlay is **kept across openings rather than rebuilt**, so a half-typed value survives closing it,
-the same way a hidden tab keeps its editor. `Rebuild()` runs only after a revert, which is what makes
-the restored values appear in the fields.
+`EditorDocument.Settings` is called **once per tab**, with both the overlay and the host's component kept
+for as long as the tab is, so a half-typed value survives closing it, the same way a hidden tab keeps its
+editor. A form that offers to put its values back re-renders itself (the gallery's does, from a container
+it owns); the package has no revert of its own to keep in step with it.
 
 Ctrl+comma opens it, bound **twice** for the same reason Ctrl+S is: Monaco answers keys first, so the
 editor gets its own `AddCommand` and the shell's `keydown` skips a press that came from inside
@@ -606,14 +609,14 @@ the only way in for a document whose tab is not open yet.
 
 Verified in the gallery with Playwright, Debug and Release: the strip appears only for a document with
 settings and shows its chips; editing the path fills the button brand-coloured with `1 change`, accents
-that chip with the pending value, raises the tab's dot and names it in the overlay's footer; the
-tab's tooltip
-distinguishes settings-only from both halves and the close prompt says which
+that chip with the pending value and raises the tab's dot, while the overlay stays silent; the tab's
+tooltip distinguishes settings-only from both halves and the close prompt says which
 ("`1 setting (Path) changed; the code itself did not.`" against "`The code and 1 setting (Path)
-changed.`"); Save clears both halves and closes; Revert restores the saved value and rebuilds the
-fields; Ctrl+comma opens it from inside the editor; the palette's Settings entry opens it; the
-`PropertyGrid` form reports through the same seam; and a pending edit survives navigating away and
-back, re-reported from `OnOpened`.
+changed.`"); the overlay carries a name, an `×` and Save and nothing else; Save clears both halves and
+closes; the form's own Revert restores the saved value and re-draws itself; the `×` closes without
+discarding and reopening finds the same form; Ctrl+comma opens it from inside the editor; the palette's
+Settings entry opens it; the `PropertyGrid` form reports through the same seam; and a pending edit
+survives navigating away and back, re-reported from `OnOpened`.
 
 ## No language intelligence
 

@@ -66,12 +66,6 @@ namespace Tesserae.Monaco.Sample
                         new SettingSummary("", _endpoint.Path,   "Path") { Tooltip = "Where the endpoint answers" },
                         new SettingSummary("auth", _endpoint.Auth, "Auth"),
                         new SettingSummary("", _endpoint.Enabled ? "enabled" : "disabled", "Enabled")
-                    },
-                    RevertSettings = () =>
-                    {
-                        _endpoint = _endpointSaved.Copy();
-
-                        return Task.CompletedTask;
                     }
                 },
                 new EditorDocument(TASK, "nightly-import.cs")
@@ -82,13 +76,7 @@ namespace Tesserae.Monaco.Sample
                     Load            = () => Task.FromResult(_code[TASK]),
                     Save            = text => SaveTaskAsync(text),
                     Settings        = () => TaskForm(),
-                    SettingsSummary = () => new[] { new SettingSummary("", _task.Schedule, "Schedule") { Icon = UIcons.Clock } },
-                    RevertSettings  = () =>
-                    {
-                        _task = _taskSaved.Copy();
-
-                        return Task.CompletedTask;
-                    }
+                    SettingsSummary = () => new[] { new SettingSummary("", _task.Schedule, "Schedule") { Icon = UIcons.Clock } }
                 },
                 new EditorDocument("readme.md", "readme.md")
                 {
@@ -107,13 +95,14 @@ namespace Tesserae.Monaco.Sample
                         TextBlock("The package ships no copy either: every label, tooltip and line comes from the DocumentSettingsText handed to .SettingsText(...), and the phrasing of \"what changed\" is composed by the host from the facts the shell passes it - whether the code changed as well, and which settings did. A member left unset is simply not said, so no fallback English can leak into a translated interface. This page's strings are all in one region of its own source.").MT(8))).SetTitle("Overview")))
                .FlatSection(VStack().Children(
                     Card(VStack().WS().Children(
-                        TextBlock("The overlay is an editing surface, not a transaction. Editing a setting makes the document unsaved, exactly as typing in its editor does - so there is no Cancel that discards and no second save of its own: closing it keeps the pending edits and leaves the tab's marker up, Save is the document's own save (the one Ctrl+S runs, which persists the code and the settings together), and Revert - offered only when the host supplies RevertSettings - is how the edits are given up deliberately. Two saves that could disagree about what \"saved\" means is what this shape avoids."),
+                        TextBlock("The overlay is deliberately almost nothing: a name, the close button in its corner, whatever the host built, and Save. Everything else a real settings form wants - the Revert button on this page, validation, sections, help - lives in the host's component, which is what keeps the overlay usable for settings the package has never heard of."),
+                        TextBlock("It is an editing surface, not a transaction. Editing a setting makes the document unsaved, exactly as typing in its editor does - so there is no Cancel that discards and no second save of its own: closing it keeps the pending edits and leaves the tab's marker up, and Save is the document's own save, the one Ctrl+S runs, which persists the code and the settings together. The overlay therefore knows nothing about dirty state; where that is shown is the settings button on the strip.").MT(8),
                         TextBlock("The tab's marker is one dot for the whole document, so the settings say which half changed: the button turns the brand colour and counts them, its tooltip and the overlay's banner name them, a changed chip shows the pending value in the same colour, and the close prompt says whether the code changed as well. Pass no names and the marker still appears, without a count.").MT(8),
                         TextBlock("\"Changed\" means against what was saved, not against a setting's default - a document opened and left alone has nothing changed however far its values sit from the defaults. Keep the baseline you loaded, diff against it, and re-report after a save. A tab is rebuilt when it is reopened, so re-report from .OnOpened as well.").MT(8))).SetTitle("Best Practices")))
                .FlatSection(VStack().Children(
                     Card(VStack().WS().Children(
                         SampleSubTitle("Try it"),
-                        TextBlock("Open search.cs and press the Settings button on the strip (or Ctrl+comma, or Ctrl+P and pick it under Settings). Change the path: the button turns brand-coloured and says \"1 change\", the chip shows the pending value, the tab gets its unsaved dot, and the footer names what is waiting - beside Save, and without moving a single field, which is why it is not a banner above them. Close the overlay - the edits stay. Hover the tab to read what is unsaved. Type in the editor too and the close prompt says both changed. Ctrl+S saves them together and everything comes clean; Revert settings puts the values back and rebuilds the form. nightly-import.cs builds its form with PropertyGrid instead, and readme.md has no settings at all, so it gets no strip."),
+                        TextBlock("Open search.cs and press the Settings button on the strip (or Ctrl+comma, or Ctrl+P and pick it under Settings). Change the path: the button turns brand-coloured and says \"1 change\", the chip shows the pending value, and the tab gets its unsaved dot. Close the overlay with the x - the edits stay. Hover the tab to read what is unsaved. Type in the editor too and the close prompt says both changed. Ctrl+S saves them together and everything comes clean; the form's own Revert button puts the values back and re-draws it. nightly-import.cs builds its form with PropertyGrid instead, and readme.md has no settings at all, so it gets no strip."),
                         shell.WS().H(560.px()).MT(8),
                         HStack().WS().Wrap().Gap(8.px()).AlignItemsCenter().PT(8).Children(
                             Button("Open settings").SetIcon(UIcons.SlidersVSquare).OnClick(() => shell.ShowSettings(ENDPOINT)),
@@ -146,19 +135,6 @@ namespace Tesserae.Monaco.Sample
                 Title            = title => "Settings - " + title,
 
                 SaveButton       = "Save",
-                CloseButton      = "Close",
-                RevertButton     = "Revert settings",
-
-                // Short enough for the footer's slot, which clips rather than wraps; the whole sentence is
-                // the line's hover text.
-                SaveModel        = "Code and settings save together",
-                SaveModelTooltip = SAVE_MODEL,
-                PendingNotice    = changed => changed.Length > 0
-                    ? Changes(changed) + " not saved yet: " + string.Join(", ", changed)
-                    : "The settings have unsaved changes",
-                PendingTooltip   = changed => changed.Length > 0
-                    ? Changes(changed) + " not saved yet: " + string.Join(", ", changed) + ". " + SAVE_MODEL + "."
-                    : SAVE_MODEL,
 
                 TabTooltip = (codeChanged, changed) =>
                 {
@@ -183,8 +159,6 @@ namespace Tesserae.Monaco.Sample
                 PaletteSubtitle = "settings"
             };
         }
-
-        private const string SAVE_MODEL = "Saving the document saves the code and the settings together";
 
         private static string Changes(string[] changed) => changed.Length == 1 ? "1 change" : changed.Length + " changes";
 
@@ -284,7 +258,22 @@ namespace Tesserae.Monaco.Sample
 
         #region The forms - anything the host likes, as long as it reports its edits
 
+        // The form owns its own container, so it can put its values back and re-draw itself. The package
+        // has no revert of its own: the overlay is a name, a close button, the host's component and Save,
+        // and anything else a real settings form wants - Revert, validation, sections, help - is the host's
+        // to put in that component.
+        private static Stack _endpointForm;
+
         private static IComponent EndpointForm()
+        {
+            _endpointForm = VStack().WS();
+
+            FillEndpointForm();
+
+            return _endpointForm;
+        }
+
+        private static void FillEndpointForm()
         {
             var methods = new[] { "GET", "POST", "PUT", "DELETE" };
             var levels  = new[] { "anonymous", "user", "admin" };
@@ -304,11 +293,21 @@ namespace Tesserae.Monaco.Sample
             var enabled = CheckBox("Answer requests").Checked(_endpoint.Enabled)
                .OnChange((s, e) => Edit(() => _endpoint.Enabled = s.IsChecked));
 
-            return VStack().WS().P(4).Gap(14.px()).Children(
+            var revert = Button("Revert settings").SetIcon(UIcons.Undo).OnClick(() =>
+            {
+                _endpoint = _endpointSaved.Copy();
+
+                Report(ENDPOINT);
+                FillEndpointForm();
+            });
+
+            _endpointForm.Clear();
+            _endpointForm.Add(VStack().WS().P(4).Gap(14.px()).Children(
                 Field("Method", method),
                 Field("Path", path, "Where the endpoint answers - the identity of the thing, which is why it is a chip"),
                 Field("Authorization", auth),
-                Field("Enabled", enabled));
+                Field("Enabled", enabled),
+                HStack().WS().PT(8).Children(revert)));
         }
 
         private static IComponent TaskForm()

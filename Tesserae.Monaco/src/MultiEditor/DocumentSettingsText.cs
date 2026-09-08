@@ -9,9 +9,8 @@ namespace Tesserae.Monaco
     /// "not saved yet" is the host's voice, not the toolkit's.
     ///
     /// Nothing here has a default. A member left null is simply not said: a button with no label is drawn
-    /// as its icon alone, an absent tooltip is no tooltip, and an absent line leaves the footer's row empty
-    /// (it keeps its height regardless - see <see cref="DocumentSettingsModal"/>). So a host can supply as
-    /// little or as much as it likes, and no fallback English can leak into a translated interface.
+    /// as its icon alone, and an absent tooltip is no tooltip. So a host can supply as little or as much as
+    /// it likes, and no fallback English can leak into a translated interface.
     ///
     /// Hand it to the shell once with <see cref="MultiEditor.SettingsText"/>.
     /// </summary>
@@ -37,24 +36,6 @@ namespace Tesserae.Monaco
 
         /// <summary>The overlay's Save button - the document's own save, which persists the code and the settings together.</summary>
         public string SaveButton { get; set; }
-
-        /// <summary>The overlay's Close button. Closing keeps the pending edits.</summary>
-        public string CloseButton { get; set; }
-
-        /// <summary>The overlay's Revert button, shown only for a document with <see cref="EditorDocument.RevertSettings"/>.</summary>
-        public string RevertButton { get; set; }
-
-        /// <summary>The footer line while nothing is pending - the place to say how saving works.</summary>
-        public string SaveModel { get; set; }
-
-        /// <summary>The footer line's hover text while nothing is pending.</summary>
-        public string SaveModelTooltip { get; set; }
-
-        /// <summary>The footer line once the settings are unsaved, given the changed names.</summary>
-        public Func<string[], string> PendingNotice { get; set; }
-
-        /// <summary>The footer line's hover text once the settings are unsaved.</summary>
-        public Func<string[], string> PendingTooltip { get; set; }
 
         /// <summary>
         /// A dirty tab's hover text: <paramref name="codeChanged"/> says whether the body changed as well,

@@ -102,8 +102,9 @@ namespace Tesserae.Monaco
         /// The shell knows nothing about the fields, exactly as it knows nothing about a language's
         /// completions: the host builds the form (Tesserae's <c>PropertyGrid</c> over a plain object is the
         /// short way to one) and reports what the user changed with
-        /// <see cref="MultiEditor.MarkSettingsDirty"/>. Called when the overlay opens and again after a
-        /// revert, so it has to read the host's current values rather than close over a snapshot.
+        /// <see cref="MultiEditor.MarkSettingsDirty"/>. Called once, the first time the overlay opens for
+        /// this document's tab, and the component is kept for as long as the tab is - so a half-typed value
+        /// survives closing the overlay. A form that offers to revert its own values re-renders itself.
         ///
         /// Settings are saved by <see cref="Save"/>, together with the text - there is one save for the whole
         /// document. See <see cref="DocumentSettingsModal"/> for why.
@@ -120,14 +121,6 @@ namespace Tesserae.Monaco
         /// that set is accented.
         /// </summary>
         public Func<IEnumerable<SettingSummary>> SettingsSummary { get; set; }
-
-        /// <summary>
-        /// Puts the settings back to what was last saved. Given one, the overlay offers "Revert settings";
-        /// without one it does not, since an overlay that cannot revert should not pretend it can. The host
-        /// restores its own values; the shell then marks the settings clean and rebuilds the form from
-        /// <see cref="Settings"/>.
-        /// </summary>
-        public Func<Task> RevertSettings { get; set; }
 
         /// <summary>The entries of the row's "..." menu, built when it opens. No menu when unset.</summary>
         public Func<TreeCommand[]> Commands { get; set; }
