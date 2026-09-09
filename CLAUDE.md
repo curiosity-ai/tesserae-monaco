@@ -870,7 +870,14 @@ These were learned the hard way in Mosaik; don't simplify them away.
   flag when the pointer leaves the widget again. Installed for every surface - `BindSurface` and both
   diff sides. Verified in the gallery, Debug and Release, moving the pointer 1px at a time from `Greet`
   into its tooltip: it survives the entry and the settle, still hides on leaving towards plain text,
-  and stays when the pointer returns to the word.
+  and stays when the pointer returns to the word. **This is not a misuse of Monaco, and upstream has
+  fixed it once already**: `overflowWidgetsDomNode` is a documented option VS Code's own notebook cells
+  use, the bug was reported as monaco-editor#2156 (2020), and vscode#142160 (March 2022, Monaco 0.34)
+  fixed it by keeping the hover when the leave event's `relatedTarget` is inside the widget - the same
+  test the guard makes. The resizable-hover rewrite later replaced that with the inset rectangle check
+  and nobody re-ran the 2020 case. Still present in 0.56.0 (July 2026, the latest release) and in
+  VS Code `main` at the time of writing, so the guard stays until a Monaco release carries a fix; it is
+  a no-op once one does. Re-check `_onEditorMouseLeave` in `contentHoverController.js` on each pin bump.
 - **A diff editor's two models are ours to dispose.** Monaco does not dispose models handed to
   `setModel`, so `DiffViewer` disposes them itself — the inline versions in Mosaik leak one pair per
   render.
