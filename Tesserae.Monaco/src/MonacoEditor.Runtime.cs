@@ -44,6 +44,34 @@ namespace Tesserae.Monaco
         }
 
         /// <summary>
+        /// Whether the type names inside a documentation code block are clickable. On by default, and
+        /// switchable at any time.
+        ///
+        /// A hover, a completion's details pane and a parameter hint show a signature as a fenced code
+        /// block, which is the only way to get the editor's grammar colours into a popup - and a link
+        /// written inside a fenced block is printed literally, so producers put the types' links in a row
+        /// underneath. The bundle replaces Monaco's markdown renderer service with one that, on a trusted
+        /// <see cref="MarkdownString"/>, finds every <c>command:</c> link whose text is an identifier, wraps
+        /// each whole occurrence of that identifier in the string's code blocks in an anchor to the same
+        /// command, and removes the row once every link in it was placed. Nothing else about the popup
+        /// changes, and nothing a producer wrote becomes unreachable: a link whose text appears in no block
+        /// stays where it was. <see cref="MarkdownStringExtensions.LinkedCodeBlocks(MarkdownString, string, string[])"/>
+        /// writes the row in the shape this reads. Off, the service behaves as Monaco's own.
+        /// </summary>
+        public static bool LinkTypesInCodeBlocks
+        {
+            get => _linkTypesInCodeBlocks;
+            set
+            {
+                _linkTypesInCodeBlocks = value;
+
+                if (IsLoaded && MonacoApi.tesserae != null) MonacoApi.tesserae.linkTypesInCodeBlocks = value;
+            }
+        }
+
+        private static bool _linkTypesInCodeBlocks = true;
+
+        /// <summary>
         /// True once Monaco has finished loading and <c>monaco.*</c> is safe to call.
         /// </summary>
         public static bool IsLoaded => JsWindow.monaco != null && JsWindow.monaco.editor != null;
@@ -98,6 +126,9 @@ namespace Tesserae.Monaco
             }
 
             _pendingLanguages.Clear();
+
+            // The bundle's own switch defaults on; a host that turned it off before the load gets its choice.
+            if (MonacoApi.tesserae != null) MonacoApi.tesserae.linkTypesInCodeBlocks = _linkTypesInCodeBlocks;
 
             DefineThemes();
 

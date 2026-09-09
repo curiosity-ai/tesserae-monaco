@@ -197,6 +197,16 @@ the result more than the list did:
       search filters the tree to one folder, a flagged document turns its icon red, a form in a tab
       reports its own dirty state, Ctrl+P opens by name, and an untitled document joins the tree and the
       URL when saved.
+- [x] **Clickable type names inside a documentation code block.** The bundle replaces Monaco's markdown
+      renderer service (`IMarkdownRendererService`, installed from the entry as it evaluates - the
+      `create` override is too late, since the first `monaco.*` call initialises the services) with one
+      that moves a trusted string's `command:` links onto the matching identifiers in its code blocks
+      and drops the row that held them. `MonacoEditor.LinkTypesInCodeBlocks` switches it,
+      `MarkdownString.LinkedCodeBlocks` writes the row. Verified on the Hover Documentation page,
+      Debug and Release: five anchors in the `Compose` signature, each in its token span with the
+      token's colour, the row and its `hr` gone, a click running the command with the type name, an
+      untrusted hover untouched, the suggest details pane the same, and the block the same height as
+      with the switch off. Measurements in [CLAUDE.md](CLAUDE.md).
 
 ---
 

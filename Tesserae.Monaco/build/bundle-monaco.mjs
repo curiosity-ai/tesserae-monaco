@@ -153,7 +153,7 @@ window.MonacoEnvironment = window.MonacoEnvironment || {
 `;
 
 /**
- * The entry. Two things happen here beyond evaluating the editor.
+ * The entry. Three things happen here beyond evaluating the editor.
  *
  * `window.monaco` is what every consumer talks to - the same global the AMD build published, and
  * what the C# side's `[External]` declarations name.
@@ -168,10 +168,15 @@ window.MonacoEnvironment = window.MonacoEnvironment || {
  *
  * Without it the workers still load and still validate; only the configuration API is unreachable,
  * which is a quiet failure worth not shipping.
+ *
+ * The third is `monaco.tesserae`: what this package adds to Monaco, published as one object beside
+ * the API so the C# side can declare it. Today that is the markdown renderer service that makes the
+ * type names inside a documentation code block clickable - see LINKED_CODE_BLOCKS below.
  */
 const entryModule = `
 import './monaco-environment.js';
 import * as monaco from ${JSON.stringify(join(esm, 'editor/editor.main.js'))};
+import { tesserae } from './monaco-tesserae.js';
 
 ['json', 'typescript', 'css', 'html'].forEach(function (name) {
   if (monaco[name] && !monaco.languages[name]) {
@@ -179,7 +184,254 @@ import * as monaco from ${JSON.stringify(join(esm, 'editor/editor.main.js'))};
   }
 });
 
-window.monaco = monaco;
+// esbuild's namespace object is a plain object and takes the property; a genuinely frozen module
+// namespace would not, in which case a shallow copy carrying the extra member stands in for it.
+var api = monaco;
+
+try { api.tesserae = tesserae; } catch (e) { api = Object.assign({}, monaco, { tesserae: tesserae }); }
+
+window.monaco = api;
+`;
+
+/**
+ * Clickable type names inside a documentation code block.
+ *
+ * A hover, a completion's details pane and a parameter hint all show a symbol's signature as a fenced
+ * ```csharp block, because that is the only way to get the editor's own grammar colours into a popup -
+ * and the types in that signature are what a reader wants to click. Plain markdown cannot do both:
+ * marked treats a fenced block as opaque text, so a link written inside it is printed literally, and
+ * the colouring is a second pass (`codeBlockRenderer`) that knows tokens, not symbols. So producers
+ * put the links in a row underneath (`[ReadOnlyNode](command:…) · [string](command:…)`).
+ *
+ * The seam is Monaco's `IMarkdownRendererService`: in 0.56 every popup renders its markdown through
+ * its one `render(markdown, options, outElement)`, which sees the whole markdown string and hands the
+ * code blocks to a pluggable renderer. It is a standalone service, so it can be replaced through the
+ * same map `monaco.editor.create(element, options, override)` takes - honoured by
+ * `StandaloneServices.initialize` on the **first** initialisation only, while the registered entry is
+ * still a `SyncDescriptor`. That first initialisation is not the first editor, though: *every*
+ * `monaco.*` call reaches the services (`defineTheme`, `createModel`, `setTheme`, a language
+ * registration - each goes through `StandaloneServices.get`, which initialises with no overrides), and
+ * the C# loader defines the themes the moment the bundle has loaded. Measured: passing the override
+ * on `create` left `markdownRendererInstalled` false and the popups unchanged. So the entry calls
+ * `StandaloneServices.initialize` itself, here, before anything else can - the same call `create`
+ * makes with the same argument, only earlier. Its other effect, instantiating the registered editor
+ * features, is what the first `monaco.*` call would have done a few milliseconds later anyway.
+ *
+ * The subclass does three things around the original `render`:
+ *
+ *   1. reads the `command:` links Monaco itself rendered - an anchor keeps its `data-href` only on a
+ *      trusted string, and its text is the link text with markdown escapes already removed, so nothing
+ *      here parses markdown or decides what is trusted;
+ *   2. wraps the default code block renderer so that, once a block is tokenized, every whole identifier
+ *      in it that equals a link's text becomes an anchor with the same `data-href`. Clicks then go
+ *      through the same `actionHandler` the row's links use, so a registered command fires unchanged.
+ *      The anchor sits *inside* the token span and inherits its colour: Monaco's encoded tokenizer
+ *      merges adjacent tokens that share a colour (`MonarchModernTokensCollector.emit` compares
+ *      metadata, not token type), so a type name painted in the default foreground shares its span with
+ *      the punctuation around it, and matching whole spans would miss exactly the names this is for;
+ *   3. once the blocks have landed - Monaco fires `asyncRenderCallback` after swapping them in - drops
+ *      the row that held only links which were all placed in a block, `<hr>` above it included. A link
+ *      whose text appears in no block stays, so nothing a producer wrote becomes unreachable.
+ *
+ * Everything else about the popup - measurement, scrolling, focus, disposal - stays Monaco's; the
+ * service returns the same `{ element, dispose }` the original does. The two internals leaned on,
+ * `_defaultCodeBlockRenderer` and its `renderCodeBlock`, are guarded, so a rename upstream degrades
+ * to the original behaviour rather than breaking. `monaco.tesserae.linkTypesInCodeBlocks` is the
+ * switch, read on every render so the C# side (`MonacoEditor.LinkTypesInCodeBlocks`) can flip it at
+ * any time; off, the service is the original one. `markdownRendererInstalled` turns true when the
+ * subclass is constructed, which Monaco does as the first editor is created - a diagnostic, not a
+ * setting.
+ */
+const tesseraeModule = `
+import { MarkdownRendererService } from ${JSON.stringify(join(esm, 'platform/markdown/browser/markdownRenderer.js'))};
+import { SyncDescriptor } from ${JSON.stringify(join(esm, 'platform/instantiation/common/descriptors.js'))};
+import { StandaloneServices } from ${JSON.stringify(join(esm, 'editor/standalone/browser/standaloneServices.js'))};
+
+var LINK_CLASS = 'tssm-code-link';
+var IDENTIFIER = /[\\p{L}_@][\\p{L}\\p{N}_]*/gu;
+var WHOLE_IDENTIFIER = /^[\\p{L}_@][\\p{L}\\p{N}_]*$/u;
+var SEPARATORS = /^[\\s\\u00a0\\u00b7\\u2022|,;\\/-]*$/;
+
+function isIdentifier(text) {
+  return WHOLE_IDENTIFIER.test(text);
+}
+
+// The command links as Monaco rendered them, keyed by their text. Only an identifier-shaped text can
+// ever equal a token, and a text that appears twice is left alone rather than guessed at.
+function collectCommandLinks(root) {
+  var links = new Map();
+  var anchors = root.querySelectorAll('a[data-href]');
+
+  for (var i = 0; i < anchors.length; i++) {
+    var anchor = anchors[i];
+    var href = anchor.dataset.href;
+    var text = anchor.textContent;
+
+    if (!href || !/^command:/i.test(href) || !isIdentifier(text)) continue;
+
+    if (links.has(text)) links.get(text).ambiguous = true;
+    else links.set(text, { href: href, anchor: anchor, consumed: false, ambiguous: false });
+  }
+
+  return links;
+}
+
+function createLink(text, link) {
+  var anchor = document.createElement('a');
+
+  anchor.className = LINK_CLASS;
+  anchor.setAttribute('href', '');
+  anchor.dataset.href = link.href;
+  anchor.style.color = 'inherit';
+  anchor.textContent = text;
+
+  return anchor;
+}
+
+// Splits one token span's text at its identifiers, wrapping those that name a link. Returns null when
+// nothing in it does, so an untouched span keeps its single text node.
+function splitIdentifiers(text, links) {
+  var parts = null;
+  var last = 0;
+  var match;
+
+  IDENTIFIER.lastIndex = 0;
+
+  while ((match = IDENTIFIER.exec(text)) !== null) {
+    var link = links.get(match[0]);
+
+    if (!link || link.ambiguous) continue;
+
+    parts = parts || [];
+
+    if (match.index > last) parts.push(document.createTextNode(text.slice(last, match.index)));
+
+    parts.push(createLink(match[0], link));
+    link.consumed = true;
+    last = match.index + match[0].length;
+  }
+
+  if (parts && last < text.length) parts.push(document.createTextNode(text.slice(last)));
+
+  return parts;
+}
+
+function linkTokens(element, links) {
+  if (!element || !element.querySelectorAll || links.size === 0) return;
+
+  var spans = element.querySelectorAll('span');
+
+  for (var i = 0; i < spans.length; i++) {
+    var span = spans[i];
+
+    // A token span holds one text node; the renderer's root span and the line container do not.
+    if (span.childNodes.length !== 1 || span.firstChild.nodeType !== Node.TEXT_NODE) continue;
+
+    var parts = splitIdentifiers(span.firstChild.nodeValue, links);
+
+    if (parts) span.replaceChildren.apply(span, parts);
+  }
+}
+
+function dropConsumedLinkRow(links) {
+  var rows = new Set();
+
+  links.forEach(function (link) {
+    if (link.consumed && link.anchor.parentElement) rows.add(link.anchor.parentElement);
+  });
+
+  rows.forEach(function (row) {
+    if (row.tagName !== 'P') return;
+
+    for (var node = row.firstChild; node; node = node.nextSibling) {
+      if (node.nodeType === Node.TEXT_NODE) {
+        if (!SEPARATORS.test(node.nodeValue)) return;
+      } else if (node.nodeType === Node.ELEMENT_NODE && node.tagName === 'A') {
+        var link = links.get(node.textContent);
+
+        if (!link || link.anchor !== node || !link.consumed) return;
+      } else {
+        return;
+      }
+    }
+
+    var before = row.previousElementSibling;
+
+    row.remove();
+
+    if (before && before.tagName === 'HR') before.remove();
+  });
+}
+
+export var tesserae = {
+  linkTypesInCodeBlocks: true,
+  markdownRendererInstalled: false,
+  linkClass: LINK_CLASS
+};
+
+class LinkedCodeBlockMarkdownRendererService extends MarkdownRendererService {
+  constructor(openerService) {
+    super(openerService);
+    tesserae.markdownRendererInstalled = true;
+  }
+
+  render(markdown, options, outElement) {
+    // An untrusted string has its command links stripped to text, so there is nothing to place.
+    if (!tesserae.linkTypesInCodeBlocks || !markdown || !markdown.isTrusted) return super.render(markdown, options, outElement);
+
+    var self = this;
+    var rendered = null;
+    var links = null;
+    var linksOf = function () { return links || (links = rendered ? collectCommandLinks(rendered.element) : new Map()); };
+    var inner = options && options.codeBlockRenderer;
+    var afterRender = options && options.asyncRenderCallback;
+    var resolved = Object.assign({}, options);
+
+    resolved.codeBlockRenderer = async function (alias, value) {
+      var element = inner ? await inner(alias, value) : await self._renderDefaultCodeBlock(alias, value, resolved);
+
+      // The await above is what guarantees super.render has returned and the row's anchors exist.
+      linkTokens(element, linksOf());
+
+      return element;
+    };
+
+    resolved.asyncRenderCallback = function () {
+      if (links) dropConsumedLinkRow(links);
+      if (afterRender) afterRender();
+    };
+
+    rendered = super.render(markdown, resolved, outElement);
+
+    return rendered;
+  }
+
+  _renderDefaultCodeBlock(alias, value, options) {
+    var renderer = this._defaultCodeBlockRenderer;
+
+    if (renderer && typeof renderer.renderCodeBlock === 'function') return renderer.renderCodeBlock(alias, value, options);
+
+    return Promise.resolve(document.createElement('span'));
+  }
+}
+
+// The descriptor mirrors the original registration (a delayed singleton), so the instantiation service
+// injects IOpenerService for the subclass exactly as it does for the base class. Installed now, before
+// any monaco.* call can initialise the services without it - see the note above this module.
+StandaloneServices.initialize({ markdownRendererService: new SyncDescriptor(LinkedCodeBlockMarkdownRendererService, [], true) });
+
+// The linked token keeps its token colour (inline, so no hover rule of Monaco's outbids it) and says it
+// is a link the way the editor's own ctrl-hover links do: a dotted underline that turns solid under the
+// pointer. Injected like every other stylesheet in this bundle.
+(function () {
+  var style = document.createElement('style');
+
+  style.setAttribute('data-tssm-monaco', '');
+  style.textContent =
+    '.rendered-markdown a.' + LINK_CLASS + '{cursor:pointer;text-decoration:underline dotted;text-decoration-thickness:1px;text-underline-offset:2px}' +
+    '.rendered-markdown a.' + LINK_CLASS + ':hover{text-decoration-style:solid}';
+  document.head.appendChild(style);
+})();
 `;
 
 // Written next to the generated bundle rather than into the repo: they are build inputs with no
@@ -187,6 +439,7 @@ window.monaco = monaco;
 const entryPath = join(outDir, 'monaco-entry.js');
 
 await writeFile(join(outDir, 'monaco-environment.js'), environmentModule);
+await writeFile(join(outDir, 'monaco-tesserae.js'), tesseraeModule);
 await writeFile(entryPath, entryModule);
 
 await build({
@@ -202,6 +455,7 @@ await build({
 
 await rm(entryPath);
 await rm(join(outDir, 'monaco-environment.js'));
+await rm(join(outDir, 'monaco-tesserae.js'));
 
 // Workers are classic (non-module) scripts: MonacoEnvironment.getWorker hands back a URL that
 // Monaco loads as a plain Worker, so each one has to be a standalone IIFE with no imports left.

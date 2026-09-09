@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using System.Text;
 using Transpose;
 
 namespace Tesserae.Monaco
@@ -147,6 +149,83 @@ namespace Tesserae.Monaco
 
         /// <summary>Whether <c>$(icon-name)</c> is drawn as the codicon of that name.</summary>
         public bool supportThemeIcons;
+    }
+
+    /// <summary>
+    /// Builders for the markdown shapes Monaco - and this package's renderer - read something into.
+    /// </summary>
+    public static class MarkdownStringExtensions
+    {
+        /// <summary>
+        /// Appends the links row that makes the type names in <paramref name="markdown"/>'s code blocks
+        /// clickable - see <see cref="MonacoEditor.LinkTypesInCodeBlocks"/>: a separator, then one
+        /// <c>[text](href)</c> per entry joined by <c>·</c>. Each key is the exact identifier as it appears in
+        /// the block (<c>ReadOnlyNode</c>, <c>string</c>) and each value its target, normally a
+        /// <see cref="MonacoEditor.CommandLink"/>. Marks the string trusted, since command links only run on
+        /// one; a text with markdown in it is escaped so it stays literal. The row is exactly what a host
+        /// that writes its own markdown (a server) writes by hand, so a producer on either side comes out
+        /// the same.
+        /// </summary>
+        public static MarkdownString LinkedCodeBlocks(this MarkdownString markdown, IEnumerable<KeyValuePair<string, string>> links)
+        {
+            if (markdown is null || links is null) return markdown;
+
+            var row = new List<string>();
+
+            foreach (var link in links)
+            {
+                if (string.IsNullOrWhiteSpace(link.Key) || string.IsNullOrWhiteSpace(link.Value)) continue;
+
+                row.Add("[" + EscapeMarkdown(link.Key) + "](" + link.Value + ")");
+            }
+
+            if (row.Count == 0) return markdown;
+
+            markdown.value     = (markdown.value ?? "").TrimEnd() + "\n\n---\n\n" + string.Join(" · ", row);
+            markdown.isTrusted = true;
+
+            return markdown;
+        }
+
+        /// <summary>
+        /// The common case of <see cref="LinkedCodeBlocks(MarkdownString, IEnumerable{KeyValuePair{string, string}})"/>:
+        /// every name links to the one command <paramref name="commandId"/>, with the name as its argument -
+        /// the handler registered through <see cref="MonacoEditor.RegisterCommand{T}"/> then receives which
+        /// type was clicked.
+        /// </summary>
+        public static MarkdownString LinkedCodeBlocks(this MarkdownString markdown, string commandId, params string[] typeNames)
+        {
+            if (markdown is null || string.IsNullOrWhiteSpace(commandId) || typeNames is null) return markdown;
+
+            var links = new List<KeyValuePair<string, string>>();
+
+            foreach (var name in typeNames)
+            {
+                if (string.IsNullOrWhiteSpace(name)) continue;
+
+                links.Add(new KeyValuePair<string, string>(name, MonacoEditor.CommandLink(commandId, name)));
+            }
+
+            return LinkedCodeBlocks(markdown, links);
+        }
+
+        // Monaco's own escape set plus the angle brackets, since a bare <T> reads as an HTML tag. An escaped
+        // character comes out of the renderer as itself, which is what the block's tokens are compared to.
+        private static string EscapeMarkdown(string text)
+        {
+            var escaped = new StringBuilder();
+
+            foreach (var c in text)
+            {
+                if (MARKDOWN_SPECIALS.IndexOf(c) >= 0) escaped.Append('\\');
+
+                escaped.Append(c);
+            }
+
+            return escaped.ToString();
+        }
+
+        private const string MARKDOWN_SPECIALS = "\\`*_{}[]()#+-!~<>";
     }
 
     /// <summary>One entry in the suggest list, matching Monaco's <c>CompletionItem</c>.</summary>

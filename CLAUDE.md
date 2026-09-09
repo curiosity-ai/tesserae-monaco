@@ -934,6 +934,85 @@ hover, the hover background follows the sun/moon toggle (`#ffffff` → `#0e0f18`
 `--vscode-editorHoverWidget-background`), the link opens a modal, and the suggest details pane renders the
 same markdown with the same colouring.
 
+The type names inside that signature block are links too; the next section is how.
+
+### The type names in a signature block are clickable
+
+The types in a signature are what a reader wants to click, and markdown alone cannot give them a link
+and a colour at once: marked treats a fenced block as opaque text (a `[link](command:…)` inside it is
+printed literally), and the colouring is a second pass - `codeBlockRenderer` - that knows tokens, not
+symbols, so nothing from the markdown around the block reaches it. Producers therefore put the types'
+links in a row underneath (`---` then `[ReadOnlyNode](command:…) · [string](command:…)`), which is what
+Mosaik's server writes. The package moves those links onto the identifiers inside the block, and the
+row goes once every link in it has found its place - hover, suggest details and parameter hints alike,
+since all three render through the same service.
+
+**The seam is Monaco's `IMarkdownRendererService`**, a standalone service whose one `render` sees the
+whole markdown string and hands the code blocks to a pluggable renderer. The bundle entry
+(`build/bundle-monaco.mjs`, the `tesseraeModule` template) subclasses it and publishes what the C# side
+needs as `monaco.tesserae` (`ITesseraeExtensions`). Two measurements decided the shape, and both
+contradict the obvious design:
+
+- **The `create` override arrives too late.** Monaco documents replacing a service through the third
+  argument of `monaco.editor.create`, honoured by `StandaloneServices.initialize` on the first
+  initialisation only - but *every* `monaco.*` call initialises the services (`defineTheme`,
+  `createModel`, `setTheme`, a language registration, each through `StandaloneServices.get`), and
+  `LoadCoreAsync` defines the themes the moment the bundle has loaded. Passing the override on every
+  `create` left `markdownRendererInstalled` false and the popups unchanged. So the entry calls
+  `StandaloneServices.initialize` itself as it evaluates, with the same argument `create` would have
+  passed, before anything else can. It is an internal import like `MarkdownRendererService` and
+  `SyncDescriptor` beside it, and it is the only way the override can win. Its other effect,
+  instantiating the registered editor features, is what the first `monaco.*` call would have done a
+  few milliseconds later anyway. A consequence to know: a host cannot pass service overrides of its own
+  on `create` - it never effectively could, for the same reason.
+- **Tokens merge by colour, not by type.** `MonarchModernTokensCollector.emit` compares theme
+  *metadata*, so adjacent tokens painted the same colour become one span - and in the default themes a
+  type identifier has the default foreground, so `Greeting Greeter.Compose(Recipient recipient, Tone
+  tone = Tone.Friendly)` renders as a **single** `mtk1` span. Matching whole spans against link texts
+  would have linked nothing. The renderer splits a token span's text at identifiers instead and wraps
+  the matches, so the anchor sits *inside* the span with `color: inherit` and keeps the token's colour.
+
+The rest follows from the seam. The links are read off the **rendered** anchors rather than the
+markdown, so Monaco decides trust (an untrusted string has its `command:` anchors stripped before the
+renderer looks), un-escapes the text (`\_Node` is already `_Node`), and has parsed the href (a JSON
+argument with parentheses in it defeats a regex over `[text](command:…)`). Only an identifier-shaped
+text can match, a text that appears twice with different targets is left alone, and every whole
+occurrence is linked - `string` twice in `string Greet(string name)`. The row is dropped in
+`asyncRenderCallback`, which Monaco fires after the tokenized blocks have been swapped in, and only
+when the `<p>` holds nothing but consumed anchors and separators - a link whose text appears in no
+block keeps the whole row, so nothing a producer wrote becomes unreachable. The `<hr>` above the row
+goes with it. Measured: the hover is shorter by exactly the row's height, and the block's height is
+unchanged.
+
+The anchor says it is a link the way the editor's own ctrl-links do - a dotted underline, solid under
+the pointer, and the pointer cursor - through one style rule the bundle injects beside Monaco's own
+stylesheets. The package still ships no stylesheet: the rule lives with the DOM it styles, in the
+bundle, not in a Tesserae component. Two edges accepted rather than solved: a string literal that
+happens to spell a linked type name is linked too (the tokenizer's classes do not say which span is a
+string), and a producer that links a *member* name gets the member linked in the block as well, which
+is arguably what it asked for.
+
+`MonacoEditor.LinkTypesInCodeBlocks` is the switch, on by default and flippable at any time - it writes
+through to `monaco.tesserae.linkTypesInCodeBlocks`, read on every render, so off means Monaco's own
+renderer. `MarkdownString.LinkedCodeBlocks(command, names)` writes the row for a C#-side producer;
+Mosaik's server keeps writing it by hand, in the same shape. `monaco.tesserae.markdownRendererInstalled`
+is a diagnostic: true once the subclass has been constructed, which happens with the first editor.
+
+Verified in the gallery with Playwright, Debug and Release, on the Hover Documentation page: hovering
+`Compose` links `Greeting`, `Greeter`, `Recipient` and both `Tone`s, each anchor inside a `mtkN` span
+with the span's computed colour, `data-href` a `command:` link naming the type, the row and its `hr`
+gone while the "Open the documentation" link stays; clicking `Recipient` opens its modal and hides the
+hover; hovering `Greet` links `string` twice, `bool` and `Greeter`, and clicking `string` runs the
+command with `"string"`; the untrusted `WriteLine` hover has no anchors and keeps its row as plain text;
+the suggest details pane renders the same links with the row dropped; a theme flip keeps the anchors
+in their token's colour; with the switch off the same hover carries the row and no anchors, and the
+block is the same height. Walking all 33 pages afterwards logged nothing.
+
+On a `monaco-editor` pin bump, re-check four names the entry leans on: `MarkdownRendererService.render`
+as the single path for hover, suggest details and parameter hints; `_defaultCodeBlockRenderer` and its
+`renderCodeBlock` (guarded, so a rename degrades to the original renderer rather than breaking);
+and `StandaloneServices.initialize` still applying an override while the entry is a `SyncDescriptor`.
+
 ## The sample gallery
 
 `Tesserae.Monaco.Sample` is shaped like Tesserae's own sample gallery, and deliberately so — anyone who
@@ -1026,7 +1105,8 @@ completion opens and **inserts** on accept, and hover shows documentation on a r
 (Completion and Hover); the Format Document keybinding applies the formatter — **Ctrl+Shift+I** on
 Linux, see above — (Formatting); a TODO squiggles about a second after typing stops (Diagnostics); the
 diff shows both panes (Diff Viewer); the custom `greet` language colours its keywords (Custom
-Language); and the suggest popup is not clipped inside the modal (Modal).
+Language); the type names in a hover's signature block are links and the row under the block is gone
+(Hover Documentation); and the suggest popup is not clipped inside the modal (Modal).
 
 The provider pages each have one thing that either happens or does not, which makes them cheap to check
 in a loop: the parameter-hints widget shows the signature (Signature Help), ghost text is offered

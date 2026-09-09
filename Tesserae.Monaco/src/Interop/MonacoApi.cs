@@ -31,6 +31,39 @@ namespace Tesserae.Monaco
 
         /// <summary><c>monaco.KeyCode</c> - the key part of a keybinding.</summary>
         public static extern IKeyCode KeyCode { get; }
+
+        /// <summary>
+        /// <c>monaco.tesserae</c> - what this package's bundle adds beside Monaco's own API. Not part of
+        /// Monaco: the entry module in <c>build/bundle-monaco.mjs</c> publishes it, which is where each
+        /// member is defined and explained.
+        /// </summary>
+        public static extern ITesseraeExtensions tesserae { get; }
+    }
+
+    /// <summary>
+    /// The object the bundle entry publishes as <c>monaco.tesserae</c>. Its one feature today is the
+    /// markdown renderer service that makes the type names in a documentation code block clickable -
+    /// see "Clickable type names inside a documentation code block" in <c>build/bundle-monaco.mjs</c>.
+    /// </summary>
+    [External]
+    [Convention(Notation.None)]
+    public interface ITesseraeExtensions
+    {
+        /// <summary>
+        /// The switch the renderer reads on every render; <see cref="MonacoEditor.LinkTypesInCodeBlocks"/>
+        /// writes it through. Off, the service behaves as Monaco's own.
+        /// </summary>
+        bool linkTypesInCodeBlocks { get; set; }
+
+        /// <summary>
+        /// True once the linking renderer has been constructed, which Monaco does as the first editor is
+        /// created. A diagnostic: the bundle installs the service as it evaluates, so this is false only
+        /// before any editor exists.
+        /// </summary>
+        bool markdownRendererInstalled { get; }
+
+        /// <summary>The class on every anchor the renderer places inside a code block.</summary>
+        string linkClass { get; }
     }
 
     /// <summary>
