@@ -556,6 +556,9 @@ namespace Tesserae.Monaco
             _originalSide = new EditorSurface(Editor.getOriginalEditor(), Disposables);
             _modifiedSide = new EditorSurface(Editor.getModifiedEditor(), Disposables);
 
+            HoverEntryGuard.Install(Editor.getOriginalEditor(), Disposables);
+            HoverEntryGuard.Install(Editor.getModifiedEditor(), Disposables);
+
             SetModels();
 
             // One stable dispatcher rather than one registration per handler: a handler added after mount

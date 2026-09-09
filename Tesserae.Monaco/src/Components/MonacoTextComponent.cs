@@ -110,6 +110,8 @@ namespace Tesserae.Monaco
 
             _surface = new EditorSurface(editor, Disposables);
 
+            HoverEntryGuard.Install(editor, Disposables);
+
             ApplyIndentation();
 
             foreach (var op in _configured)

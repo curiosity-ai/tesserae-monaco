@@ -31,6 +31,17 @@ namespace Tesserae.Monaco
             _releases.Add(() => disposable.dispose());
         }
 
+        /// <summary>
+        /// Takes ownership of a release closure - for something that is not a Monaco disposable but has
+        /// to be undone with the component all the same, such as a DOM listener. Null is ignored.
+        /// </summary>
+        public void Add(Action release)
+        {
+            if (release is null) return;
+
+            _releases.Add(release);
+        }
+
         /// <summary>How many handles are held.</summary>
         public int Count => _releases.Count;
 
