@@ -10,7 +10,7 @@ namespace Tesserae.Monaco.Sample
     /// The two halves of "a grammar that is not in the initial payload": a language of your own whose
     /// tokenizer arrives on demand, and replacing the grammar of a language Monaco already ships.
     /// </summary>
-    [SampleDetails(Group = "Language services", Order = 13, Icon = UIcons.Clock)]
+    [SampleDetails(Group = "Language services", Order = 14, Icon = UIcons.Clock)]
     public class LazyGrammarsSample : IComponent, ISample
     {
         private readonly IComponent _content;

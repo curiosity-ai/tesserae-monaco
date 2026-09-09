@@ -882,6 +882,58 @@ These were learned the hard way in Mosaik; don't simplify them away.
   `setModel`, so `DiffViewer` disposes them itself — the inline versions in Mosaik leak one pair per
   render.
 
+## Hover documentation is markdown, and the tooltip is themed
+
+Two things a host wants from a hover — rich documentation and a tooltip that matches the app — and
+Monaco has a first-class answer to both. Neither involves the rendered DOM.
+
+**The content is markdown, rendered by Monaco's own renderer.** A fenced code block is coloured by the
+editor's tokenizer for its language (a `csharp` signature comes out looking like the code below it),
+`---` is a separator, and `$(book)` is a codicon when `supportThemeIcons` is set. A clickable action is a
+**command link**: `MonacoEditor.CommandLink(id, argument)` builds `command:<id>?<json>` and Monaco's
+opener runs the command registered through `MonacoEditor.RegisterCommand(id, handler)`, spreading the
+decoded JSON over the handler's arguments — the same path a code lens and F12 take, and how VS Code's own
+"Go to type" links work. Only a `MarkdownString` marked `isTrusted` gets its command links; an untrusted
+one has them stripped to their text, so the string overload of `OnHover` trusts (it is the host's own
+text) and the `MarkdownString` overload lets a host decide. Monaco does **not** hide the hover when a
+link in it is clicked — measured, with the controller's hide method stubbed out — so a command that opens
+something calls `MonacoEditor.HideHovers()` first, which goes through the hover controller's public
+`hideContentHover()`, the method Escape runs.
+
+**The colours are theme colours.** Monaco reads every colour of its widgets from the theme and publishes
+them as `--vscode-*` variables on `.monaco-editor` (which is why the overflow host carries that class).
+`TesseraeThemeColors()` derives the set from the Tesserae theme — popups on `Theme.Default.Background`
+with its border and foreground, links in `--tss-link-color`, code blocks on the editor's own background
+— and every theme the package defines starts from it, `ThemeColors` and `DefineTheme`'s `colors`
+applied on top. `--tss-link-color` rather than `Theme.Primary.Background` because the primary is a dark
+blue on the dark theme and unreadable on its surfaces; Tesserae's link colour is adjusted for exactly
+that, and is not exposed on `Theme`, so the variable is named here.
+
+**What this replaced, and why it is not coming back.** Mosaik — and this package, until it was fixed —
+sent documentation as HTML-escaped HTML behind a `!!HTML` marker with `supportHtml` set, let Monaco
+render it as text, watched the popup with a `MutationObserver`, wrote the unescaped string into
+`.rendered-markdown` with `innerHTML`, re-measured the widget through the private
+`_contentWidget._contentHoverWidget.onContentsChanged()` (renamed in 0.56, which broke it), and cleared
+the inline styles it left behind with a second observer because Monaco reuses the same hover node. The
+recorded reason was "Monaco escapes HTML in documentation", which is only true with `supportHtml` off.
+Two facts about Monaco's sanitiser decide the design, both read out of the 0.56 bundle:
+
+- `supportHtml` keeps the structural tags (`div`, `span`, `code`, `pre`, `a`, tables, headings) but its
+  attribute allowlist is `href`, `title`, `data-href`, `data-code`, sizing and media attributes, and
+  `style` on a `span` **for `color`/`background-color` only**. **`class` is not in it** (0.52 still
+  allowed it), nor is any other `data-*` — so HTML cannot be styled from a stylesheet, and a
+  `data-full-type` link attribute is stripped. And a bare `<T>` in prose is an unknown tag and vanishes.
+- An `<a href="command:…">` survives only when the string is trusted, and is rewritten to `data-href`
+  for the renderer's own click handler — the same handler a markdown link gets.
+
+So there is nothing HTML buys here that markdown does not, and it costs the sanitiser's second line of
+defence (the injection path trusted the server's encoding alone) and every private-API hack above. The
+**Hover Documentation** page is the working reference, verified in Chromium: the signature block carries
+eight coloured tokens, the `hr`, the bold, the codicon and the `command:` link are all in the rendered
+hover, the hover background follows the sun/moon toggle (`#ffffff` → `#0e0f18`, read off
+`--vscode-editorHoverWidget-background`), the link opens a modal, and the suggest details pane renders the
+same markdown with the same colouring.
+
 ## The sample gallery
 
 `Tesserae.Monaco.Sample` is shaped like Tesserae's own sample gallery, and deliberately so — anyone who
@@ -921,9 +973,9 @@ Two things this depends on, both easy to break:
   one visit creates one page's editors rather than every page's at startup — and leaving a page unmounts
   them. That is a feature: it exercises the components' disposal on every click.
 
-There are 31 pages in four groups: **Editors** (the components themselves, plus the diff's own API and
-`Colorize`), **Language services** (one page per provider — completion, signature help, inline
-completion, formatting, diagnostics, code actions, navigation, inlay hints and lenses, folding, links
+There are 32 pages in four groups: **Editors** (the components themselves, plus the diff's own API and
+`Colorize`), **Language services** (one page per provider — completion, hover documentation, signature
+help, inline completion, formatting, diagnostics, code actions, navigation, inlay hints and lenses, folding, links
 and colours, semantic tokens, a custom language, deferred grammars, and Monaco's bundled workers),
 **Decorations and widgets**, and **Runtime and hosting** (options, events, actions and commands,
 several documents, themes, a modal, remount, persisted history, the multi-editor shell, a document's

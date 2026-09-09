@@ -7,7 +7,7 @@ using static Tesserae.Monaco.Sample.SamplesHelper;
 
 namespace Tesserae.Monaco.Sample
 {
-    [SampleDetails(Group = "Language services", Order = 6, Icon = UIcons.LocationCrosshairs)]
+    [SampleDetails(Group = "Language services", Order = 7, Icon = UIcons.LocationCrosshairs)]
     public class NavigationSample : IComponent, ISample
     {
         private readonly IComponent _content;

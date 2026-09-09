@@ -4,7 +4,7 @@ using static Tesserae.Monaco.Sample.SamplesHelper;
 
 namespace Tesserae.Monaco.Sample
 {
-    [SampleDetails(Group = "Language services", Order = 12, Icon = UIcons.PlugConnection)]
+    [SampleDetails(Group = "Language services", Order = 13, Icon = UIcons.PlugConnection)]
     public class BundledServicesSample : IComponent, ISample
     {
         /// <summary>

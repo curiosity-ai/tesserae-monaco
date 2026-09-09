@@ -5,7 +5,7 @@ using static Tesserae.Monaco.Sample.SamplesHelper;
 
 namespace Tesserae.Monaco.Sample
 {
-    [SampleDetails(Group = "Language services", Order = 1, Icon = UIcons.FunctionSquare)]
+    [SampleDetails(Group = "Language services", Order = 2, Icon = UIcons.FunctionSquare)]
     public class SignatureHelpSample : IComponent, ISample
     {
         private readonly IComponent _content;

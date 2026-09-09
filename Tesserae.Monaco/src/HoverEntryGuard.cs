@@ -37,7 +37,7 @@ namespace Tesserae.Monaco
     /// </summary>
     internal static class HoverEntryGuard
     {
-        private const string CONTENT_HOVER_CONTROLLER_ID = "editor.contrib.contentHover";
+        private const string CONTENT_HOVER_CONTROLLER_ID = MonacoEditor.CONTENT_HOVER_CONTROLLER_ID;
 
         // The content hover's resizable root - the node Monaco measures the pointer against.
         private const string HOVER_WIDGET_SELECTOR = ".monaco-resizable-hover";

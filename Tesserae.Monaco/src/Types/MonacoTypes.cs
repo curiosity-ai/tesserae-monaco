@@ -120,15 +120,33 @@ namespace Tesserae.Monaco
     }
 
     /// <summary>
-    /// Matching Monaco's <c>IMarkdownString</c>. Set <see cref="supportHtml"/> and
-    /// <see cref="isTrusted"/> to render HTML inside hovers and completion details.
+    /// Matching Monaco's <c>IMarkdownString</c>: the documentation a hover or a completion item shows,
+    /// rendered by Monaco's markdown renderer. A fenced code block is coloured by the editor's own
+    /// tokenizer for its language, <c>---</c> draws a separator, and a <c>command:</c> link - see
+    /// <see cref="MonacoEditor.CommandLink"/> - runs a registered command when <see cref="isTrusted"/> is set.
     /// </summary>
     [ObjectLiteral]
     public class MarkdownString
     {
-        public bool   isTrusted;
-        public bool   supportHtml;
         public string value;
+
+        /// <summary>
+        /// Whether <c>command:</c> links may run. Leave it off for text from a source the host does not
+        /// control; Monaco then strips such links to their text.
+        /// </summary>
+        public bool isTrusted;
+
+        /// <summary>
+        /// Whether raw HTML in the markdown is kept rather than escaped. Monaco sanitises it against an
+        /// allowlist - the structural tags, <c>href</c>, <c>title</c>, and <c>style</c> on a <c>span</c>
+        /// for its colours - and drops everything else, <c>class</c> and <c>data-*</c> attributes
+        /// included, so HTML cannot be styled from a stylesheet here. Off by default, and rarely worth
+        /// turning on: it also makes a bare <c>&lt;T&gt;</c> in the text disappear as an unknown tag.
+        /// </summary>
+        public bool supportHtml;
+
+        /// <summary>Whether <c>$(icon-name)</c> is drawn as the codicon of that name.</summary>
+        public bool supportThemeIcons;
     }
 
     /// <summary>One entry in the suggest list, matching Monaco's <c>CompletionItem</c>.</summary>

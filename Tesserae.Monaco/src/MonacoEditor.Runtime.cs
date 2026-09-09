@@ -44,13 +44,6 @@ namespace Tesserae.Monaco
         }
 
         /// <summary>
-        /// Called with each markdown block Monaco renders inside a hover or completion-details
-        /// popup, after the package's own post-processing. Use it to bind behaviour to links or
-        /// otherwise decorate documentation rendered by a language backend.
-        /// </summary>
-        public static Action<HTMLElement> OnRenderedMarkdown { get; set; }
-
-        /// <summary>
         /// True once Monaco has finished loading and <c>monaco.*</c> is safe to call.
         /// </summary>
         public static bool IsLoaded => JsWindow.monaco != null && JsWindow.monaco.editor != null;
@@ -155,9 +148,9 @@ namespace Tesserae.Monaco
         /// <c>"editor.selectionBackground"</c>, <c>"editorLineNumber.foreground"</c>,
         /// <c>"diffEditor.insertedTextBackground"</c>, and the several hundred others.
         ///
-        /// Only <c>editor.background</c> is set by default, derived from the Tesserae theme. Add to this
-        /// before the first editor is built, or call <see cref="DefineThemes"/> and
-        /// <see cref="ApplyTheme()"/> afterwards to pick up a change.
+        /// Applied on top of <see cref="TesseraeThemeColors"/>, so naming one of those keys here overrides
+        /// the derived value. Add to this before the first editor is built, or call
+        /// <see cref="DefineThemes"/> and <see cref="ApplyTheme()"/> afterwards to pick up a change.
         /// </summary>
         public static Dictionary<string, string> ThemeColors { get; } = new Dictionary<string, string>();
 
@@ -214,21 +207,16 @@ namespace Tesserae.Monaco
         }
 
         /// <summary>
-        /// (Re)defines the light and dark editor themes from the current Tesserae theme colours, plus
-        /// anything in <see cref="ThemeColors"/> and any token colours registered so far. Called
-        /// automatically once Monaco loads; call it again after switching the Tesserae theme at runtime,
-        /// followed by <see cref="ApplyTheme()"/> on the editors that should follow.
+        /// (Re)defines the light and dark editor themes from the current Tesserae theme colours
+        /// (<see cref="TesseraeThemeColors"/>), plus anything in <see cref="ThemeColors"/> and any token
+        /// colours registered so far. Called automatically once Monaco loads; call it again after
+        /// switching the Tesserae theme at runtime, followed by <see cref="ApplyTheme()"/> on the editors
+        /// that should follow.
         /// </summary>
         public static void DefineThemes()
         {
-            // Monaco wants a plain #rrggbb; the Tesserae token is a CSS var that resolves to rgb(...).
-            var background = Color.FromString(Color.EvalVar(Theme.Secondary.Background)).ToHex();
-            var rules      = BuildThemeRules();
-            var colors     = BuildColors(null);
-
-            // The derived background is a default rather than an override: a host that names
-            // editor.background in ThemeColors meant it.
-            if (!ThemeColors.ContainsKey(EDITOR_BACKGROUND)) colors.Set(EDITOR_BACKGROUND, background);
+            var rules  = BuildThemeRules();
+            var colors = BuildColors(null);
 
             // semanticHighlighting: true is what lets the rules above apply to a semantic-tokens
             // provider's output as well as to Monarch's. Monaco's own default is "configuredByTheme", so a
@@ -252,27 +240,74 @@ namespace Tesserae.Monaco
             });
         }
 
-        private const string EDITOR_BACKGROUND = "editor.background";
+        /// <summary>
+        /// The colours the package derives from the active Tesserae theme, keyed by Monaco's theme colour
+        /// ids: the editor background, the surfaces Monaco draws its own popups with - the hover, the
+        /// suggest list and its details pane, every other widget - and the link and code colours inside
+        /// them. Every theme the package defines starts from these, with <see cref="ThemeColors"/> and the
+        /// colours handed to <see cref="DefineTheme"/> applied on top, so a host that names one of these
+        /// keys wins. A host defining themes of its own from scratch can start from the same set.
+        ///
+        /// This is how a tooltip is restyled. Monaco reads every colour of its widgets from the theme and
+        /// publishes them as <c>--vscode-*</c> variables, so a stylesheet rule on <c>.monaco-hover</c> is
+        /// never needed - and, being an internal class name rather than API, breaks across releases.
+        /// Monaco wants a plain <c>#rrggbb</c>; the Tesserae tokens are CSS variables that resolve to
+        /// <c>rgb(...)</c>, hence the evaluation.
+        /// </summary>
+        public static Dictionary<string, string> TesseraeThemeColors()
+        {
+            var editorBackground = Hex(Theme.Secondary.Background);
+            var surface          = Hex(Theme.Default.Background);
+            var border           = Hex(Theme.Default.Border);
+            var foreground       = Hex(Theme.Default.Foreground);
+            var link             = Hex(LINK_COLOR);
 
-        // The host's theme colour ids, which Monaco reads by name.
+            return new Dictionary<string, string>
+            {
+                { "editor.background",              editorBackground },
+                { "editorWidget.background",        surface },
+                { "editorWidget.border",            border },
+                { "editorWidget.foreground",        foreground },
+                { "editorHoverWidget.background",   surface },
+                { "editorHoverWidget.border",       border },
+                { "editorHoverWidget.foreground",   foreground },
+                { "editorSuggestWidget.background", surface },
+                { "editorSuggestWidget.border",     border },
+                { "editorSuggestWidget.foreground", foreground },
+                { "textLink.foreground",            link },
+                { "textLink.activeForeground",      link },
+                { "textCodeBlock.background",       editorBackground }
+            };
+
+            string Hex(string token) => Color.FromString(Color.EvalVar(token)).ToHex();
+        }
+
+        // Tesserae's own link colour, which follows the primary colour but is adjusted to read on the
+        // theme's surfaces - the primary background itself is a dark blue on a dark theme. Not exposed on
+        // Theme, so it is named here.
+        private const string LINK_COLOR = "var(--tss-link-color)";
+
+        // The theme's colour map: the Tesserae-derived defaults, then the host's global overrides, then
+        // the ones for this theme alone - later wins.
         private static ThemeColors BuildColors(Dictionary<string, string> extra)
         {
             var colors = new ThemeColors();
 
-            foreach (var pair in ThemeColors)
-            {
-                if (!string.IsNullOrWhiteSpace(pair.Key)) colors.Set(pair.Key, pair.Value);
-            }
-
-            if (extra is object)
-            {
-                foreach (var pair in extra)
-                {
-                    if (!string.IsNullOrWhiteSpace(pair.Key)) colors.Set(pair.Key, pair.Value);
-                }
-            }
+            Apply(TesseraeThemeColors());
+            Apply(ThemeColors);
+            Apply(extra);
 
             return colors;
+
+            void Apply(Dictionary<string, string> source)
+            {
+                if (source is null) return;
+
+                foreach (var pair in source)
+                {
+                    if (!string.IsNullOrWhiteSpace(pair.Key) && !string.IsNullOrWhiteSpace(pair.Value)) colors.Set(pair.Key, pair.Value);
+                }
+            }
         }
 
         /// <summary>The theme name matching the active Tesserae theme.</summary>
@@ -575,109 +610,8 @@ namespace Tesserae.Monaco
             host.style.zIndex   = "100000"; // above modal overlays so the suggest popup isn't clipped
             document.body.appendChild(host);
 
-            var hostObserver = new MutationObserver((records, _) =>
-            {
-                foreach (var record in records)
-                {
-                    foreach (var mountedNode in record.addedNodes)
-                    {
-                        var el = mountedNode.As<HTMLElement>();
-
-                        if (el is null || !Script.InstanceOf(el, typeof(HTMLElement))) continue;
-
-                        FixRenderedMarkdown(el);
-                    }
-                }
-            });
-
-            hostObserver.observe(host, new MutationObserverInit
-            {
-                childList = true,
-                subtree   = true,
-            });
-
             _overflowWidgetsHost = host;
             return _overflowWidgetsHost;
-        }
-
-        /// <summary>
-        /// Monaco renders hover/completion documentation as markdown and escapes any HTML in it.
-        /// A language backend that genuinely needs to emit HTML (rendered type signatures, for
-        /// instance) prefixes its content with <c>!!HTML</c>; this unwraps that back into real
-        /// markup, then hands the element to <see cref="OnRenderedMarkdown"/>.
-        /// </summary>
-        internal static void FixRenderedMarkdown(HTMLElement root)
-        {
-            if (root is null) return;
-
-            TryFix(root);
-
-            var renderedMarkdowns = root.querySelectorAll(".rendered-markdown");
-
-            for (var i = 0; i < renderedMarkdowns.length; i++)
-            {
-                TryFix(renderedMarkdowns[i].As<HTMLElement>());
-            }
-
-            void TryFix(HTMLElement renderedMarkdown)
-            {
-                if (renderedMarkdown is null || renderedMarkdown.classList is null || !renderedMarkdown.classList.contains("rendered-markdown"))
-                {
-                    return;
-                }
-
-                var textContent = renderedMarkdown.textContent ?? "";
-
-                if (textContent.StartsWith(HTML_MARKER))
-                {
-                    renderedMarkdown.innerHTML = textContent.Substring(HTML_MARKER.Length);
-                    ResizeWidgetAfterInjectedHtml(renderedMarkdown);
-                }
-
-                OnRenderedMarkdown?.Invoke(renderedMarkdown);
-            }
-        }
-
-        /// <summary>
-        /// The prefix a hover/completion documentation string uses to opt into raw HTML rendering.
-        /// Pair it with <c>supportHtml = true</c> and <c>isTrusted = true</c> on the
-        /// <see cref="MarkdownString"/>, and escape anything untrusted before concatenating.
-        /// </summary>
-        public const string HTML_MARKER = "!!HTML";
-
-        /// <summary>
-        /// Escapes text so it is safe to place inside a <see cref="HTML_MARKER"/> payload.
-        /// </summary>
-        public static string EscapeHtml(string text)
-        {
-            if (text is null) return null;
-
-            return text
-                .Replace("&", "&amp;")
-                .Replace("<", "&lt;")
-                .Replace(">", "&gt;")
-                .Replace("\"", "&quot;")
-                .Replace("'", "&#39;");
-        }
-
-        // Monaco sizes the popup before we swap markdown for HTML, so the widget has to be
-        // re-measured or the injected content is clipped to the old height.
-        private static void ResizeWidgetAfterInjectedHtml(HTMLElement renderedMarkdown)
-        {
-            var container = renderedMarkdown.closest(".monaco-hover-content, .suggest-details, .monaco-hover").As<HTMLElement>();
-
-            if (container is null) return;
-
-            container.style.height    = "auto";
-            container.style.maxHeight = "none";
-
-            var scrollable = renderedMarkdown.closest(".monaco-scrollable-element").As<HTMLElement>();
-
-            if (scrollable is object)
-            {
-                scrollable.style.height    = "auto";
-                scrollable.style.maxHeight = "none";
-            }
         }
     }
 }

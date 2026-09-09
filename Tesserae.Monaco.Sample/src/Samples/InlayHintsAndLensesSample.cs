@@ -6,7 +6,7 @@ using static Tesserae.Monaco.Sample.SamplesHelper;
 
 namespace Tesserae.Monaco.Sample
 {
-    [SampleDetails(Group = "Language services", Order = 7, Icon = UIcons.Notes)]
+    [SampleDetails(Group = "Language services", Order = 8, Icon = UIcons.Notes)]
     public class InlayHintsAndLensesSample : IComponent, ISample
     {
         private readonly IComponent _content;

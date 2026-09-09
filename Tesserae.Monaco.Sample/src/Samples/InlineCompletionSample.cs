@@ -5,7 +5,7 @@ using static Tesserae.Monaco.Sample.SamplesHelper;
 
 namespace Tesserae.Monaco.Sample
 {
-    [SampleDetails(Group = "Language services", Order = 2, Icon = UIcons.Ghost)]
+    [SampleDetails(Group = "Language services", Order = 3, Icon = UIcons.Ghost)]
     public class InlineCompletionSample : IComponent, ISample
     {
         private const string START = "int Twice(int value)\n{\n    return\n}\n";

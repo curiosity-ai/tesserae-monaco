@@ -102,7 +102,7 @@ one of these is a delegate you supply.
 | Area | Members |
 |---|---|
 | Completion | `OnCompletion(ctx => Task<CompletionItem[]>)`, `OnCompletionRaw`, `OnResolveCompletion`, `OnInlineCompletion` |
-| Hover | `OnHover(ctx => Task<string>)`, `OnHoverRaw` |
+| Hover | `OnHover(ctx => Task<string>)`, `OnHover(ctx => Task<MarkdownString>)`, `OnHoverRaw` |
 | Signatures | `OnSignatureHelp` |
 | Fixes | `OnCodeActions` |
 | Navigation | `OnDefinition`, `OnDeclaration`, `OnTypeDefinition`, `OnImplementation`, `OnReferences`, `OnDocumentHighlights` |
@@ -166,6 +166,46 @@ turn after the provider settles, so the call belongs in a zero-delay timeout rat
 Two Monaco requirements the wrapper handles rather than passing on: injected text (`before`/`after` on
 a decoration) needs `showIfCollapsed` when its range is empty, which `Decoration.InlineNote` sets; and
 semantic highlighting is off unless the theme opts in, which `OnSemanticTokens` arranges.
+
+### Documentation in hovers and completion details
+
+What `OnHover` and a completion item's `documentation` carry is **markdown**, rendered by Monaco's own
+renderer — and that renderer does more than paragraphs:
+
+- A fenced code block is coloured by the editor's tokenizer for its language, so a signature in
+  <code>```csharp</code> looks like the code it describes. This is how VS Code's language servers render
+  their hovers.
+- `---` draws a separator; `**bold**`, lists and `` `inline code` `` work as usual.
+- `$(icon-name)` is a codicon when the `MarkdownString` sets `supportThemeIcons`.
+- A link whose target is `MonacoEditor.CommandLink(id, argument)` runs the command registered with
+  `MonacoEditor.RegisterCommand(id, handler)` when clicked. Monaco routes it through its command service,
+  so documentation gets a clickable action without anything touching the rendered popup. The argument
+  travels as JSON and comes back to the handler as it was.
+
+```csharp
+MonacoEditor.RegisterCommand<string>("app.showTypeDocs", fullType =>
+{
+    MonacoEditor.HideHovers();   // the popup renders above everything else on the page
+    OpenDocumentationPanel(fullType);
+});
+
+editor.OnHover(ctx => Task.FromResult(
+    "```csharp\nstring Greeter.Greet(string name)\n```\n\n---\n\nReturns a greeting.\n\n" +
+    $"[Open the documentation]({MonacoEditor.CommandLink("app.showTypeDocs", "Demo.Greeter")})"));
+```
+
+Command links run only on a `MarkdownString` marked `isTrusted`; on an untrusted one Monaco strips them
+to their text. The string overload of `OnHover` trusts what it is given, since it is the host's own
+text; the `MarkdownString` overload lets a host decide, and is also where `supportThemeIcons` and
+`supportHtml` are set.
+
+**Do not inject HTML into the rendered popup**, and do not lean on `supportHtml` for styling. Monaco
+keeps HTML only after sanitising it against an allowlist that, since 0.56, has no `class` attribute in
+it (only `style` on a `span`, for its colours), so HTML cannot be styled from a stylesheet — and a bare
+`<T>` in the text disappears as an unknown tag. An earlier host smuggled escaped HTML behind a marker
+and wrote it into the popup with `innerHTML` once Monaco had rendered it, then re-measured the widget
+through Monaco's private hover controller; markdown, a fenced code block and the theme colours below
+replace all of that. The tooltip's colours come from the theme: see [Theming](#theming).
 
 ### Several documents in one editor
 
@@ -484,16 +524,25 @@ swapped for a finer one. It takes the same two shapes, eager or deferred, and
 
 ### Theming
 
-The components follow the active Tesserae theme: `MonacoEditor.LIGHT_THEME` / `DARK_THEME` are derived
-from `Theme.Secondary.Background` when Monaco loads. After toggling the Tesserae theme at runtime, call
-`MonacoEditor.DefineThemes()` then `MonacoEditor.ApplyTheme()`.
+The components follow the active Tesserae theme. `MonacoEditor.LIGHT_THEME` / `DARK_THEME` are defined
+when Monaco loads from `MonacoEditor.TesseraeThemeColors()`: the editor background from
+`Theme.Secondary.Background`, and the surfaces Monaco draws its own popups with — the hover, the suggest
+list and its details pane, every other widget — from `Theme.Default.Background`, `.Border` and
+`.Foreground`, with links in Tesserae's link colour and code blocks on the editor background. After
+toggling the Tesserae theme at runtime, call `MonacoEditor.DefineThemes()` then `MonacoEditor.ApplyTheme()`.
+
+That is also how a tooltip is restyled. Monaco reads every colour of its widgets from the theme
+(`editorHoverWidget.background`, `editorSuggestWidget.border`, `textLink.foreground`, …) and publishes
+them as `--vscode-*` variables, so a stylesheet rule on `.monaco-hover` is never needed — and, being an
+internal class name rather than API, breaks across releases. Put the colour in `ThemeColors` instead.
 
 | Member | Purpose |
 |---|---|
-| `MonacoEditor.ThemeColors` | Monaco's theme colour ids — selection, gutter, scrollbar, diff, bracket colours. Only `editor.background` is set by default. |
+| `MonacoEditor.TesseraeThemeColors()` | The colours derived from the Tesserae theme, keyed by Monaco's colour ids. Every theme the package defines starts from these; a host defining its own themes from scratch can too. |
+| `MonacoEditor.ThemeColors` | Monaco's theme colour ids — selection, gutter, scrollbar, diff, bracket colours, and any of the derived ones above to override. Applied on top of the derived set. |
 | `MonacoEditor.AddTokenColors(…)` | Syntax colours for a **built-in** language's tokens, and for the token types a semantic-tokens provider emits. `LanguageDefinition.TokenColors` only covers its own language. |
 | `MonacoEditor.LightBase` / `DarkBase` | What the two themes inherit from — set to `"hc-light"` / `"hc-black"` for high contrast. |
-| `MonacoEditor.DefineTheme(name, base, rules, colors)` | A theme of your own, for `ApplyTheme(name)` or a component's `Theme(…)`. |
+| `MonacoEditor.DefineTheme(name, base, rules, colors)` | A theme of your own, for `ApplyTheme(name)` or a component's `Theme(…)`. Starts from the derived colours and `ThemeColors`, then applies `colors`. |
 
 ### Bundled language services
 
@@ -532,8 +581,8 @@ after the edit, so polling after typing reads the previous state.
 | `MonacoEditor.GetLanguageIds()` / `TryGetLanguageIdForExtension` | Monaco's language registry. |
 | `MonacoEditor.RegisterLanguage(definition)` | A language of your own, eager or deferred. Idempotent per id. |
 | `MonacoEditor.SetTokenizer(id, …)` / `SetLanguageConfiguration(id, …)` | Replace the grammar or the configuration of a language that already exists, Monaco's own included. |
-| `MonacoEditor.OnRenderedMarkdown` | Called with each markdown block Monaco renders in a hover or completion-details popup — for binding behaviour to links in backend-supplied documentation. |
-| `MonacoEditor.HTML_MARKER` / `EscapeHtml` | Opt a hover or completion detail into raw HTML rendering. Escape untrusted parts first. |
+| `MonacoEditor.RegisterCommand(id, handler)` / `CommandLink(id, argument)` | A command a link in hover or completion documentation runs, and the link that runs it — see [Documentation in hovers and completion details](#documentation-in-hovers-and-completion-details). |
+| `MonacoEditor.HideHovers()` | Hides the hover tooltip on every editor, through Monaco's own hover controller — for a command that opens something the popup would sit on top of. `EditorSurface.HideHover()` does one editor. |
 | `MonacoEditor.WhenLoaded(action)` | Runs `action` once `monaco.*` is safe to touch — immediately if it already is, queued otherwise. The safe way to make any global Monaco call from application code, since most configuration happens while components are being built. |
 | `MonacoEditor.CreateModel` / `GetModel` / `GetModels` / `GetEditors` | Documents and editors Monaco currently holds. |
 | `MonacoEditor.GetMarkers` / `OnMarkersChanged` | Every squiggle on the page, the host's own and the workers'. |

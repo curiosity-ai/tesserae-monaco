@@ -5,7 +5,7 @@ using static Tesserae.Monaco.Sample.SamplesHelper;
 
 namespace Tesserae.Monaco.Sample
 {
-    [SampleDetails(Group = "Language services", Order = 10, Icon = UIcons.PaintRoller)]
+    [SampleDetails(Group = "Language services", Order = 11, Icon = UIcons.PaintRoller)]
     public class SemanticTokensSample : IComponent, ISample
     {
         private readonly IComponent _content;

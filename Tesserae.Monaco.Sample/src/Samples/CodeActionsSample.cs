@@ -7,7 +7,7 @@ using static Tesserae.Monaco.Sample.SamplesHelper;
 
 namespace Tesserae.Monaco.Sample
 {
-    [SampleDetails(Group = "Language services", Order = 5, Icon = UIcons.LightbulbOn)]
+    [SampleDetails(Group = "Language services", Order = 6, Icon = UIcons.LightbulbOn)]
     public class CodeActionsSample : IComponent, ISample
     {
         private const string TODO_MESSAGE = "Unresolved TODO.";

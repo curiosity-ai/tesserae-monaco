@@ -103,6 +103,94 @@ namespace Tesserae.Monaco
 
         #endregion
 
+        #region Commands and hovers
+
+        /// <summary>
+        /// Registers a command a link in hover or completion documentation can run: a markdown link whose
+        /// target is <see cref="CommandLink"/>'s <c>command:</c> URI. Monaco routes a click on it through
+        /// its command service - the same path a code lens or F12 takes - so documentation gets a
+        /// clickable action without anything touching the rendered popup: no listener bound to its DOM,
+        /// no observer waiting for Monaco to render it, and the popup's own measurement and scrolling
+        /// are left alone. Such a link is honoured only on a <see cref="MarkdownString"/> with
+        /// <c>isTrusted</c> set; on an untrusted one Monaco strips it to its text.
+        ///
+        /// Safe to call before Monaco has loaded - the registration is made once it has. The handler
+        /// receives the argument the link was built with, or null; Monaco passes a service accessor
+        /// first, which is dropped. The returned action unregisters the command; pass a
+        /// <paramref name="bag"/> to have that happen with a component.
+        /// </summary>
+        public static Action RegisterCommand(string id, Action<object> handler, DisposableBag bag = null)
+        {
+            if (string.IsNullOrWhiteSpace(id) || handler is null) return () => { };
+
+            IJsDisposable registration = null;
+            var           released     = false;
+
+            WhenLoaded(() =>
+            {
+                if (released) return;
+
+                registration = MonacoApi.editor.registerCommand(id, (accessor, argument) => handler(argument));
+            });
+
+            Action release = () =>
+            {
+                released = true;
+                registration?.dispose();
+                registration = null;
+            };
+
+            bag?.Add(release);
+
+            return release;
+        }
+
+        /// <summary>
+        /// The same, with the argument cast to <typeparamref name="T"/>: a <c>string</c>, a number, or an
+        /// <c>[ObjectLiteral]</c> type describing the JSON the link carries.
+        /// </summary>
+        public static Action RegisterCommand<T>(string id, Action<T> handler, DisposableBag bag = null)
+        {
+            if (handler is null) return () => { };
+
+            return RegisterCommand(id, argument => handler((T)argument), bag);
+        }
+
+        /// <summary>
+        /// The target of a markdown link that runs a registered command - <c>[Show](command:my.command?…)</c>
+        /// in a <see cref="MarkdownString"/> marked trusted. <paramref name="argument"/> travels as JSON in
+        /// the query, percent-encoded, which is the form Monaco's opener decodes and hands to the handler;
+        /// keep it to plain data (a string, a number, an <c>[ObjectLiteral]</c>).
+        /// </summary>
+        public static string CommandLink(string id, object argument = null)
+        {
+            if (string.IsNullOrWhiteSpace(id)) return null;
+
+            if (argument is null) return "command:" + id;
+
+            // Monaco spreads the decoded array over the handler's parameters, so one argument is wrapped
+            // in one; the plain copy is what keeps a C# array's $type stamp out of the JSON.
+            return "command:" + id + "?" + es5.encodeURIComponent(es5.JSON.stringify(ToPlainObject(new[] { argument })));
+        }
+
+        /// <summary>
+        /// Hides the hover tooltip on every editor, through the hover controller's own method (the one
+        /// Escape runs). For a command that opens something the tooltip would otherwise sit on top of: the
+        /// popups render in the shared body-mounted host, above everything else on the page, and Monaco
+        /// keeps a hover open through a click on a link inside it.
+        /// </summary>
+        public static void HideHovers()
+        {
+            foreach (var editor in GetEditors())
+            {
+                ((IContentHoverController)editor.getContribution(CONTENT_HOVER_CONTROLLER_ID))?.hideContentHover();
+            }
+        }
+
+        internal const string CONTENT_HOVER_CONTROLLER_ID = "editor.contrib.contentHover";
+
+        #endregion
+
         #region Static colorization
 
         /// <summary>

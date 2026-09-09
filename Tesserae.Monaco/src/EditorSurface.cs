@@ -509,6 +509,19 @@ namespace Tesserae.Monaco
         private const string MESSAGE_CONTROLLER_ID = "editor.contrib.messageController";
 
         /// <summary>
+        /// Hides this editor's hover tooltip, through the hover controller's own method - what Escape
+        /// runs. See <see cref="MonacoEditor.HideHovers"/> for every editor at once.
+        /// </summary>
+        public EditorSurface HideHover()
+        {
+            var controller = (IContentHoverController)_editor.getContribution(MonacoEditor.CONTENT_HOVER_CONTROLLER_ID);
+
+            controller?.hideContentHover();
+
+            return this;
+        }
+
+        /// <summary>
         /// Disposes one of Monaco's own contributions by id, switching the feature it drives off for this
         /// editor. Returns whether there was one. Contribution ids are Monaco-internal and have moved
         /// between releases, so a missing one is a no-op rather than a throw - and the direct cast is

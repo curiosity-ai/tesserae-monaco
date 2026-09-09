@@ -102,12 +102,16 @@ namespace Tesserae.Monaco
     /// <summary>
     /// Monaco's <c>editor.contrib.contentHover</c> - the controller that shows and hides the hover
     /// tooltip from the editor's mouse events. Internal API, on the same terms as
-    /// <see cref="IMessageController"/>; only what <see cref="HoverEntryGuard"/> needs is declared.
+    /// <see cref="IMessageController"/>; only what <see cref="HoverEntryGuard"/> and
+    /// <see cref="MonacoEditor.HideHovers"/> need is declared.
     /// </summary>
     [External]
     [Convention(Notation.None)]
     public interface IContentHoverController
     {
+        /// <summary>Hides the hover - what Escape runs. Public on Monaco's class.</summary>
+        void hideContentHover();
+
         /// <summary>
         /// While true the controller leaves the hover alone on the editor's mouse-move and mouse-leave
         /// events. Public on Monaco's class - it is how its own features hold a hover open over a

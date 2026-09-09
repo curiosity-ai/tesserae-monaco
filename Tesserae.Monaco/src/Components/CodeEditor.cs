@@ -274,19 +274,41 @@ namespace Tesserae.Monaco
         #region Hover
 
         /// <summary>
-        /// Supplies hover documentation for the symbol under the cursor. Return markdown, or null for
-        /// no hover. Prefix the string with <see cref="MonacoEditor.HTML_MARKER"/> to render it as
-        /// HTML instead - escaping anything untrusted with <see cref="MonacoEditor.EscapeHtml"/>
-        /// first.
+        /// Supplies hover documentation for the symbol under the cursor, as markdown; null means no hover,
+        /// which is the common case. Monaco renders it: a fenced code block (<c>```csharp</c>) is coloured
+        /// by the editor's own tokenizer, <c>---</c> draws a separator between sections, and a link built
+        /// with <see cref="MonacoEditor.CommandLink"/> runs a command registered through
+        /// <see cref="MonacoEditor.RegisterCommand(string, Action{object}, DisposableBag)"/> - which is how
+        /// documentation gets a clickable action without any listener on the rendered popup. The string is
+        /// marked trusted for that reason, and raw HTML in it is escaped rather than rendered; use the
+        /// <see cref="OnHover(Func{CodeContext, Task{MarkdownString}})"/> overload to decide either
+        /// differently.
         /// </summary>
         public CodeEditor OnHover(Func<CodeContext, Task<string>> onHover)
+        {
+            if (onHover is null) return this;
+
+            return OnHover(async context =>
+            {
+                var documentation = await onHover(context);
+
+                return string.IsNullOrWhiteSpace(documentation) ? null : new MarkdownString { value = documentation, isTrusted = true };
+            });
+        }
+
+        /// <summary>
+        /// The same, handing back the <see cref="MarkdownString"/> itself - for documentation that should
+        /// not be trusted with command links, wants <c>$(icon)</c> theme icons, or carries HTML the host
+        /// wants Monaco to keep (sanitised; see <see cref="MarkdownString.supportHtml"/>). Null for no hover.
+        /// </summary>
+        public CodeEditor OnHover(Func<CodeContext, Task<MarkdownString>> onHover)
         {
             if (onHover is null) return this;
 
             return OnHoverRaw((model, position) => MonacoEditor.AsPromise(BuildHoverAsync(onHover, model, position)));
         }
 
-        private static async Task<object> BuildHoverAsync(Func<CodeContext, Task<string>> onHover, ITextModel model, Position position)
+        private static async Task<object> BuildHoverAsync(Func<CodeContext, Task<MarkdownString>> onHover, ITextModel model, Position position)
         {
             var context = new CodeContext(model, position);
 
@@ -294,15 +316,12 @@ namespace Tesserae.Monaco
 
             var documentation = await onHover(context);
 
-            if (string.IsNullOrWhiteSpace(documentation)) return null;
+            if (documentation is null || string.IsNullOrWhiteSpace(documentation.value)) return null;
 
             return new Hover
             {
                 range    = context.WordRange,
-                contents = new[]
-                {
-                    new MarkdownString { value = documentation, supportHtml = true, isTrusted = true }
-                }
+                contents = new[] { documentation }
             };
         }
 

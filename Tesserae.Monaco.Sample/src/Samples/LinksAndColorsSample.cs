@@ -7,7 +7,7 @@ using static Tesserae.Monaco.Sample.SamplesHelper;
 
 namespace Tesserae.Monaco.Sample
 {
-    [SampleDetails(Group = "Language services", Order = 9, Icon = UIcons.Swatchbook)]
+    [SampleDetails(Group = "Language services", Order = 10, Icon = UIcons.Swatchbook)]
     public class LinksAndColorsSample : IComponent, ISample
     {
         private readonly IComponent _content;

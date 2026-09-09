@@ -6,7 +6,7 @@ using static Tesserae.Monaco.Sample.SamplesHelper;
 
 namespace Tesserae.Monaco.Sample
 {
-    [SampleDetails(Group = "Language services", Order = 8, Icon = UIcons.Compress)]
+    [SampleDetails(Group = "Language services", Order = 9, Icon = UIcons.Compress)]
     public class FoldingSample : IComponent, ISample
     {
         private readonly IComponent _content;
