@@ -854,6 +854,30 @@ These were learned the hard way in Mosaik; don't simplify them away.
   `getContribution` still returns the instance after it is disposed, so a check for "is it gone" reports
   the wrong thing. Verified by asserting on the provider's own side effect: a modifier-hover does not
   produce it, a modifier-click does, a plain click does not, and F12 still jumps.
+- **Entering the hover tooltip is a `mouseleave` here, and Monaco hides on it.** Every editor renders
+  its popups into the shared overflow host, so the hover widget is not a descendant of the editor's
+  DOM and moving the pointer onto it fires `mouseleave` on the editor. Monaco's hover controller keeps
+  the hover through a leave only if the pointer is inside the widget's rectangle **inset by 3px** (room
+  left for the resize sashes) - and a pointer coming from the word crosses that band first, so at any
+  speed short of a flick the first event inside the tooltip dismissed it. Measured: gone at the first
+  pixel inside the bottom edge, every time. In Monaco's own layout the widget is part of the editor, so
+  the same motion is a mouse *move* and gets the `hidingDelay` grace period. `HoverEntryGuard` restores
+  that grace: a **capture-phase** `mouseleave` listener on the editor container (capture on an ancestor
+  runs before Monaco's own listener on the view node) sets the controller's public
+  `shouldKeepOpenOnEditorMouseMoveOrLeave` when the pointer is entering the hover widget, cancels the
+  grace-period scheduler that leave would otherwise have cancelled (armed by the last move, it fires
+  300ms later against a stale position and can hide the hover the pointer is now over), and clears the
+  flag when the pointer leaves the widget again. Installed for every surface - `BindSurface` and both
+  diff sides. Verified in the gallery, Debug and Release, moving the pointer 1px at a time from `Greet`
+  into its tooltip: it survives the entry and the settle, still hides on leaving towards plain text,
+  and stays when the pointer returns to the word. **This is not a misuse of Monaco, and upstream has
+  fixed it once already**: `overflowWidgetsDomNode` is a documented option VS Code's own notebook cells
+  use, the bug was reported as monaco-editor#2156 (2020), and vscode#142160 (March 2022, Monaco 0.34)
+  fixed it by keeping the hover when the leave event's `relatedTarget` is inside the widget - the same
+  test the guard makes. The resizable-hover rewrite later replaced that with the inset rectangle check
+  and nobody re-ran the 2020 case. Still present in 0.56.0 (July 2026, the latest release) and in
+  VS Code `main` at the time of writing, so the guard stays until a Monaco release carries a fix; it is
+  a no-op once one does. Re-check `_onEditorMouseLeave` in `contentHoverController.js` on each pin bump.
 - **A diff editor's two models are ours to dispose.** Monaco does not dispose models handed to
   `setModel`, so `DiffViewer` disposes them itself — the inline versions in Mosaik leak one pair per
   render.

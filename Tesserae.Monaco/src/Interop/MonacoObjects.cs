@@ -100,6 +100,37 @@ namespace Tesserae.Monaco
     }
 
     /// <summary>
+    /// Monaco's <c>editor.contrib.contentHover</c> - the controller that shows and hides the hover
+    /// tooltip from the editor's mouse events. Internal API, on the same terms as
+    /// <see cref="IMessageController"/>; only what <see cref="HoverEntryGuard"/> needs is declared.
+    /// </summary>
+    [External]
+    [Convention(Notation.None)]
+    public interface IContentHoverController
+    {
+        /// <summary>
+        /// While true the controller leaves the hover alone on the editor's mouse-move and mouse-leave
+        /// events. Public on Monaco's class - it is how its own features hold a hover open over a
+        /// gesture that would otherwise dismiss it.
+        /// </summary>
+        bool shouldKeepOpenOnEditorMouseMoveOrLeave { get; set; }
+
+        /// <summary>
+        /// The grace-period scheduler a mouse move arms while a sticky hover is showing, and which a
+        /// mouse leave normally cancels. Private to Monaco, so it may be absent - guard for null.
+        /// </summary>
+        IRunOnceScheduler _reactToEditorMouseMoveRunner { get; }
+    }
+
+    /// <summary>Monaco's <c>RunOnceScheduler</c>, as far as cancelling one.</summary>
+    [External]
+    [Convention(Notation.None)]
+    public interface IRunOnceScheduler
+    {
+        void cancel();
+    }
+
+    /// <summary>
     /// A decoration set Monaco keeps tracked across edits, from
     /// <c>editor.createDecorationsCollection</c>. Updating one beats replacing it: the ranges move with
     /// the text, and only the difference is re-rendered.
