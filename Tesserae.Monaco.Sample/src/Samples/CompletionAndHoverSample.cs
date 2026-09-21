@@ -97,7 +97,7 @@ namespace Tesserae.Monaco.Sample
                         editor.WS().H(200.px()).MT(8),
                         SampleHint("The suggestions are Greet, Greeter, Console and WriteLine; anything else has no hover.")
                     )).SetTitle("Usage")))
-               .SeeAlso(typeof(CustomLanguageSample), typeof(FormattingSample), typeof(DiagnosticsSample), typeof(ModalSample));
+               .SeeAlso(typeof(MultipleEditorsSample), typeof(CustomLanguageSample), typeof(FormattingSample), typeof(DiagnosticsSample), typeof(ModalSample));
         }
 
         public HTMLElement Render() => _content.Render();

@@ -412,10 +412,43 @@ namespace Tesserae.Monaco
         /// Binds a keybinding to a handler without adding a context-menu entry. Build
         /// <paramref name="keybinding"/> from <see cref="KeyMod"/> and <see cref="KeyCode"/>, e.g.
         /// <c>KeyMod.With(KeyMod.CtrlCmd, KeyCode.KeyS)</c>.
+        ///
+        /// <b>The binding follows the focus.</b> It runs while the focus is anywhere inside this
+        /// editor - the text, but also its find widget or any other part of its DOM - and not
+        /// otherwise. An editor with no binding of its own does nothing rather than borrowing another
+        /// editor's, and a press with the focus outside every editor reaches the page and the browser
+        /// as if nothing were bound. A host that wants a shortcut for the whole page wants its own
+        /// <c>keydown</c> listener, not this. <paramref name="context"/> narrows it further.
         /// </summary>
         public EditorSurface AddCommand(int keybinding, Action handler, string context = null)
         {
-            if (handler is object) _editor.addCommand(keybinding, handler, context);
+            if (handler is null) return this;
+
+            // Monaco's dynamic keybindings live on a keybinding service shared by every editor on the
+            // page, and its resolver answers a keypress with the last rule registered for that chord.
+            // `addAction` adds an `editorId == <this editor>` precondition of its own; `addCommand` adds
+            // nothing, so a second editor binding the same chord silently takes the first's binding over.
+            // Measured on the Multiple Editors page before this: two editors each binding Ctrl+S and
+            // Ctrl+Alt+K, and both chords ran the second editor's handler whichever editor had focus.
+            //
+            // `editorId` is the context key Monaco publishes on each editor's own scoped context key
+            // service, and the resolver evaluates a rule's `when` against the context of the *focused*
+            // element - so this is a focus test, and the id only names the subtree the focus has to be
+            // in. Which is the granularity wanted: measured, a Ctrl+S with the focus in this editor's
+            // find widget still reaches this handler, although `hasTextFocus()` is false for every
+            // editor on the page, so `editorTextFocus` would have dropped it.
+            var scope = "editorId == '" + _editor.getId() + "'";
+            var when  = string.IsNullOrWhiteSpace(context) ? scope : scope + " && (" + context + ")";
+
+            // `addCommand` hands back a command id rather than the disposable Monaco builds for the rule,
+            // so the rule cannot be removed - it is left unreachable instead, gated on an editor id that
+            // no longer exists once this editor is torn down (a remount gets a new one). The flag is for
+            // the handler's own captures, which outlive the rule's reachability.
+            var released = false;
+
+            _disposables.Add(() => { released = true; });
+
+            _editor.addCommand(keybinding, () => { if (!released) handler(); }, when);
 
             return this;
         }

@@ -802,6 +802,31 @@ These were learned the hard way in Mosaik; don't simplify them away.
   (`if (editor.getModel() != model) return null;`) and every registration is disposed in
   `BeforeDispose`. Without the gate, two `csharp` editors answer each other's completions; without the
   disposal, each mount leaks a provider bound to a dead model.
+- **`addCommand`'s keybinding is global; `addAction`'s is not.** Monaco scopes an action's keybinding
+  to the editor that added it (`ContextKeyExpr.equals('editorId', this.getId())`, in
+  `standaloneCodeEditor.js`) and gives `addCommand` no precondition at all — while the dynamic
+  keybindings themselves live on one `StandaloneKeybindingService` shared by every editor on the page,
+  whose resolver answers a chord with the **last** rule registered for it. So a second editor binding
+  the same chord silently takes the first's binding over. Measured on the Multiple Editors page: two
+  editors each binding Ctrl+S and Ctrl+Alt+K, and both chords ran the *second* editor's handler
+  whichever editor had the focus — and in `MultiEditor`, where every open tab keeps its editor mounted,
+  Ctrl+S with `people.cs` in front saved `documents.cs`, the tab opened last. `EditorSurface.AddCommand`
+  therefore ANDs `editorId == '<this editor>'` into the `when` expression (the caller's own `context`
+  is parenthesised beside it). **That is a focus test, not an identity one**: the resolver evaluates a
+  rule's `when` against the context of the *focused element*, and `editorId` lives on each editor's own
+  scoped context key service, so the id only names the subtree the focus has to be in. Measured across
+  the whole matrix: the focused editor's handler runs; an editor with no binding of its own does
+  nothing rather than borrowing another's; a press with the focus on a page button or on `body` reaches
+  the page and the browser as if nothing were bound (Monaco's keydown listeners are per editor
+  container, so that was already true before); and a Ctrl+S with the focus in an editor's **find
+  widget** still reaches that editor's handler, although `hasTextFocus()` is false for every editor on
+  the page — which is why the gate is `editorId` and not the narrower `editorTextFocus`. A host that
+  wants a page-wide shortcut wants its own `keydown` listener, which is what `MultiEditor` already has
+  for the focus-in-a-form case. Two things fall out:
+  `IStandaloneCodeEditor.getId()` is declared for it, and the rule cannot be *removed* on teardown —
+  `addCommand` hands back a command id rather than the disposable Monaco builds — so it is left
+  unreachable instead, gated on an editor id that no longer exists (a remount gets a new one), with a
+  `released` flag from the `DisposableBag` covering the handler's captures.
 - **Suggest/hover popups need the shared body-mounted overflow host** (`fixedOverflowWidgets` +
   `overflowWidgetsDomNode`), or they are clipped by any `overflow: hidden` ancestor — a modal, a panel,
   a split view. The sample's **Modal** page exists to catch regressions here.
@@ -973,13 +998,13 @@ Two things this depends on, both easy to break:
   one visit creates one page's editors rather than every page's at startup — and leaving a page unmounts
   them. That is a feature: it exercises the components' disposal on every click.
 
-There are 32 pages in four groups: **Editors** (the components themselves, plus the diff's own API and
+There are 34 pages in four groups: **Editors** (the components themselves, plus the diff's own API and
 `Colorize`), **Language services** (one page per provider — completion, hover documentation, signature
 help, inline completion, formatting, diagnostics, code actions, navigation, inlay hints and lenses, folding, links
 and colours, semantic tokens, a custom language, deferred grammars, and Monaco's bundled workers),
 **Decorations and widgets**, and **Runtime and hosting** (options, events, actions and commands,
-several documents, themes, a modal, remount, persisted history, the multi-editor shell, a document's
-settings). The sidebar sorts groups
+several documents, several *editors*, themes, a modal, remount, persisted history, the multi-editor
+shell, a document's settings). The sidebar sorts groups
 alphabetically and pages by their `Order`.
 
 Two consequences of a page being rebuilt on every visit, both of which cost a debugging round:
@@ -1004,6 +1029,32 @@ Monaco loads — so a colour registered from a page opened later never appears. 
 this itself for a `LanguageDefinition`'s own `TokenColors`; `AddTokenColors` leaves it to the host, and
 the Semantic Tokens page calls `DefineThemes()` and `ApplyTheme()` from `WhenLoaded(...)` for it. The
 symptom is a provider that runs correctly and changes nothing on screen.
+
+## Several surfaces on one page
+
+The **Multiple Editors** page is the scope test: two `csharp` `CodeEditor`s, a read-only `CodeViewer`
+and a `DiffViewer` (also `csharp`, modified side editable), all visible at once, each wired to its own
+completion, hover, validator and keybindings, with a log naming whichever one answered. Everything
+`monaco.editor.getEditors()` reports there is real — five editors for four components, since a diff is
+two — which is what makes crosstalk visible rather than theoretical.
+
+What is per component: every provider (gated on its own model by `ProviderHost.OwnsModel`), markers
+(they belong to the model), decorations, widgets, view zones, actions, options, the undo stack — and,
+since the fix above, keybindings from `AddCommand` and `OnSave`. What stays global, on purpose: the
+themes, `RegisterLanguage`, `RegisterCommand` (one id, one handler — a second registration replaces the
+first, so a hover command link that opens something needs either an id per editor or the editor's name
+as its argument), and the overflow host.
+
+Measured in the gallery with Playwright, Debug and Release: Ctrl+Space in alpha offers
+`alphaOne`/`alphaTwo` and in beta `betaOne`/`betaTwo`, neither offers the other's, the diff's modified
+side offers `diffOne`/`diffTwo`, and the viewer offers nothing (read-only, so Monaco builds no suggest
+widget at all); hover answers in each editor for its own words and says nothing in the viewer;
+`getModelMarkers` puts the `TODO` warning on alpha's model and the `FIXME` on beta's and leaves the
+other three models clean; and Ctrl+Alt+K and Ctrl+S each run the handler of the editor that has the
+focus — and an editor with no binding of its own (the viewer, the diff) does nothing rather than
+borrowing another's, while a press with the focus on a page button or on `body` reaches the browser.
+Also that `MultiEditor`'s Ctrl+S saves the tab in front rather than the tab opened last, and
+that leaving the page and coming back leaves the keybindings following the focus.
 
 ## Verifying changes
 

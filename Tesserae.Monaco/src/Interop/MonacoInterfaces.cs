@@ -139,6 +139,12 @@ namespace Tesserae.Monaco
         /// <summary>Binds a keybinding to a handler with no menu entry. Returns the command id, or null.</summary>
         string addCommand(int keybinding, Action handler, string context);
 
+        /// <summary>
+        /// This editor's id - <c>"vs.editor.ICodeEditor:1"</c> and up, one per instance. Monaco publishes
+        /// it as the <c>editorId</c> context key, which is how a keybinding is scoped to one editor.
+        /// </summary>
+        string getId();
+
         /// <summary>A named boolean this editor's actions can be gated on.</summary>
         IContextKey createContextKey(string key, bool defaultValue);
 

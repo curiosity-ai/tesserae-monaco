@@ -9,7 +9,7 @@ using static Tesserae.Monaco.Sample.SamplesHelper;
 
 namespace Tesserae.Monaco.Sample
 {
-    [SampleDetails(Group = "Runtime and hosting", Order = 7, Icon = UIcons.ClockFuturePast)]
+    [SampleDetails(Group = "Runtime and hosting", Order = 8, Icon = UIcons.ClockFuturePast)]
     public class HistoryPersistenceSample : IComponent, ISample
     {
         private const string SCOPE    = "gallery:demo-user";

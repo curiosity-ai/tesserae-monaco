@@ -64,7 +64,7 @@ namespace Tesserae.Monaco.Sample
                         TextBlock("Monaco's own actions are reachable by id too: .RunAction(\"editor.action.commentLine\") and the named shortcuts around it - .ToggleLineComment(), .ShowFind(), .SelectAll(), .Format() - all go through the same lookup.").MT(8))).SetTitle("Overview")))
                .FlatSection(VStack().Children(
                     Card(VStack().WS().Children(
-                        TextBlock("Build keybindings from KeyMod and KeyCode rather than raw numbers, and prefer KeyMod.CtrlCmd over Ctrl - it is Cmd on macOS, which is what a Mac user expects. An action's keybinding only applies while the editor has focus, so it cannot steal a shortcut from the rest of the app."),
+                        TextBlock("Build keybindings from KeyMod and KeyCode rather than raw numbers, and prefer KeyMod.CtrlCmd over Ctrl - it is Cmd on macOS, which is what a Mac user expects. An action's keybinding only applies while the editor has focus, so it cannot steal a shortcut from the rest of the app - and .AddCommand(...) is scoped the same way, so two editors on one page can bind Ctrl+S to different handlers and each gets its own."),
                         TextBlock("Two ways to run something by id, and the difference matters: .RunAction(...) only sees editor actions and reports whether the id matched, while .Trigger(...) also reaches commands Monaco registered as keybinding rules - the navigation ones - but says nothing about whether anything ran. Reach for RunAction first, and Trigger when it returns false.").MT(8))).SetTitle("Best Practices")))
                .FlatSection(VStack().Children(
                     Card(VStack().WS().Children(
@@ -85,7 +85,7 @@ namespace Tesserae.Monaco.Sample
                         log.PT(8),
                         SampleHint("The action's edit is one undoable step, so Ctrl+Z unwraps the line again.")
                     )).SetTitle("Usage")))
-               .SeeAlso(typeof(EventsSample), typeof(NavigationSample), typeof(FormattingSample));
+               .SeeAlso(typeof(MultipleEditorsSample), typeof(EventsSample), typeof(NavigationSample), typeof(FormattingSample));
         }
 
         public HTMLElement Render() => _content.Render();

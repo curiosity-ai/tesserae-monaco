@@ -8,7 +8,7 @@ using static Tesserae.Monaco.Sample.SamplesHelper;
 
 namespace Tesserae.Monaco.Sample
 {
-    [SampleDetails(Group = "Runtime and hosting", Order = 9, Icon = UIcons.SlidersVSquare)]
+    [SampleDetails(Group = "Runtime and hosting", Order = 10, Icon = UIcons.SlidersVSquare)]
     public class DocumentSettingsSample : IComponent, ISample
     {
         private const string ENDPOINT = "endpoints/search.cs";

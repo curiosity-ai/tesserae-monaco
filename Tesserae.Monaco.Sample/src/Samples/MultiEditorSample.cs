@@ -8,7 +8,7 @@ using static Tesserae.Monaco.Sample.SamplesHelper;
 
 namespace Tesserae.Monaco.Sample
 {
-    [SampleDetails(Group = "Runtime and hosting", Order = 8, Icon = UIcons.WindowRestore)]
+    [SampleDetails(Group = "Runtime and hosting", Order = 9, Icon = UIcons.WindowRestore)]
     public class MultiEditorSample : IComponent, ISample
     {
         private readonly IComponent _content;
