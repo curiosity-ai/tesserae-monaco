@@ -812,7 +812,17 @@ These were learned the hard way in Mosaik; don't simplify them away.
   whichever editor had the focus — and in `MultiEditor`, where every open tab keeps its editor mounted,
   Ctrl+S with `people.cs` in front saved `documents.cs`, the tab opened last. `EditorSurface.AddCommand`
   therefore ANDs `editorId == '<this editor>'` into the `when` expression (the caller's own `context`
-  is parenthesised beside it), which is what makes the binding follow the focus. Two things fall out:
+  is parenthesised beside it). **That is a focus test, not an identity one**: the resolver evaluates a
+  rule's `when` against the context of the *focused element*, and `editorId` lives on each editor's own
+  scoped context key service, so the id only names the subtree the focus has to be in. Measured across
+  the whole matrix: the focused editor's handler runs; an editor with no binding of its own does
+  nothing rather than borrowing another's; a press with the focus on a page button or on `body` reaches
+  the page and the browser as if nothing were bound (Monaco's keydown listeners are per editor
+  container, so that was already true before); and a Ctrl+S with the focus in an editor's **find
+  widget** still reaches that editor's handler, although `hasTextFocus()` is false for every editor on
+  the page — which is why the gate is `editorId` and not the narrower `editorTextFocus`. A host that
+  wants a page-wide shortcut wants its own `keydown` listener, which is what `MultiEditor` already has
+  for the focus-in-a-form case. Two things fall out:
   `IStandaloneCodeEditor.getId()` is declared for it, and the rule cannot be *removed* on teardown —
   `addCommand` hands back a command id rather than the disposable Monaco builds — so it is left
   unreachable instead, gated on an editor id that no longer exists (a remount gets a new one), with a
@@ -1041,7 +1051,9 @@ side offers `diffOne`/`diffTwo`, and the viewer offers nothing (read-only, so Mo
 widget at all); hover answers in each editor for its own words and says nothing in the viewer;
 `getModelMarkers` puts the `TODO` warning on alpha's model and the `FIXME` on beta's and leaves the
 other three models clean; and Ctrl+Alt+K and Ctrl+S each run the handler of the editor that has the
-focus. Also that `MultiEditor`'s Ctrl+S saves the tab in front rather than the tab opened last, and
+focus — and an editor with no binding of its own (the viewer, the diff) does nothing rather than
+borrowing another's, while a press with the focus on a page button or on `body` reaches the browser.
+Also that `MultiEditor`'s Ctrl+S saves the tab in front rather than the tab opened last, and
 that leaving the page and coming back leaves the keybindings following the focus.
 
 ## Verifying changes

@@ -94,7 +94,7 @@ namespace Tesserae.Monaco.Sample
                         HStack().WS().Wrap().MT(8).Children(
                             Pane("alpha.cs", alpha.WS().H(170.px())).PR(6),
                             Pane("beta.cs", beta.WS().H(170.px())).PL(6)),
-                        TextBlock("Keybindings are per editor too: Ctrl+Alt+K and Ctrl+S run the handler of whichever editor has focus, not the one registered last.").MT(12),
+                        TextBlock("Keybindings follow the focus: Ctrl+Alt+K and Ctrl+S run the handler of whichever editor the caret is in, not the one registered last. Click into the viewer or the diff below and press either - neither has a binding of its own, so nothing happens rather than another editor's handler running, and with the focus on a button the browser gets the key.").MT(12),
                         SampleSubTitle("A read-only viewer, and a diff, on the same page"),
                         TextBlock("Both are csharp as well. The viewer is wired to nothing: alphaOne has no hover there and its TODO is not flagged, even though the two editors above answer both for their own documents. Being read-only, it has no suggest widget at all."),
                         TextBlock("The diff is two editors in one component, and its modified side is editable and carries a completion of its own - press Ctrl+Space on the right-hand pane for diffOne/diffTwo. Neither of the two editors above offers those, and it does not offer theirs.").MT(8),
