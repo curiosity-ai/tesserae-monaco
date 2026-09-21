@@ -87,7 +87,7 @@ namespace Tesserae.Monaco.Sample
                             status.PL(8.px())),
                         SampleHint("The language follows the model, so the syntax highlighting switches from C# to JSON with it.")
                     )).SetTitle("Usage")))
-               .SeeAlso(typeof(RemountSample), typeof(EventsSample), typeof(CodeEditorSample));
+               .SeeAlso(typeof(MultipleEditorsSample), typeof(RemountSample), typeof(EventsSample), typeof(CodeEditorSample));
         }
 
         public HTMLElement Render() => _content.Render();

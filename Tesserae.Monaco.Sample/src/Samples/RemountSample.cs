@@ -4,7 +4,7 @@ using static Tesserae.Monaco.Sample.SamplesHelper;
 
 namespace Tesserae.Monaco.Sample
 {
-    [SampleDetails(Group = "Runtime and hosting", Order = 6, Icon = UIcons.ArrowsRepeat)]
+    [SampleDetails(Group = "Runtime and hosting", Order = 7, Icon = UIcons.ArrowsRepeat)]
     public class RemountSample : IComponent, ISample
     {
         private readonly IComponent _content;
