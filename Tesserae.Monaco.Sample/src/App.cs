@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using Transpose.Core;
 using Tesserae;
+using Tesserae.Themes.Curiosity;
 using static Transpose.Core.dom;
 using static Tesserae.UI;
 
@@ -24,6 +25,35 @@ namespace Tesserae.Monaco.Sample
     internal static class App
     {
         private const string _sidebarOpenStateKey = "tss-monaco-sidebar-open-close";
+
+        private const string _themeKey = "tss-monaco-curiosity-theme";
+
+        private static bool IsCuriosity => Theme.CustomTheme is object;
+
+        // ?theme=curiosity wins, so a page can be linked to - and driven by a browser check - in either look.
+        private static bool WantsCuriosity()
+        {
+            var fromUrl = new URLSearchParams(window.location.search).get("theme");
+
+            if (fromUrl is object) return fromUrl == "curiosity";
+
+            return localStorage.getItem(_themeKey) == bool.TrueString;
+        }
+
+        private static async Task SetCuriosityAsync(bool on)
+        {
+            if (on) await Theme.SetCustomTheme(CuriosityTheme.Instance);
+            else    await Theme.ClearCustomTheme();
+
+            localStorage.setItem(_themeKey, on.ToString());
+
+            // Before Monaco has loaded there is nothing to hand across - it derives its themes from the
+            // look in force when it does.
+            if (!MonacoEditor.IsLoaded) return;
+
+            MonacoEditor.DefineThemes();
+            MonacoEditor.ApplyTheme();
+        }
 
         private static void Main()
         {
@@ -168,7 +198,21 @@ namespace Tesserae.Monaco.Sample
                 MonacoEditor.ApplyTheme();
             });
 
-            sidebar.AddFooter(new SidebarCommands("CONFIG", lightDark, openClose));
+            // The package's themes are derived from whichever Tesserae look is active, so the Curiosity
+            // custom theme (a restyle of every component, light and dark) has to be handed across the
+            // same way as the sun/moon switch - after the stylesheet is in, or the colours read are
+            // still the previous look's.
+            var curiosity = new SidebarCommand(UIcons.Palette).Tooltip(IsCuriosity ? "Curiosity theme" : "Default theme");
+
+            curiosity.OnClick(async () =>
+            {
+                await SetCuriosityAsync(!IsCuriosity);
+                curiosity.Tooltip(IsCuriosity ? "Curiosity theme" : "Default theme");
+            });
+
+            if (WantsCuriosity()) SetCuriosityAsync(true).FireAndForget();
+
+            sidebar.AddFooter(new SidebarCommands("CONFIG", curiosity, lightDark, openClose));
 
             var groupIndex = 0;
 
