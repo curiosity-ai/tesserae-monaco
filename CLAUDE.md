@@ -917,6 +917,7 @@ These were learned the hard way in Mosaik; don't simplify them away.
   constructor, before the subclass's own `setHoverDelegateFactory` call. And `withServices` is used
   because it waits for the first editor rather than initialising the services itself. Still needed in
   0.56.0. On a pin bump, check `standaloneCodeEditor.js` for the `setHoverDelegateFactory` call.
+  `scripts/lifecycle-check.mjs` guards it in CI (see "The lifecycle check" below).
 - **A diff editor's two models are ours to dispose.** Monaco does not dispose models handed to
   `setModel`, so `DiffViewer` disposes them itself — the inline versions in Mosaik leak one pair per
   render.
@@ -1012,13 +1013,13 @@ Two things this depends on, both easy to break:
   one visit creates one page's editors rather than every page's at startup — and leaving a page unmounts
   them. That is a feature: it exercises the components' disposal on every click.
 
-There are 34 pages in four groups: **Editors** (the components themselves, plus the diff's own API and
+There are 35 pages in four groups: **Editors** (the components themselves, plus the diff's own API and
 `Colorize`), **Language services** (one page per provider — completion, hover documentation, signature
 help, inline completion, formatting, diagnostics, code actions, navigation, inlay hints and lenses, folding, links
 and colours, semantic tokens, a custom language, deferred grammars, and Monaco's bundled workers),
 **Decorations and widgets**, and **Runtime and hosting** (options, events, actions and commands,
 several documents, several *editors*, themes, a modal, remount, persisted history, the multi-editor
-shell, a document's settings). The sidebar sorts groups
+shell, a document's settings, and the lifecycle page the automated check drives). The sidebar sorts groups
 alphabetically and pages by their `Order`.
 
 Two consequences of a page being rebuilt on every visit, both of which cost a debugging round:
@@ -1154,6 +1155,41 @@ Habits that each save a wasted round of debugging when driving these pages with 
 - **Read the page only after the thing you are measuring has settled.** The diff's decorations arrive
   from the diff worker and the `greet` tokens after `RegisterLanguage` flushes; sampling immediately
   after load reports zero of either and looks like a real regression. Poll instead of sleeping once.
+
+### The lifecycle check (automated)
+
+`scripts/lifecycle-check.mjs` is the one automated browser check, and CI runs it on every pull request
+that touches the package or the sample (`.github/workflows/lifecycle.yml`). It serves a built site
+itself, opens the **Lifecycle** page and runs several rounds of opening and closing every kind of
+surface around a *survivor* editor that never closes: a `CodeEditor`, a `CodeViewer`, a `MultiEditor`
+with two tabs, a `DiffViewer`, an editor in a modal, and the survivor's history (a diff in a modal).
+After every closing it checks completion and hover in the survivor; after each round it checks that
+editors, diff editors, models, editor DOM nodes and the popup host's children are back to the
+baseline. Any page error, console error or failed request fails it.
+
+```bash
+dotnet build Tesserae.Monaco.Sample/Tesserae.Monaco.Sample.csproj -c Release
+(cd scripts && npm install --no-save playwright@1.56.1)
+node scripts/lifecycle-check.mjs --rounds 3            # or pass a site dir, e.g. the Debug tps/
+```
+
+Here, where Playwright is already installed, `PLAYWRIGHT_MODULE=/opt/node-tools/node_modules/playwright`
+skips the install. Three rounds take about 20 seconds.
+
+**The order of the round is the test.** Monaco consults some page-wide state only the first time an
+editor needs it: an editor builds its suggest widget the first time completion is asked for. The
+hover-delegate bug above only threw in an editor building that widget *after* a diff closed, and only
+while the diff was the newest editor on the page. A first version of this check completed in the
+survivor at page load and passed against the unfixed bundle. So the round holds back each editor's
+first completion until just after a diff closes, and opens the diff on its own button after the other
+editors, which makes it the newest editor deterministically. Verified both ways: against the bundle
+from before the hover-delegate fix it fails at both closings with `InstantiationService has been
+disposed`, and with `DiffViewer` no longer disposing its models it fails the models baseline (5, then
+9, against 1).
+
+What it does not see: a provider registration leaked on a dead model. Each provider gates on its own
+model and answers nothing for another, so a leak is invisible from the page, and Monaco does not expose
+its registries. The models count is the nearest proxy.
 
 Build in **Release** at least once before shipping: Transpose selects `.min.js` resources only there,
 so a Debug-only pass does not prove the minified resource set is wired up.
