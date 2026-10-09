@@ -1,0 +1,79 @@
+name: Lifecycle check
+
+# Builds the sample in Release and drives its Lifecycle page in headless Chromium through several
+# rounds of opening and closing every kind of Monaco surface (scripts/lifecycle-check.mjs). Fails if
+# anything is left behind - editors, diff editors, models, editor DOM, popup-host children - or if
+# anything still open stops working, or if any page error, console error or failed request appears.
+#
+# The build half is the same as pages.yml's, deliberately: .NET 10, Node 22, Transpose.Compiler as a
+# global tool, the Monaco bundle as its own step, then a Release build.
+
+on:
+  pull_request:
+    paths:
+      - 'Tesserae.Monaco/**'
+      - 'Tesserae.Monaco.Sample/**'
+      - 'Tesserae.Monaco.slnx'
+      - 'scripts/lifecycle-check.mjs'
+      - '.github/workflows/lifecycle.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'Tesserae.Monaco/**'
+      - 'Tesserae.Monaco.Sample/**'
+      - 'Tesserae.Monaco.slnx'
+      - 'scripts/lifecycle-check.mjs'
+      - '.github/workflows/lifecycle.yml'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lifecycle-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lifecycle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
+        with:
+          dotnet-version: 10.x
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: Tesserae.Monaco/package-lock.json
+
+      - name: Install the Transpose compiler
+        run: |
+          dotnet tool update --global Transpose.Compiler
+          echo "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
+
+      - name: Bundle Monaco
+        run: |
+          npm ci --no-audit --no-fund
+          npm run bundle
+        working-directory: Tesserae.Monaco
+
+      - name: Build the sample (Release)
+        run: dotnet build Tesserae.Monaco.Sample/Tesserae.Monaco.Sample.csproj -c Release
+
+      # Installed beside the script, not in Tesserae.Monaco/, so it never reaches the package's
+      # lock file. Pinned exactly, like monaco-editor.
+      - name: Install Playwright and Chromium
+        run: |
+          npm install --no-save --no-audit --no-fund playwright@1.56.1
+          npx playwright install --with-deps chromium
+        working-directory: scripts
+
+      - name: Run the lifecycle check
+        run: node scripts/lifecycle-check.mjs --rounds 3
