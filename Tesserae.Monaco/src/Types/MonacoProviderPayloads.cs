@@ -35,8 +35,8 @@ namespace Tesserae.Monaco
         /// <summary>Which kinds this provider offers, e.g. <c>"quickfix"</c> or <c>"refactor"</c>.</summary>
         public string[] providedCodeActionKinds;
 
-        /// <summary>Must resolve to a <see cref="CodeActionList"/>.</summary>
-        public Func<ITextModel, TextRange, ICodeActionContext, object> provideCodeActions;
+        /// <summary>Must resolve to a <see cref="CodeActionList"/>. Asked on every caret move, and cancelled by the next one.</summary>
+        public Func<ITextModel, TextRange, ICodeActionContext, ICancellationToken, object> provideCodeActions;
     }
 
     /// <summary>What Monaco passes a code-action provider: the markers under the range it asked about.</summary>
@@ -111,8 +111,8 @@ namespace Tesserae.Monaco
     [ObjectLiteral]
     public class CodeLensProvider
     {
-        /// <summary>Must resolve to a <see cref="CodeLensList"/>.</summary>
-        public Func<ITextModel, object> provideCodeLenses;
+        /// <summary>Must resolve to a <see cref="CodeLensList"/>. Cancelled when the text changes again.</summary>
+        public Func<ITextModel, ICancellationToken, object> provideCodeLenses;
 
         /// <summary>Fills in a lens that was handed over without a command. Returning it unchanged is fine.</summary>
         public Func<ITextModel, MonacoCodeLens, object> resolveCodeLens;

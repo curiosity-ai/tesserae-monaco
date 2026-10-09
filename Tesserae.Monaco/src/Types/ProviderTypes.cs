@@ -1,3 +1,4 @@
+using System.Threading;
 using Transpose;
 using Transpose.Core;
 
@@ -91,11 +92,19 @@ namespace Tesserae.Monaco
         /// <summary>The markers overlapping <see cref="Range"/>.</summary>
         public CodeMarker[] Markers { get; }
 
-        internal CodeActionContext(string text, TextRange range, CodeMarker[] markers)
+        /// <summary>
+        /// Fires when Monaco no longer wants the answer - it asks again on every caret move, cancelling the
+        /// last request. Hand it to whatever the handler awaits (a fetch, above all) so a superseded request
+        /// is aborted rather than computed and thrown away.
+        /// </summary>
+        public CancellationToken CancellationToken { get; }
+
+        internal CodeActionContext(string text, TextRange range, CodeMarker[] markers, CancellationToken cancellationToken)
         {
-            Text    = text;
-            Range   = range;
-            Markers = markers ?? new CodeMarker[0];
+            Text              = text;
+            Range             = range;
+            Markers           = markers ?? new CodeMarker[0];
+            CancellationToken = cancellationToken;
         }
     }
 

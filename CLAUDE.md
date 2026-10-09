@@ -832,6 +832,18 @@ These were learned the hard way in Mosaik; don't simplify them away.
   a split view. The sample's **Modal** page exists to catch regressions here.
 - **The hover provider honours Monaco's cancellation token.** Monaco cancels a hover as soon as the
   pointer moves; resolving late flashes a stale tooltip over the wrong symbol.
+- **Code actions and code lenses hand Monaco's cancellation to the host as a `CancellationToken`.**
+  Monaco asks for code actions about 250ms after every caret move, and for lenses after every pause in
+  typing, cancelling the request before each time. A host that answers from a server needs that
+  cancellation to reach its fetch, or every request the user has already moved past is still computed
+  in full. `CodeActionContext.CancellationToken` and the `OnCodeLenses((text, token) => ...)` overload
+  carry it, through `MonacoCancellation` (Monaco's token bridged onto a `CancellationTokenSource`, not
+  disposed so a token the host linked never turns into an `ObjectDisposedException`). An
+  `OperationCanceledException` out of the handler after cancellation answers an empty list, because
+  Monaco logs any other rejected provider promise as an error. Measured on the Code Actions page, whose
+  handler waits 300ms on the token: caret moves 270ms apart between the two TODOs gave 1 answered and 5
+  cancelled, with a clean console. 400ms apart gave 6 answered: Monaco only cancels when its *next*
+  request fires, so a handler faster than the debounce never sees one.
 - **A completion provider with no `triggerCharacters` auto-triggers on word characters only.** So a
   member list registered without `"."` appears one letter *after* the dot rather than at it, which
   reads as a language service that does not know about members rather than as a missing setting.
