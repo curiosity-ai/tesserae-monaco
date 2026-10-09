@@ -177,6 +177,16 @@ would pick a classic `<script>`, and the entry's `import` statements would be a 
 Nothing loads until a component mounts (or a host calls `MonacoEditor.LoadAsync()`), so a page with
 no editor on it pays nothing at all.
 
+**What ships is minified, and built from the npm package itself.** Every esbuild pass in the script
+runs with `minify: true` (the entry, its chunks, the five workers) and the CSS is minified before it
+is inlined; no source maps are emitted. The input is `node_modules/monaco-editor/esm/vs/...`, the
+registry tarball `package-lock.json` pins with its integrity hash, and the script adds only the
+MonacoEnvironment module and the `window.monaco` entry wrapper, never a patched copy of Monaco's
+code. Monaco's own prebuilt `min/` folder is the AMD build and is not usable (see above).
+`ts.worker.js` still has ~67k line breaks: they are TypeScript's `lib.*.d.ts` text, which the worker
+carries as string data, not unminified code. Both pipelines install with `npm ci` for that reason, and
+a clean `npm ci && npm run bundle` was verified byte-identical to the `monaco/` folder in the nupkg.
+
 If you bump the `monaco-editor` pin, re-run the browser verification below — worker entry-point paths
 and the CSS-import situation have both changed between minor versions.
 

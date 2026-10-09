@@ -55,11 +55,13 @@ steps:
 # Bundle Monaco's ESM build into the scripts the package ships (also runs as an MSBuild target
 # during the build, but doing it explicitly here makes the produced artifact visible in the logs).
 # Monaco is not vendored in this repo - it is restored from the pinned npm package every build.
+# `npm ci`, not `npm install`: it installs exactly the registry tarballs package-lock.json pins
+# (integrity-checked), so the shipped bundle is built from the same monaco-editor every time.
 - task: CmdLine@2
   displayName: 'bundle monaco js'
   inputs:
     script: |
-      npm install --no-audit --no-fund
+      npm ci --no-audit --no-fund
       npm run bundle
     workingDirectory: '$(Build.SourcesDirectory)/Tesserae.Monaco/'
 
