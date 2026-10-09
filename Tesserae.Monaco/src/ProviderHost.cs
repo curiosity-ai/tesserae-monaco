@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Threading;
 using System.Threading.Tasks;
 using Transpose;
 using Tesserae;
@@ -145,15 +146,18 @@ namespace Tesserae.Monaco
 
         #region Code actions
 
-        /// <summary>Quick fixes and refactorings, offered through the lightbulb.</summary>
+        /// <summary>
+        /// Quick fixes and refactorings, offered through the lightbulb. Monaco asks on every caret move and
+        /// cancels the previous request; the handler sees that as <see cref="CodeActionContext.CancellationToken"/>.
+        /// </summary>
         public void RegisterCodeActions(Func<CodeActionContext, Task<CodeAction[]>> handler, string[] kinds)
         {
             Keep(MonacoApi.languages.registerCodeActionProvider(_language, new CodeActionProvider
             {
                 providedCodeActionKinds = kinds ?? new[] { "quickfix" },
 
-                provideCodeActions = (model, range, context) =>
-                    OwnsModel(model) ? MonacoEditor.AsPromise(BuildCodeActionsAsync(handler, model, range, context)) : null
+                provideCodeActions = (model, range, context, token) =>
+                    OwnsModel(model) ? MonacoEditor.AsPromise(BuildCodeActionsAsync(handler, model, range, context, token)) : null
             }));
         }
 
@@ -161,10 +165,27 @@ namespace Tesserae.Monaco
             Func<CodeActionContext, Task<CodeAction[]>> handler,
             ITextModel                                  model,
             TextRange                                   range,
-            ICodeActionContext                          context)
+            ICodeActionContext                          context,
+            ICancellationToken                          token)
         {
             var markers = context?.markers ?? new CodeMarker[0];
-            var actions = await handler(new CodeActionContext(model.getValue(), range, markers));
+
+            CodeAction[] actions;
+
+            using (var cancellation = new MonacoCancellation(token))
+            {
+                if (cancellation.IsCancellationRequested) return NoCodeActions();
+
+                try
+                {
+                    actions = await handler(new CodeActionContext(model.getValue(), range, markers, cancellation.Token));
+                }
+                catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+                {
+                    // Monaco logs a rejected provider promise as a provider error; one it cancelled is not.
+                    return NoCodeActions();
+                }
+            }
 
             var converted = new List<MonacoCodeAction>();
 
@@ -188,9 +209,11 @@ namespace Tesserae.Monaco
                 converted.Add(converting);
             }
 
-            // An empty list still has to be a disposable list, or Monaco logs a provider error.
             return new CodeActionList { actions = Script.ToArray(converted.ToArray()), dispose = NOTHING_TO_DISPOSE };
         }
+
+        // An empty list still has to be a disposable list, or Monaco logs a provider error.
+        private static CodeActionList NoCodeActions() => new CodeActionList { actions = Script.ToArray(new MonacoCodeAction[0]), dispose = NOTHING_TO_DISPOSE };
 
         private static WorkspaceTextEdit[] ToWorkspaceEdits(ITextModel model, TextEdit[] edits)
         {
@@ -394,9 +417,14 @@ namespace Tesserae.Monaco
 
         /// <summary>
         /// Clickable annotations above a line. <paramref name="onClick"/> is called with the item the user
-        /// clicked; Monaco routes it through a command, which is registered here.
+        /// clicked; Monaco routes it through a command, which is registered here. The token fires when Monaco
+        /// stops wanting the lenses - the text changed again, or the editor went away.
         /// </summary>
         public void RegisterCodeLenses(Func<string, Task<CodeLensItem[]>> handler, Action<CodeLensItem> onClick)
+            => RegisterCodeLenses((text, _) => handler(text), onClick);
+
+        /// <inheritdoc cref="RegisterCodeLenses(Func{string, Task{CodeLensItem[]}}, Action{CodeLensItem})"/>
+        public void RegisterCodeLenses(Func<string, CancellationToken, Task<CodeLensItem[]>> handler, Action<CodeLensItem> onClick)
         {
             // The lenses last handed out, so a click resolves back to the item the host gave us rather
             // than to an index into an array Monaco owns.
@@ -413,8 +441,8 @@ namespace Tesserae.Monaco
 
             Keep(MonacoApi.languages.registerCodeLensProvider(_language, new CodeLensProvider
             {
-                provideCodeLenses = model =>
-                    OwnsModel(model) ? MonacoEditor.AsPromise(BuildCodeLensesAsync(handler, model, commandId, items => provided = items)) : null,
+                provideCodeLenses = (model, token) =>
+                    OwnsModel(model) ? MonacoEditor.AsPromise(BuildCodeLensesAsync(handler, model, token, commandId, items => provided = items)) : null,
 
                 resolveCodeLens = (model, lens) => lens
             }));
@@ -423,12 +451,27 @@ namespace Tesserae.Monaco
         private static int _lensSequence;
 
         private static async Task<object> BuildCodeLensesAsync(
-            Func<string, Task<CodeLensItem[]>> handler,
-            ITextModel                         model,
-            string                             commandId,
-            Action<CodeLensItem[]>             remember)
+            Func<string, CancellationToken, Task<CodeLensItem[]>> handler,
+            ITextModel                                            model,
+            ICancellationToken                                    token,
+            string                                                commandId,
+            Action<CodeLensItem[]>                                remember)
         {
-            var items = await handler(model.getValue()) ?? new CodeLensItem[0];
+            CodeLensItem[] items;
+
+            using (var cancellation = new MonacoCancellation(token))
+            {
+                if (cancellation.IsCancellationRequested) return NoCodeLenses();
+
+                try
+                {
+                    items = await handler(model.getValue(), cancellation.Token) ?? new CodeLensItem[0];
+                }
+                catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+                {
+                    return NoCodeLenses();
+                }
+            }
 
             remember(items);
 
@@ -455,6 +498,8 @@ namespace Tesserae.Monaco
 
             return new CodeLensList { lenses = Script.ToArray(lenses.ToArray()), dispose = NOTHING_TO_DISPOSE };
         }
+
+        private static CodeLensList NoCodeLenses() => new CodeLensList { lenses = Script.ToArray(new MonacoCodeLens[0]), dispose = NOTHING_TO_DISPOSE };
 
         /// <summary>Custom foldable regions, replacing Monaco's indentation-based guess.</summary>
         public void RegisterFoldingRanges(Func<string, Task<FoldingRange[]>> handler)
