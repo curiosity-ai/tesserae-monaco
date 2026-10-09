@@ -210,6 +210,18 @@ modal builds its diff (3 editors on the page); the modal page's editor mounts; t
 three tabs with three live editors; the document-settings overlay opens. The staged Pages site served
 one directory down (`/tesserae-monaco/`) walks clean as well.
 
+**The package pins are floors, so they follow the consumer, not the newest release.** A
+`PackageReference` in a packable project becomes a `>=` dependency in the nuspec, and a consumer that
+pins an older Tesserae than this package asks for gets NuGet's downgrade error (NU1605). So Tesserae is
+pinned at the version Mosaik's front-end compiles against (`2026.10.71905`), not at whatever is
+latest; `Transpose.BCL`, `Transpose.Core` and the SDK match Mosaik's pins exactly. Raise them together
+with the consumer, and only past a version whose members this package actually uses. Nothing pins
+`<LangVersion>`: the Transpose SDK overwrites it with the one version `tps` compiles at.
+
+On the consuming side nothing else is needed: a plain `PackageReference` to `Tesserae.Monaco`, and the
+app's own `outputBy: "Module"`. The package's `buildTransitive` targets copy Monaco into
+`assets/js/monaco` and the compiler picks the variant of the C# output, as for Tesserae and GraphKit.
+
 ## Monaco assets are NOT Transpose resources
 
 This is the trap to avoid. `tps.json` declares no resources at all. Monaco is

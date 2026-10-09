@@ -211,7 +211,7 @@ Nothing outstanding. The one entry that lived here is now fixed:
       modal keyframes no longer start at a zero scale. Measurements in [CLAUDE.md](CLAUDE.md).
 
 The Tesserae blocker that stopped the sample rendering while this was first built is **resolved
-upstream. The pin is now **2026.10.72073**, which ships as chunked modules, and this package and the
+upstream. The pin is now **2026.10.71905**, which ships as chunked modules, and this package and the
 sample are built the same way (`outputBy: "Module"`); see [CLAUDE.md](CLAUDE.md).
 
 ## Deliberately not done
