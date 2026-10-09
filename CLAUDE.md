@@ -1029,7 +1029,7 @@ Two consequences of a page being rebuilt on every visit, both of which cost a de
   `LoadAsync()`, so on the Colorize page — highlighted markup and nothing else — `WhenLoaded(...)` would
   queue a callback that nothing ever runs. It calls `MonacoEditor.LoadAsync()` for that reason.
 
-`**Tesserae's custom themes work with no package change.** `TesseraeThemeColors()` reads `Theme.*` through
+**Tesserae's custom themes work with no package change.** `TesseraeThemeColors()` reads `Theme.*` through
 `Color.EvalVar`, which resolves against the body, so a custom theme's `--tss-*` variables (the
 `tss-theme-curiosity` root class from `Tesserae.Themes.Curiosity`) are picked up like any other. The one
 rule is ordering: `await Theme.SetCustomTheme(...)` first, *then* `DefineThemes()` and `ApplyTheme()`, since
@@ -1040,7 +1040,7 @@ backgrounds and the link colour follow (`#f9fafb`/`#ffffff` default light, `#ece
 light, `#161a1f`/`#111418` Curiosity dark), diff and tokens render, console clean. Curiosity needs Tesserae
 2026.10.x, which moves `Transpose.Core`/`BCL` to 26.9.5838/5840.
 
-MonacoEditor.ApplyTheme()` alone is not enough when the theme changes at runtime. The editor
+`MonacoEditor.ApplyTheme()` alone is not enough when the theme changes at runtime. The editor
 background is baked into the theme *definition*, which is derived from the Tesserae colours in force
 when `DefineThemes()` last ran — so applying without redefining leaves a dark editor painted light.
 Call `DefineThemes()` then `ApplyTheme()`, which is what the sidebar's sun/moon button and the
