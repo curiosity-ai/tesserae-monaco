@@ -94,8 +94,9 @@ Four things that make the sub-path work, none of which needed a change to publis
 
 Two build details the workflow does not leave to chance:
 
-- **Release, not Debug.** Transpose only selects the `.min.js` resource set in Release, so a Debug
-  publish would serve a variant nothing else verifies.
+- **Release, not Debug.** A Release site is the chunked module build (`outputBy: "Module"`), which is
+  how every consumer of this package ships; a Debug site is one readable bundle and is never chunked,
+  so a Debug publish would serve a variant nothing else verifies.
 - **`npm ci`, not `npm install`.** The `BundleMonaco` MSBuild target would run `npm install` itself,
   but `npm ci` installs exactly what `package-lock.json` pins, which side-steps the `.npmrc`
   `min-release-age` cooldown entirely — that only governs `npm install` resolution, and only on
@@ -176,21 +177,74 @@ would pick a classic `<script>`, and the entry's `import` statements would be a 
 Nothing loads until a component mounts (or a host calls `MonacoEditor.LoadAsync()`), so a page with
 no editor on it pays nothing at all.
 
+**What ships is minified, and built from the npm package itself.** Every esbuild pass in the script
+runs with `minify: true` (the entry, its chunks, the five workers) and the CSS is minified before it
+is inlined; no source maps are emitted. The input is `node_modules/monaco-editor/esm/vs/...`, the
+registry tarball `package-lock.json` pins with its integrity hash, and the script adds only the
+MonacoEnvironment module and the `window.monaco` entry wrapper, never a patched copy of Monaco's
+code. Monaco's own prebuilt `min/` folder is the AMD build and is not usable (see above).
+`ts.worker.js` still has ~67k line breaks: they are TypeScript's `lib.*.d.ts` text, which the worker
+carries as string data, not unminified code. Both pipelines install with `npm ci` for that reason, and
+a clean `npm ci && npm run bundle` was verified byte-identical to the `monaco/` folder in the nupkg.
+
 If you bump the `monaco-editor` pin, re-run the browser verification below — worker entry-point paths
 and the CSS-import situation have both changed between minor versions.
 
+## The package ships a module entry, not just bundles
+
+`tps.json` sets `"outputBy": "Module"`. For a package that makes `tps --emit-package` embed every
+variant of the compiled C#, tagged so the consuming site picks one:
+
+| Variant | Embedded as | Taken by |
+|---|---|---|
+| `Formatted` | `Tesserae.Monaco.js` (+ `.meta.js`) | a Debug site (never chunked) |
+| `Minified` | `Tesserae.Monaco.min.js` (+ `.meta.min.js`) | a Release site without `outputBy: "Module"` |
+| `ModuleEntry` | `Tesserae.Monaco.mjs`, extracted as `Tesserae.Monaco.js` | a Release site with `outputBy: "Module"` |
+| `ModuleChunk` | `chunks/Tesserae.Monaco/c<hash>.mjs` (4 today, all deferred) | the same |
+
+Without it the package carried only the first two, and a chunked Release app (every Curiosity
+front-end, and Tesserae itself, which ships chunks) evaluated a classic bundle against a Tesserae that
+lives in ES modules. Debug cannot catch that, since a Debug site is never chunked. Nothing else is
+declared: the compiler embeds all four itself, and re-listing `Tesserae.Monaco.js` under `resources`
+is the Bridge-era spelling that now contributes only a load flag. `outputFormatting` no longer exists;
+the build decides the shape.
+
+**The sample is built the same way**, so the gallery's Release build (and the Pages site) is the
+chunked configuration a consumer runs: `index.html` loads `tss.js`, `Tesserae.Monaco.js` and `app.js`
+as `type="module"`, and pages are created with `Activator.CreateInstanceAsync`, which fetches a page's
+chunk before constructing it. Verified in Chromium, Release (chunked) and Debug (one bundle) side by
+side with identical results: all 34 pages by hash navigation with no page error and no failed request
+(the only 404 is `/favicon.ico`); completion lists `Greet`/`Greeter` and inserts on accept; a real
+mouse hover renders the markdown documentation; the diff's worker decorations arrive (22); the history
+modal builds its diff (3 editors on the page); the modal page's editor mounts; the multi-editor opens
+three tabs with three live editors; the document-settings overlay opens. The staged Pages site served
+one directory down (`/tesserae-monaco/`) walks clean as well.
+
+**The package pins are floors, so they follow the consumer, not the newest release.** A
+`PackageReference` in a packable project becomes a `>=` dependency in the nuspec, and a consumer that
+pins an older Tesserae than this package asks for gets NuGet's downgrade error (NU1605). So Tesserae is
+pinned at the version Mosaik's front-end compiles against (`2026.10.71905`), not at whatever is
+latest; `Transpose.BCL`, `Transpose.Core` and the SDK match Mosaik's pins exactly. Raise them together
+with the consumer, and only past a version whose members this package actually uses. Nothing pins
+`<LangVersion>`: the Transpose SDK overwrites it with the one version `tps` compiles at.
+
+On the consuming side nothing else is needed: a plain `PackageReference` to `Tesserae.Monaco`, and the
+app's own `outputBy: "Module"`. The package's `buildTransitive` targets copy Monaco into
+`assets/js/monaco` and the compiler picks the variant of the C# output, as for Tesserae and GraphKit.
+
 ## Monaco assets are NOT Transpose resources
 
-This is the trap to avoid. `tps.json` deliberately declares only the four self-JS resources. Monaco is
+This is the trap to avoid. `tps.json` declares no resources at all. Monaco is
 packed into the nupkg under `monaco/` and copied into the consumer's output by
 `buildTransitive/Tesserae.Monaco.targets`. Three reasons it cannot be a `resources` entry:
 
 - Transpose emits a `<script>` tag for every `.js` resource. Eagerly injecting `monaco.js`, its
   chunks and the workers both breaks them and costs megabytes on first paint — and a classic
   `<script>` tag cannot evaluate the module entry at all.
-- `"outputFormatting": "Both"` renames resources into `.min.js` variants, so a file cannot keep the
-  name its own loader expects.
-- The `files` globs are single-level (`*`, not `**`), so a nested tree needs one entry per folder.
+- A `.js` resource is paired with a `.min.js` variant by name, and esbuild's chunk names are baked
+  into the entry's `import` statements, so a renamed file is a 404.
+- Monaco's chunks are esbuild's, named and linked by esbuild. They cannot ride along as Transpose
+  module chunks, which the compiler names after the hash of its own output and links itself.
 
 Mosaik works around the injection problem with a `monaco#name.js.dontload` suffix that its **server**
 strips at runtime (`Library/Curiosity.Shared.Library/FrontEndWatcher.cs`). A standalone package has no
@@ -388,9 +442,8 @@ goes in it is **compose Tesserae, do not draw**. Everything visible is a Tessera
 and the package ships no stylesheet of its own; a status tint is `Tree.Item.IconColor`, a tab title is
 an `HStack` of `Icon` and `TextBlock`. When something generic is missing from Tesserae, it goes into
 Tesserae: this shell is why `Pivot` closes on a middle click and selects the neighbour on close, and why
-`Tree` has `Filter` and `Item.IconColor`. **The Tesserae pin therefore has to carry those** - the
-`2026.9.70280-local` pin is a placeholder for the Tesserae release that does, to be replaced with the
-published version number once it exists; the branch was verified against a locally packed Tesserae.
+`Tree` has `Filter` and `Item.IconColor`. **The Tesserae pin therefore has to carry those**, which every
+published Tesserae from `2026.9.70414` on does.
 
 Decisions that shape it, each the cheapest way to a behaviour a user notices:
 
@@ -832,6 +885,18 @@ These were learned the hard way in Mosaik; don't simplify them away.
   a split view. The sample's **Modal** page exists to catch regressions here.
 - **The hover provider honours Monaco's cancellation token.** Monaco cancels a hover as soon as the
   pointer moves; resolving late flashes a stale tooltip over the wrong symbol.
+- **Code actions and code lenses hand Monaco's cancellation to the host as a `CancellationToken`.**
+  Monaco asks for code actions about 250ms after every caret move, and for lenses after every pause in
+  typing, cancelling the request before each time. A host that answers from a server needs that
+  cancellation to reach its fetch, or every request the user has already moved past is still computed
+  in full. `CodeActionContext.CancellationToken` and the `OnCodeLenses((text, token) => ...)` overload
+  carry it, through `MonacoCancellation` (Monaco's token bridged onto a `CancellationTokenSource`, not
+  disposed so a token the host linked never turns into an `ObjectDisposedException`). An
+  `OperationCanceledException` out of the handler after cancellation answers an empty list, because
+  Monaco logs any other rejected provider promise as an error. Measured on the Code Actions page, whose
+  handler waits 300ms on the token: caret moves 270ms apart between the two TODOs gave 1 answered and 5
+  cancelled, with a clean console. 400ms apart gave 6 answered: Monaco only cancels when its *next*
+  request fires, so a handler faster than the debounce never sees one.
 - **A completion provider with no `triggerCharacters` auto-triggers on word characters only.** So a
   member list registered without `"."` appears one letter *after* the dot rather than at it, which
   reads as a language service that does not know about members rather than as a missing setting.
@@ -1032,11 +1097,23 @@ Two consequences of a page being rebuilt on every visit, both of which cost a de
   `LoadAsync()`, so on the Colorize page — highlighted markup and nothing else — `WhenLoaded(...)` would
   queue a callback that nothing ever runs. It calls `MonacoEditor.LoadAsync()` for that reason.
 
-`MonacoEditor.ApplyTheme()` alone is not enough when the theme changes at runtime. The editor
+**The package follows Tesserae's theme by itself.** Tesserae is a dependency, so once Monaco loads it
+subscribes to `Theme.OnThemeChanged` and answers every `Theme.Light()`, `Dark()`, `SetCustomTheme(...)` and
+`Theme.Build()...Apply()` with `DefineThemes()` then `ApplyTheme()`. A host switches Tesserae's theme and
+does nothing else. A custom theme such as `Tesserae.Themes.Curiosity` (root class `tss-theme-curiosity`)
+needs no special case: `TesseraeThemeColors()` reads `Theme.*` through `Color.EvalVar`, which resolves
+against the body, and `SetCustomTheme` raises the event only after the stylesheet that redefines the
+`--tss-*` variables is in. The sidebar's palette button and `?theme=curiosity` exercise it in the sample.
+Measured in Chromium across default/Curiosity x light/dark, at load and by switching at runtime: the editor
+and hover backgrounds and the link colour follow (`#f9fafb`/`#ffffff` default light, `#ecedeb`/`#f4f4f2`
+Curiosity light, `#161a1f`/`#111418` Curiosity dark), diff and tokens render, console clean. Curiosity needs
+Tesserae 2026.10.x, which moves `Transpose.Core`/`BCL` to 26.9.5838/5840.
+
+`ApplyTheme()` alone would not be enough when the theme changes at runtime. The editor
 background is baked into the theme *definition*, which is derived from the Tesserae colours in force
 when `DefineThemes()` last ran — so applying without redefining leaves a dark editor painted light.
-Call `DefineThemes()` then `ApplyTheme()`, which is what the sidebar's sun/moon button and the
-Languages and Themes page both do.
+That is why the theme listener calls both; a host only calls them itself after something Tesserae
+does not announce, like `AddTokenColors`.
 
 The same applies to `AddTokenColors`, and it is easy to miss because it depends on which page was
 opened first. Token colours are folded into the themes when those are *defined*, which happens once as
@@ -1191,8 +1268,8 @@ What it does not see: a provider registration leaked on a dead model. Each provi
 model and answers nothing for another, so a leak is invisible from the page, and Monaco does not expose
 its registries. The models count is the nearest proxy.
 
-Build in **Release** at least once before shipping: Transpose selects `.min.js` resources only there,
-so a Debug-only pass does not prove the minified resource set is wired up.
+Build in **Release** at least once before shipping: only a Release site is chunked, so a Debug-only
+pass never loads the package's module entry or its chunks.
 
 Serve the sample with `dotnet serve`. It is a long-running server that does not exit on its own, so
 start it in the background and poll the port rather than waiting for the process to finish.

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Transpose;
 using Tesserae;
@@ -438,6 +439,8 @@ namespace Tesserae.Monaco
         /// offer to fix it.
         ///
         /// Filter on the context's markers to offer a fix only for a problem you actually reported.
+        /// Monaco asks on every caret move and cancels the request before; pass the context's
+        /// <see cref="CodeActionContext.CancellationToken"/> to anything the handler awaits.
         /// </summary>
         public CodeEditor OnCodeActions(Func<CodeActionContext, Task<CodeAction[]>> handler, string[] kinds = null)
         {
@@ -572,6 +575,18 @@ namespace Tesserae.Monaco
         /// receives the item the user clicked.
         /// </summary>
         public CodeEditor OnCodeLenses(Func<string, Task<CodeLensItem[]>> handler, Action<CodeLensItem> onClick = null)
+        {
+            if (handler is object) _providers.Add(host => host.RegisterCodeLenses(handler, onClick));
+
+            return this;
+        }
+
+        /// <summary>
+        /// As <see cref="OnCodeLenses(Func{string, Task{CodeLensItem[]}}, Action{CodeLensItem})"/>, with the
+        /// token Monaco cancels when it stops wanting the answer - the text changed again, or the editor
+        /// went away. Pass it to the fetch: lenses are re-requested on every pause in typing.
+        /// </summary>
+        public CodeEditor OnCodeLenses(Func<string, CancellationToken, Task<CodeLensItem[]>> handler, Action<CodeLensItem> onClick = null)
         {
             if (handler is object) _providers.Add(host => host.RegisterCodeLenses(handler, onClick));
 
