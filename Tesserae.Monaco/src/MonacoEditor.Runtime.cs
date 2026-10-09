@@ -101,6 +101,8 @@ namespace Tesserae.Monaco
 
             DefineThemes();
 
+            Theme.OnThemeChanged += OnTesseraeThemeChanged;
+
             // Anything else queued while Monaco was still loading - language-service configuration, a
             // host's own MonacoApi call - runs now, in the order it was requested. One that throws must
             // not strand the rest, or a single bad schema takes the whole editor down with it.
@@ -308,6 +310,16 @@ namespace Tesserae.Monaco
                     if (!string.IsNullOrWhiteSpace(pair.Key) && !string.IsNullOrWhiteSpace(pair.Value)) colors.Set(pair.Key, pair.Value);
                 }
             }
+        }
+
+        // Tesserae is a dependency, so its theme is the source of truth: every Light(), Dark(),
+        // SetCustomTheme(...) and Theme.Build()...Apply() re-derives Monaco's two themes and moves the
+        // live editors onto the matching one. A custom theme raises it only once its stylesheet is in,
+        // so the colours read here are the new look's.
+        private static void OnTesseraeThemeChanged()
+        {
+            DefineThemes();
+            ApplyTheme();
         }
 
         /// <summary>The theme name matching the active Tesserae theme.</summary>

@@ -1029,11 +1029,23 @@ Two consequences of a page being rebuilt on every visit, both of which cost a de
   `LoadAsync()`, so on the Colorize page — highlighted markup and nothing else — `WhenLoaded(...)` would
   queue a callback that nothing ever runs. It calls `MonacoEditor.LoadAsync()` for that reason.
 
-`MonacoEditor.ApplyTheme()` alone is not enough when the theme changes at runtime. The editor
+**The package follows Tesserae's theme by itself.** Tesserae is a dependency, so once Monaco loads it
+subscribes to `Theme.OnThemeChanged` and answers every `Theme.Light()`, `Dark()`, `SetCustomTheme(...)` and
+`Theme.Build()...Apply()` with `DefineThemes()` then `ApplyTheme()`. A host switches Tesserae's theme and
+does nothing else. A custom theme such as `Tesserae.Themes.Curiosity` (root class `tss-theme-curiosity`)
+needs no special case: `TesseraeThemeColors()` reads `Theme.*` through `Color.EvalVar`, which resolves
+against the body, and `SetCustomTheme` raises the event only after the stylesheet that redefines the
+`--tss-*` variables is in. The sidebar's palette button and `?theme=curiosity` exercise it in the sample.
+Measured in Chromium across default/Curiosity x light/dark, at load and by switching at runtime: the editor
+and hover backgrounds and the link colour follow (`#f9fafb`/`#ffffff` default light, `#ecedeb`/`#f4f4f2`
+Curiosity light, `#161a1f`/`#111418` Curiosity dark), diff and tokens render, console clean. Curiosity needs
+Tesserae 2026.10.x, which moves `Transpose.Core`/`BCL` to 26.9.5838/5840.
+
+`ApplyTheme()` alone would not be enough when the theme changes at runtime. The editor
 background is baked into the theme *definition*, which is derived from the Tesserae colours in force
 when `DefineThemes()` last ran — so applying without redefining leaves a dark editor painted light.
-Call `DefineThemes()` then `ApplyTheme()`, which is what the sidebar's sun/moon button and the
-Languages and Themes page both do.
+That is why the theme listener calls both; a host only calls them itself after something Tesserae
+does not announce, like `AddTokenColors`.
 
 The same applies to `AddTokenColors`, and it is easy to miss because it depends on which page was
 opened first. Token colours are folded into the themes when those are *defined*, which happens once as

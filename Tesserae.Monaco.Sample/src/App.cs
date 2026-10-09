@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using Transpose.Core;
 using Tesserae;
+using Tesserae.Themes.Curiosity;
 using static Transpose.Core.dom;
 using static Tesserae.UI;
 
@@ -24,6 +25,28 @@ namespace Tesserae.Monaco.Sample
     internal static class App
     {
         private const string _sidebarOpenStateKey = "tss-monaco-sidebar-open-close";
+
+        private const string _themeKey = "tss-monaco-curiosity-theme";
+
+        private static bool IsCuriosity => Theme.CustomTheme is object;
+
+        // ?theme=curiosity wins, so a page can be linked to - and driven by a browser check - in either look.
+        private static bool WantsCuriosity()
+        {
+            var fromUrl = new URLSearchParams(window.location.search).get("theme");
+
+            if (fromUrl is object) return fromUrl == "curiosity";
+
+            return localStorage.getItem(_themeKey) == bool.TrueString;
+        }
+
+        private static async Task SetCuriosityAsync(bool on)
+        {
+            if (on) await Theme.SetCustomTheme(CuriosityTheme.Instance);
+            else    await Theme.ClearCustomTheme();
+
+            localStorage.setItem(_themeKey, on.ToString());
+        }
 
         private static void Main()
         {
@@ -159,16 +182,21 @@ namespace Tesserae.Monaco.Sample
                     Theme.Dark();
                     lightDark.SetIcon(UIcons.Moon).Tooltip("Dark Mode");
                 }
-
-                // Monaco keeps its own theme registry and does not watch Tesserae's, so a theme
-                // change has to be handed across. Both calls are needed: DefineThemes() re-derives
-                // the editor colours from the Tesserae theme that is now active, and ApplyTheme()
-                // switches every live editor to the one that matches it.
-                MonacoEditor.DefineThemes();
-                MonacoEditor.ApplyTheme();
             });
 
-            sidebar.AddFooter(new SidebarCommands("CONFIG", lightDark, openClose));
+            // The Curiosity custom theme restyles every component, light and dark. Monaco follows it (and
+            // the sun/moon switch) on its own.
+            var curiosity = new SidebarCommand(UIcons.Palette).Tooltip(IsCuriosity ? "Curiosity theme" : "Default theme");
+
+            curiosity.OnClick(async () =>
+            {
+                await SetCuriosityAsync(!IsCuriosity);
+                curiosity.Tooltip(IsCuriosity ? "Curiosity theme" : "Default theme");
+            });
+
+            if (WantsCuriosity()) SetCuriosityAsync(true).FireAndForget();
+
+            sidebar.AddFooter(new SidebarCommands("CONFIG", curiosity, lightDark, openClose));
 
             var groupIndex = 0;
 
