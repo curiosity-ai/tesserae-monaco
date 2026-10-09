@@ -903,6 +903,20 @@ These were learned the hard way in Mosaik; don't simplify them away.
   and nobody re-ran the 2020 case. Still present in 0.56.0 (July 2026, the latest release) and in
   VS Code `main` at the time of writing, so the guard stays until a Monaco release carries a fix; it is
   a no-op once one does. Re-check `_onEditorMouseLeave` in `contentHoverController.js` on each pin bump.
+- **Closing a diff editor broke every suggest list on the page, so the bundle pins the hover-delegate
+  factory.** `setHoverDelegateFactory` is a page-wide global, and every `StandaloneCodeEditor`
+  constructor sets it to a factory bound to *its own* instantiation service. A diff editor builds its
+  two inner editors with a child service that it disposes along with itself, so after a diff closes the
+  factory throws `InstantiationService has been disposed`, and the suggest widget (and anything else
+  that asks for a hover delegate) fails until a reload. Measured on History Persistence: open the
+  history modal, close it, trigger completion in the editor underneath. Unfixed, that throws and opens
+  no list. Fixed, the list opens and the hover shows, the same as a control run that never opened the
+  diff. This used to be fixed host-side in Mosaik (`MonacoHoverDelegates.EnsureStable()`). It lives in
+  `build/bundle-monaco.mjs` now: after each `onCodeEditorAdd` a microtask re-points the factory at the
+  root instantiation service. It has to be a microtask, because the event fires inside the base
+  constructor, before the subclass's own `setHoverDelegateFactory` call. And `withServices` is used
+  because it waits for the first editor rather than initialising the services itself. Still needed in
+  0.56.0. On a pin bump, check `standaloneCodeEditor.js` for the `setHoverDelegateFactory` call.
 - **A diff editor's two models are ours to dispose.** Monaco does not dispose models handed to
   `setModel`, so `DiffViewer` disposes them itself — the inline versions in Mosaik leak one pair per
   render.

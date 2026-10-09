@@ -168,15 +168,46 @@ window.MonacoEnvironment = window.MonacoEnvironment || {
  *
  * Without it the workers still load and still validate; only the configuration API is unreachable,
  * which is a quiet failure worth not shipping.
+ *
+ * The hover-delegate pin repairs a Monaco bug that closing a diff editor triggers. Every
+ * `StandaloneCodeEditor` constructor calls the page-wide `setHoverDelegateFactory` with the
+ * instantiation service it was built with, and a diff editor builds its two inner editors with its
+ * own *child* service, which it disposes along with itself. After that the factory throws
+ * "InstantiationService has been disposed" on every call, and the suggest widget, the hover status
+ * bar and every action bar that asks for a hover delegate fail with it until the page reloads. So
+ * after each editor is created the factory is pointed back at the root instantiation service, which
+ * lives as long as the page. `WorkbenchHoverDelegate` only needs IConfigurationService and
+ * IHoverService, both root singletons, so a delegate built there is the one any editor would have
+ * built. The microtask is load-bearing: `onCodeEditorAdd` fires from inside `CodeEditorWidget`'s
+ * constructor, before the `StandaloneCodeEditor` subclass's constructor reaches its own
+ * `setHoverDelegateFactory` call, which would otherwise overwrite the pin straight away.
+ * `withServices` waits for the first editor to initialise the services instead of initialising them
+ * itself, which would take away the one-time chance a host has to override them.
  */
 const entryModule = `
 import './monaco-environment.js';
 import * as monaco from ${JSON.stringify(join(esm, 'editor/editor.main.js'))};
+import { StandaloneServices } from ${JSON.stringify(join(esm, 'editor/standalone/browser/standaloneServices.js'))};
+import { ICodeEditorService } from ${JSON.stringify(join(esm, 'editor/browser/services/codeEditorService.js'))};
+import { IInstantiationService } from ${JSON.stringify(join(esm, 'platform/instantiation/common/instantiation.js'))};
+import { WorkbenchHoverDelegate } from ${JSON.stringify(join(esm, 'platform/hover/browser/hover.js'))};
+import { setHoverDelegateFactory } from ${JSON.stringify(join(esm, 'base/browser/ui/hover/hoverDelegateFactory.js'))};
 
 ['json', 'typescript', 'css', 'html'].forEach(function (name) {
   if (monaco[name] && !monaco.languages[name]) {
     try { monaco.languages[name] = monaco[name]; } catch (e) { /* frozen namespace: leave it */ }
   }
+});
+
+StandaloneServices.withServices(function () {
+  var root = StandaloneServices.get(IInstantiationService);
+  var pin = function () {
+    setHoverDelegateFactory(function (placement, instantHover) {
+      return root.createInstance(WorkbenchHoverDelegate, placement, { instantHover: instantHover }, {});
+    });
+  };
+
+  return StandaloneServices.get(ICodeEditorService).onCodeEditorAdd(function () { queueMicrotask(pin); });
 });
 
 window.monaco = monaco;
