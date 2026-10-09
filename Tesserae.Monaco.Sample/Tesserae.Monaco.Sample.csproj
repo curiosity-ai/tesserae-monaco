@@ -4,7 +4,6 @@
     <DefineConstants>TRANSPOSE</DefineConstants>
     <AssemblyName>app</AssemblyName>
     <RootNamespace>Tesserae.Monaco.Sample</RootNamespace>
-    <LangVersion>7.2</LangVersion>
     <MinifyLocalVariables>true</MinifyLocalVariables>
   </PropertyGroup>
 

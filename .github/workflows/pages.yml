@@ -67,8 +67,8 @@ jobs:
           npm run bundle
         working-directory: Tesserae.Monaco
 
-      # Release matters: Transpose only selects the .min.js resource set there, so a Debug build
-      # would publish a site that never exercises the minified variants.
+      # Release matters: only a Release site is chunked (outputBy: "Module"), which is how consumers
+      # ship this package; a Debug build is one readable bundle and never loads the module entry.
       - name: Build the sample (Release)
         run: dotnet build Tesserae.Monaco.Sample/Tesserae.Monaco.Sample.csproj -c Release
 
