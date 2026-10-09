@@ -1,6 +1,7 @@
 {
   "output": "$(OutDir)/tps/",
   "fileName": "app.js",
+  "outputBy": "Module",
   "html": {
     "disabled": false,
     "title": "Tesserae.Monaco Sample"
