@@ -46,13 +46,6 @@ namespace Tesserae.Monaco.Sample
             else    await Theme.ClearCustomTheme();
 
             localStorage.setItem(_themeKey, on.ToString());
-
-            // Before Monaco has loaded there is nothing to hand across - it derives its themes from the
-            // look in force when it does.
-            if (!MonacoEditor.IsLoaded) return;
-
-            MonacoEditor.DefineThemes();
-            MonacoEditor.ApplyTheme();
         }
 
         private static void Main()
@@ -189,19 +182,10 @@ namespace Tesserae.Monaco.Sample
                     Theme.Dark();
                     lightDark.SetIcon(UIcons.Moon).Tooltip("Dark Mode");
                 }
-
-                // Monaco keeps its own theme registry and does not watch Tesserae's, so a theme
-                // change has to be handed across. Both calls are needed: DefineThemes() re-derives
-                // the editor colours from the Tesserae theme that is now active, and ApplyTheme()
-                // switches every live editor to the one that matches it.
-                MonacoEditor.DefineThemes();
-                MonacoEditor.ApplyTheme();
             });
 
-            // The package's themes are derived from whichever Tesserae look is active, so the Curiosity
-            // custom theme (a restyle of every component, light and dark) has to be handed across the
-            // same way as the sun/moon switch - after the stylesheet is in, or the colours read are
-            // still the previous look's.
+            // The Curiosity custom theme restyles every component, light and dark. Monaco follows it (and
+            // the sun/moon switch) on its own.
             var curiosity = new SidebarCommand(UIcons.Palette).Tooltip(IsCuriosity ? "Curiosity theme" : "Default theme");
 
             curiosity.OnClick(async () =>

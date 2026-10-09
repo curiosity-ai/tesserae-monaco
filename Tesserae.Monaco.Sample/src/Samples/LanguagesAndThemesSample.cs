@@ -61,11 +61,11 @@ namespace Tesserae.Monaco.Sample
                .FlatSection(VStack().Children(
                     Card(VStack().WS().Children(
                         TextBlock("MonacoEditor also owns everything that is global rather than per-editor: loading the bundle (LoadAsync, IsLoaded), the language registry (GetLanguageIds, TryGetLanguageIdForExtension, RegisterLanguage), and the two themes the package derives from Tesserae's own colours."),
-                        TextBlock("The themes are tss-light and tss-dark. ActiveTheme is whichever matches Tesserae's current mode; DefineThemes() re-derives both from the colours Tesserae is using now, and ApplyTheme() switches every live editor to the matching one.").MT(8))).SetTitle("Overview")))
+                        TextBlock("The themes are tss-light and tss-dark. ActiveTheme is whichever matches Tesserae's current mode. The package listens to Tesserae's Theme.OnThemeChanged, so Theme.Light(), Theme.Dark(), SetCustomTheme(...) and Theme.Build()...Apply() re-derive both from the colours Tesserae is using now and switch every live editor to the matching one.").MT(8))).SetTitle("Overview")))
                .FlatSection(VStack().Children(
                     Card(VStack().WS().Children(
                         TextBlock("Nothing has to be loaded by hand: every component awaits LoadAsync() when it mounts. Call it yourself only when you need Monaco's globals before an editor exists - listing the languages, as this page does, or resolving an extension."),
-                        TextBlock("Call DefineThemes() and then ApplyTheme() from wherever the app switches Theme.Light() / Theme.Dark() - the sidebar's sun/moon button here does exactly that. Applying without re-defining leaves the editor painted in the colours of the theme it was loaded under, because the editor background is baked into the theme definition. Custom languages registered with a TokenColors array are folded into both themes, so they re-colour with everything else.").MT(8))).SetTitle("Best Practices")))
+                        TextBlock("Switch Tesserae's theme and nothing else - the sidebar's sun/moon and palette buttons here do exactly that. The editor background is baked into the theme definition, which is why the package re-defines the themes rather than only applying one. Call DefineThemes() and ApplyTheme() yourself only after changing something Tesserae does not announce, such as AddTokenColors. Custom languages registered with a TokenColors array are folded into both themes, so they re-colour with everything else.").MT(8))).SetTitle("Best Practices")))
                .FlatSection(VStack().Children(
                     Card(VStack().WS().Children(
                         SampleSubTitle("Themes"),
@@ -84,17 +84,10 @@ namespace Tesserae.Monaco.Sample
                .SeeAlso(typeof(CustomLanguageSample), typeof(CodeViewerSample), typeof(EditorOptionsSample));
         }
 
-        /// <summary>
-        /// The full hand-over: switch Tesserae's theme, re-derive Monaco's two themes from the
-        /// colours that are now active, then move every live editor onto the matching one.
-        /// </summary>
         private static void SwitchTheme(bool dark, Action onDone)
         {
             if (dark) Theme.Dark();
             else Theme.Light();
-
-            MonacoEditor.DefineThemes();
-            MonacoEditor.ApplyTheme();
 
             onDone();
         }
