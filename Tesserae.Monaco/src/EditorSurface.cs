@@ -782,7 +782,7 @@ namespace Tesserae.Monaco
         public EditorSurface OnCursorSelectionChanged(Action<ICursorSelectionChangedEvent> handler) => handler is null ? this : Keep(_editor.onDidChangeCursorSelection(handler));
 
         /// <summary>The content changed, with what changed and the new version id.</summary>
-        public EditorSurface OnContentChanged(Action<IContentChangedEvent> handler) => handler is null ? this : Keep(_editor.onDidChangeModelContentDetailed(handler));
+        public EditorSurface OnContentChanged(Action<IContentChangedEvent> handler) => handler is null ? this : Keep(_editor.onDidChangeModelContent(handler));
 
         /// <summary>The editor was pointed at a different model.</summary>
         public EditorSurface OnModelChanged(Action handler) => handler is null ? this : Keep(_editor.onDidChangeModel(handler));
