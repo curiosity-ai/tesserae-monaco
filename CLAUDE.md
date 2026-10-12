@@ -778,8 +778,13 @@ them:
 - **A BCL generic over one cannot be constructed.** `List<IJsDisposable>` fails the same way, inside
   `genericName`. `DisposableBag` holds `List<Action>` of release closures instead.
 
-Beyond that: two declarations cannot share a `[Name]` (the second is emitted with a `$1` suffix and
-stops matching Monaco), which is why `getOption` is wrapped once as `getNumberOption` and
+Beyond that: two declarations cannot share a `[Name]` (one of them is emitted with a `$1` suffix and
+stops matching Monaco). **Which one gets the suffix is the compiler's choice, and it can change with a
+compiler update**: `onDidChangeModelContent` was once declared both plain and, as
+`onDidChangeModelContentDetailed`, with `[Name("onDidChangeModelContent")]`. It worked while the suffix
+sat on the copy nothing called, then a newer `tps` moved it onto the copy `PersistHistory` uses and every
+editor with a history threw `onDidChangeModelContent$1 is not a function` during setup. It is declared
+once now, with the typed event, and a caller that does not want the event ignores it. That is why `getOption` is wrapped once as `getNumberOption` and
 `setSelection` takes `object` rather than having a range and a selection overload. And a C# array still
 needs `Script.ToArray` before it crosses to a worker — Transpose stamps a `$type` **function** onto
 typed arrays, and `postMessage` refuses the whole value with a `DataCloneError` that quotes a function
@@ -982,7 +987,7 @@ These were learned the hard way in Mosaik; don't simplify them away.
   constructor, before the subclass's own `setHoverDelegateFactory` call. And `withServices` is used
   because it waits for the first editor rather than initialising the services itself. Still needed in
   0.56.0. On a pin bump, check `standaloneCodeEditor.js` for the `setHoverDelegateFactory` call.
-  `scripts/lifecycle-check.mjs` guards it in CI (see "The lifecycle check" below).
+  The Lifecycle page's test guards it (see "The lifecycle test" below).
 - **A diff editor's two models are ours to dispose.** Monaco does not dispose models handed to
   `setModel`, so `DiffViewer` disposes them itself — the inline versions in Mosaik leak one pair per
   render.
@@ -1084,7 +1089,7 @@ help, inline completion, formatting, diagnostics, code actions, navigation, inla
 and colours, semantic tokens, a custom language, deferred grammars, and Monaco's bundled workers),
 **Decorations and widgets**, and **Runtime and hosting** (options, events, actions and commands,
 several documents, several *editors*, themes, a modal, remount, persisted history, the multi-editor
-shell, a document's settings, and the lifecycle page the automated check drives). The sidebar sorts groups
+shell, a document's settings, and the lifecycle page with its own test). The sidebar sorts groups
 alphabetically and pages by their `Order`.
 
 Two consequences of a page being rebuilt on every visit, both of which cost a debugging round:
@@ -1233,36 +1238,46 @@ Habits that each save a wasted round of debugging when driving these pages with 
   from the diff worker and the `greet` tokens after `RegisterLanguage` flushes; sampling immediately
   after load reports zero of either and looks like a real regression. Poll instead of sleeping once.
 
-### The lifecycle check (automated)
+### The lifecycle test (in the gallery)
 
-`scripts/lifecycle-check.mjs` is the one automated browser check, and CI runs it on every pull request
-that touches the package or the sample (`.github/workflows/lifecycle.yml`). It serves a built site
-itself, opens the **Lifecycle** page and runs several rounds of opening and closing every kind of
-surface around a *survivor* editor that never closes: a `CodeEditor`, a `CodeViewer`, a `MultiEditor`
+The **Lifecycle** page carries its own test: **Run lifecycle test** drives the page's buttons itself, from
+C# in `LifecycleSample.cs`, and writes one `ok`/`FAIL` line per check under it, with a summary
+(`passed: 114 checks`, or `FAILED: n of 114 checks`). Each of its 3 rounds opens and closes every kind
+of surface around a *survivor* editor that never closes: a `CodeEditor`, a `CodeViewer`, a `MultiEditor`
 with two tabs, a `DiffViewer`, an editor in a modal, and the survivor's history (a diff in a modal).
 After every closing it checks completion and hover in the survivor; after each round it checks that
 editors, diff editors, models, editor DOM nodes and the popup host's children are back to the
-baseline. Any page error, console error or failed request fails it.
+baseline. An uncaught error or unhandled rejection on the page during a step fails that step. It
+takes about 11 seconds.
 
-```bash
-dotnet build Tesserae.Monaco.Sample/Tesserae.Monaco.Sample.csproj -c Release
-(cd scripts && npm install --no-save playwright@1.56.1)
-node scripts/lifecycle-check.mjs --rounds 3            # or pass a site dir, e.g. the Debug tps/
-```
+Run it by hand, or from Playwright: open `#/view/Lifecycle`, click the button, and wait for
+`.tssm-lifecycle-summary` to read `passed` or `FAILED`; each line carries `tssm-lifecycle-ok` or
+`tssm-lifecycle-fail`, and a failing line is also written to the console. Leave the page alone while it
+runs: it moves the focus and opens popups.
 
-Here, where Playwright is already installed, `PLAYWRIGHT_MODULE=/opt/node-tools/node_modules/playwright`
-skips the install. Three rounds take about 20 seconds.
+How it reads Monaco from inside the page: completion is opened with `editor.trigger(...,
+"editor.action.triggerSuggest")` at the start of the document's empty last line, so every word the
+provider offers shows, and the list is read from the DOM (`.suggest-widget .monaco-list-row .label-name`)
+filtered to the widget with a non-zero `offsetHeight`, since every editor owns a hidden one in the shared
+host. Hover is `editor.action.showHover` and `.monaco-hover`. Diff editors are counted as
+`.monaco-diff-editor` nodes, because `monaco.editor.getDiffEditors` is not declared here. There is no
+keybinding check: Monaco ignores a synthetic `KeyboardEvent`, and the Multiple Editors page covers that.
 
 **The order of the round is the test.** Monaco consults some page-wide state only the first time an
 editor needs it: an editor builds its suggest widget the first time completion is asked for. The
 hover-delegate bug above only threw in an editor building that widget *after* a diff closed, and only
-while the diff was the newest editor on the page. A first version of this check completed in the
-survivor at page load and passed against the unfixed bundle. So the round holds back each editor's
-first completion until just after a diff closes, and opens the diff on its own button after the other
-editors, which makes it the newest editor deterministically. Verified both ways: against the bundle
-from before the hover-delegate fix it fails at both closings with `InstantiationService has been
-disposed`, and with `DiffViewer` no longer disposing its models it fails the models baseline (5, then
-9, against 1).
+while the diff was the newest editor on the page. A first version, which completed in the survivor
+first, passed against the unfixed bundle. So the round holds back each editor's first completion until
+just after a diff closes, and opens the diff on its own button after the other editors, which makes it
+the newest editor deterministically. Verified both ways: against the bundle from before the
+hover-delegate fix it fails 6 checks (both closings, every round) with `InstantiationService has been
+disposed`, and with `DiffViewer` no longer disposing its models it fails the baseline (models 5, 9, 13
+against 1).
+
+Its first run also found a bug nothing else had: `onDidChangeModelContent` was declared twice (see
+"Extending the typed interop"), the compiler had moved the `$1` onto the copy `PersistHistory` calls,
+and every editor with a history failed its setup, providers included. The survivor has a history, so
+its completion and hover failed from the first check.
 
 What it does not see: a provider registration leaked on a dead model. Each provider gates on its own
 model and answers nothing for another, so a leak is invisible from the page, and Monaco does not expose

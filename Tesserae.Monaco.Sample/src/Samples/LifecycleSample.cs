@@ -9,16 +9,22 @@ using static Tesserae.Monaco.Sample.SamplesHelper;
 namespace Tesserae.Monaco.Sample
 {
     /// <summary>
-    /// Every kind of surface opened and closed around one editor that stays - the page
-    /// <c>scripts/lifecycle-check.mjs</c> drives to prove that closing things leaves nothing behind and
-    /// breaks nothing that is still open.
+    /// Every kind of surface opened and closed around one editor that stays, and a test that drives
+    /// them from the page itself: rounds of opening, using and closing, checking that nothing is left
+    /// behind and that nothing still open stops working.
     /// </summary>
     [SampleDetails(Group = "Runtime and hosting", Order = 11, Icon = UIcons.ArrowsRepeat)]
     public class LifecycleSample : IComponent, ISample
     {
-        /// <summary>Stable hooks for the browser check.</summary>
-        internal const string LOG_CLASS    = "tssm-lifecycle-log";
-        internal const string COUNTS_CLASS = "tssm-lifecycle-counts";
+        /// <summary>Stable hooks for reading the page from a browser check.</summary>
+        internal const string LOG_CLASS     = "tssm-lifecycle-log";
+        internal const string COUNTS_CLASS  = "tssm-lifecycle-counts";
+        internal const string SUMMARY_CLASS = "tssm-lifecycle-summary";
+
+        private const int ROUNDS      = 3;
+        private const int POLL_MS     = 50;
+        private const int TIMEOUT_MS  = 15_000;
+        private const int POPUP_MS    = 3_000;
 
         private const string SCOPE    = "gallery:lifecycle";
         private const string DOCUMENT = "survivor.cs";
@@ -47,12 +53,20 @@ namespace Tesserae.Monaco.Sample
         private readonly List<string> _entries    = new List<string>();
         private readonly TextBlock    _log        = TextBlock("nothing yet").Small().Secondary().Class(LOG_CLASS);
         private readonly TextBlock    _counts     = TextBlock("").Small().Secondary().Class(COUNTS_CLASS);
+        private readonly TextBlock    _summary    = TextBlock("not run yet").SemiBold().Class(SUMMARY_CLASS);
+        private readonly Stack        _results    = VStack().WS();
+        private readonly List<string> _errors     = new List<string>();
         private readonly CodeEditor   _survivor;
+        private readonly Button       _run;
 
         private CodeEditor  _alpha;
         private CodeViewer  _viewer;
         private DiffViewer  _diff;
         private MultiEditor _multi;
+        private Modal       _modal;
+        private bool        _running;
+        private int         _checks;
+        private int         _failures;
 
         public LifecycleSample()
         {
@@ -81,6 +95,8 @@ namespace Tesserae.Monaco.Sample
                 }
             });
 
+            _run = Button("Run lifecycle test").Primary().SetIcon(UIcons.Play).OnClick(() => RunAsync(ROUNDS).FireAndForget());
+
             _content = SectionStack().Secondary()
                .SampleTitle(typeof(LifecycleSample), UIcons.ArrowsRepeat, "Open everything, close everything, and keep the one that stays working")
                .FlatSection(VStack().Children(
@@ -92,6 +108,13 @@ namespace Tesserae.Monaco.Sample
                         TextBlock("Close what you open. Removing a component from the DOM tears its editor down, but the component re-arms itself and rebuilds when it is added back - call .Dispose() when it is finished with for good. A diff editor disposes the two models it was given; a model you created yourself with MonacoEditor.CreateModel(...) is yours to dispose."),
                         TextBlock("The counts under the buttons come from monaco.editor.getEditors() and getModels(). After Close all they should be back to what they were before anything was opened, however many rounds you go.").MT(8),
                         TextBlock("Why the diff opens on its own: Monaco consults some page-wide state only the first time an editor needs it - an editor builds its suggest list the first time Ctrl+Space is pressed in it. So a dangling reference left by a closed diff only shows in an editor that had not completed anything yet, and only while the diff was the last editor created. The diff button makes that order deterministic.").MT(8))).SetTitle("Best Practices")))
+               .FlatSection(VStack().Children(
+                    Card(VStack().WS().Children(
+                        TextBlock("Run lifecycle test drives the buttons below itself, " + ROUNDS + " rounds of: open the editors; open the diff and wait for its worker; close the diff, then the first completion in a tab; an editor in a modal, opened, completed and closed; the survivor's history, opened and closed, then the first completion and hover in the editor; close all. After every closing it checks completion and hover in the survivor, and after every round that editors, diff editors, models, editor DOM nodes and the popup host's children are back to where they started. Any uncaught error or unhandled rejection on the page fails it."),
+                        HStack().WS().Wrap().Gap(8.px()).AlignItemsCenter().PT(8).Children(_run, _summary),
+                        _results.PT(8),
+                        SampleHint("Leave the page alone while it runs: it moves the focus and opens popups, and a click of yours lands in the middle of a step.")
+                    )).SetTitle("Test")))
                .FlatSection(VStack().Children(
                     Card(VStack().WS().Children(
                         SampleSubTitle("The editor that stays"),
@@ -241,16 +264,18 @@ namespace Tesserae.Monaco.Sample
         {
             var editor = BuildEditor("modal", "// modal.cs - closes with the modal\nvar inside = modalOne;\n", new[] { "modalOne", "modalTwo" });
 
-            Modal("Editor in a modal")
+            _modal = Modal("Editor in a modal")
                .W(60.vw())
                .H(40.vh())
                .Content(editor.WS().HS())
                .OnHide(_ =>
                {
                    editor.Dispose();
+                   _modal = null;
                    RefreshCountsSoon();
-               })
-               .Show();
+               });
+
+            _modal.Show();
         }
 
         private CodeEditor BuildEditor(string name, string text, string[] words)
@@ -329,6 +354,318 @@ namespace Tesserae.Monaco.Sample
 
             _log.Text = string.Join(" · ", _entries);
         }
+
+        // ---------------------------------------------------------------------------------------
+        // The test.
+
+        private async Task RunAsync(int rounds)
+        {
+            if (_running) return;
+
+            _running  = true;
+            _checks   = 0;
+            _failures = 0;
+            _errors.Clear();
+            _results.Clear();
+            _run.Disabled();
+            _summary.Text = "running...";
+
+            window.addEventListener("error", OnPageError);
+            window.addEventListener("unhandledrejection", OnUnhandledRejection);
+
+            try
+            {
+                CloseAll();
+                await WaitUntil(() => EditorCount() == 1, "only the survivor open");
+
+                var baseline = Snapshot();
+                Report(true, "baseline: " + baseline);
+
+                await CheckSurvivor("the start");
+
+                for (var round = 1; round <= rounds; round++)
+                {
+                    await RoundAsync(round, baseline);
+                }
+            }
+            catch (System.Exception e)
+            {
+                Report(false, "the test threw: " + e.Message);
+            }
+            finally
+            {
+                window.removeEventListener("error", OnPageError);
+                window.removeEventListener("unhandledrejection", OnUnhandledRejection);
+
+                CloseAll();
+                _modal?.Hide();
+
+                _running = false;
+                _run.Disabled(false);
+                _summary.Text = _failures == 0
+                    ? "passed: " + _checks + " checks"
+                    : "FAILED: " + _failures + " of " + _checks + " checks";
+            }
+        }
+
+        private async Task RoundAsync(int round, string baseline)
+        {
+            var at = "round " + round + ": ";
+            Section("Round " + round);
+
+            // 1. The editors. Nothing completes in them yet: each one's first suggest list is held back
+            //    for straight after a diff has closed, which is the only moment a dangling page-wide
+            //    reference shows.
+            OpenEditors();
+            await WaitUntil(() => EditorCount() == 5, at + "the editor, the viewer and two tabs open");
+            await WaitUntil(() => MonacoEditor.GetMarkers().Any(m => m.message == "TODO found by alpha"), at + "alpha's validator marks its TODO");
+
+            // 2. The diff, opened last so it is the newest editor on the page when it closes.
+            OpenDiff();
+            await WaitUntil(() => EditorCount() == 7, at + "the diff open");
+            await WaitUntil(() => _diff?.Editor?.getLineChanges() is object && _diff.Editor.getLineChanges().Length > 0, at + "the diff worker's line changes arrive");
+
+            var diffWords = await Suggestions(_diff.Editor.getModifiedEditor());
+            Report(diffWords.Contains("diffOne"), at + "completion on the diff's modified side", diffWords);
+            ReportErrors(at + "using the diff");
+
+            // 3. Close the diff, then the first completion in an editor that was open all along.
+            CloseDiff();
+            await WaitUntil(() => EditorCount() == 5 && DiffNodeCount() == 0, at + "the diff closed");
+
+            var oneWords = await Suggestions(FindEditor("// one.cs"));
+            Report(oneWords.Contains("oneItem"), at + "first completion in a tab after the diff closed", oneWords);
+            ReportErrors(at + "first completion after closing the diff");
+            await CheckSurvivor(at + "closing the diff");
+
+            // 4. An editor in a modal.
+            OpenModal();
+            await WaitUntil(() => EditorCount() == 6, at + "the modal's editor open");
+
+            var modalWords = await Suggestions(FindEditor("// modal.cs"));
+            Report(modalWords.Contains("modalOne"), at + "completion in the modal's editor", modalWords);
+
+            _modal?.Hide();
+            await WaitUntil(() => EditorCount() == 5, at + "the modal closed");
+            await CheckSurvivor(at + "closing the modal");
+
+            // 5. The survivor's history: a diff in a modal, and again the newest editor when it closes.
+            var history = _survivor.ShowHistory();
+            await WaitUntil(() => EditorCount() == 7 && DiffNodeCount() == 1, at + "the history's diff open");
+            await Task.Delay(300);
+
+            history.Hide();
+            await WaitUntil(() => EditorCount() == 5 && DiffNodeCount() == 0, at + "the history closed");
+
+            var alphaWords = await Suggestions(_alpha.Editor);
+            Report(alphaWords.Contains("alphaOne") && !alphaWords.Contains("survivorOne"), at + "first completion in alpha after the history closed, and only its own words", alphaWords);
+
+            var alphaHover = await HoverText(_alpha.Editor, "alphaOne");
+            Report(alphaHover.Contains("Documented by the alpha editor"), at + "hover in alpha", alphaHover);
+
+            var twoWords = await Suggestions(FindEditor("// two.cs"));
+            Report(twoWords.Contains("twoItem"), at + "first completion in the second tab after the history closed", twoWords);
+            ReportErrors(at + "first completion after closing the history");
+            await CheckSurvivor(at + "closing the history");
+
+            // 6. Close all, and back to where the round started.
+            CloseAll();
+            await WaitUntil(() => EditorCount() == 1, at + "everything closed");
+            await Task.Delay(300);
+
+            var after = Snapshot();
+            Report(after == baseline, at + "back to the baseline", after);
+            await CheckSurvivor(at + "closing all");
+        }
+
+        private async Task CheckSurvivor(string after)
+        {
+            var words = await Suggestions(_survivor.Editor);
+            Report(words.Contains("survivorOne") && words.Contains("survivorTwo"), "survivor completion after " + after, words);
+            Report(!words.Any(w => w.StartsWith("alpha") || w.StartsWith("diff") || w.StartsWith("modal")), "survivor completion offers nothing of another editor's after " + after, words);
+
+            var hover = await HoverText(_survivor.Editor, "survivorOne");
+            Report(hover.Contains("Documented by the survivor editor"), "survivor hover after " + after, hover);
+
+            ReportErrors(after);
+        }
+
+        /// <summary>
+        /// Opens the suggest list at the start of the editor's last line, which is empty in every
+        /// document here so the provider's words all show, reads the visible list and closes it.
+        /// </summary>
+        private async Task<string[]> Suggestions(IStandaloneCodeEditor editor)
+        {
+            if (editor is null) return new string[0];
+
+            editor.focus();
+            editor.setPosition(new Position { lineNumber = editor.getModel().getLineCount(), column = 1 });
+
+            try
+            {
+                editor.trigger("lifecycle", "editor.action.triggerSuggest", null);
+            }
+            catch (System.Exception e)
+            {
+                _errors.Add("triggerSuggest threw: " + e.Message);
+            }
+
+            var words = new string[0];
+
+            for (var waited = 0; waited < POPUP_MS && words.Length == 0; waited += POLL_MS)
+            {
+                await Task.Delay(POLL_MS);
+                words = VisibleTexts(".suggest-widget", ".monaco-list-row .label-name");
+            }
+
+            editor.trigger("lifecycle", "hideSuggestWidget", null);
+
+            return words;
+        }
+
+        /// <summary>Shows the hover on the first occurrence of a word and returns the visible hover's text.</summary>
+        private async Task<string> HoverText(IStandaloneCodeEditor editor, string word)
+        {
+            if (editor is null) return "";
+
+            var model = editor.getModel();
+            var match = model.findMatches(word, false, false, true, null, false, 1);
+
+            if (match.Length == 0) return "";
+
+            editor.focus();
+            editor.setPosition(new Position { lineNumber = match[0].range.startLineNumber, column = match[0].range.startColumn + 1 });
+            editor.trigger("lifecycle", "editor.action.showHover", null);
+
+            var text = "";
+
+            for (var waited = 0; waited < POPUP_MS && text.Length == 0; waited += POLL_MS)
+            {
+                await Task.Delay(POLL_MS);
+                text = string.Join(" ", VisibleTexts(".monaco-hover", null));
+            }
+
+            MonacoEditor.HideHovers();
+
+            return text;
+        }
+
+        /// <summary>
+        /// The text of every visible match. Every editor owns its own popups inside the shared overflow
+        /// host, so the first match in the document is usually some other editor's hidden one.
+        /// </summary>
+        private static string[] VisibleTexts(string popupSelector, string itemSelector)
+        {
+            var texts  = new List<string>();
+            var popups = document.querySelectorAll(popupSelector);
+
+            for (uint i = 0; i < popups.length; i++)
+            {
+                var popup = (HTMLElement)popups[i];
+
+                if (popup.offsetHeight <= 0) continue;
+
+                if (itemSelector is null)
+                {
+                    texts.Add(popup.textContent ?? "");
+                    continue;
+                }
+
+                var items = popup.querySelectorAll(itemSelector);
+
+                for (uint j = 0; j < items.length; j++) texts.Add((items[j].textContent ?? "").Trim());
+            }
+
+            return texts.ToArray();
+        }
+
+        private static IStandaloneCodeEditor FindEditor(string marker)
+        {
+            return MonacoEditor.GetEditors().FirstOrDefault(e => e.getModel() is object && e.getModel().getValue().Contains(marker));
+        }
+
+        private static int EditorCount() => MonacoEditor.GetEditors().Length;
+
+        private static int DiffNodeCount() => (int)document.querySelectorAll(".monaco-diff-editor").length;
+
+        /// <summary>Everything "back to the baseline" compares, as one string so a mismatch reads at a glance.</summary>
+        private static string Snapshot()
+        {
+            var host        = (HTMLElement)document.querySelector("[data-monaco-overflow-host=\"1\"]");
+            var editorNodes = document.querySelectorAll(".monaco-editor");
+            var nodes       = 0;
+
+            for (uint i = 0; i < editorNodes.length; i++)
+            {
+                if (editorNodes[i] != host) nodes++;
+            }
+
+            return "editors " + EditorCount() +
+                   ", diff editors " + DiffNodeCount() +
+                   ", models " + MonacoEditor.GetModels().Length +
+                   ", editor nodes " + nodes +
+                   ", popup host children " + (host is object ? (int)host.children.length : 0);
+        }
+
+        private async Task WaitUntil(System.Func<bool> condition, string what)
+        {
+            for (var waited = 0; waited < TIMEOUT_MS; waited += POLL_MS)
+            {
+                bool met;
+
+                try
+                {
+                    met = condition();
+                }
+                catch
+                {
+                    met = false;
+                }
+
+                if (met)
+                {
+                    Report(true, what);
+                    return;
+                }
+
+                await Task.Delay(POLL_MS);
+            }
+
+            Report(false, "timed out waiting for " + what, Snapshot());
+        }
+
+        private void OnPageError(Event e)
+        {
+            _errors.Add("uncaught error: " + (((ErrorEvent)e).message ?? "(no message)"));
+        }
+
+        private void OnUnhandledRejection(Event e)
+        {
+            _errors.Add("unhandled rejection");
+        }
+
+        private void ReportErrors(string during)
+        {
+            Report(_errors.Count == 0, "no errors during " + during, _errors.Count == 0 ? null : string.Join(" | ", _errors));
+            _errors.Clear();
+        }
+
+        private void Report(bool ok, string what, string[] detail) => Report(ok, what, "[" + string.Join(", ", detail) + "]");
+
+        private void Report(bool ok, string what, string detail = null)
+        {
+            _checks++;
+
+            if (!ok) _failures++;
+
+            var line = (ok ? "ok    " : "FAIL  ") + what + (ok || detail is null ? "" : " - " + detail);
+
+            _results.Add(TextBlock(line).Small().Class(ok ? "tssm-lifecycle-ok" : "tssm-lifecycle-fail").Foreground(ok ? Theme.Secondary.Foreground : Theme.Danger.Background));
+
+            if (!ok) console.error("lifecycle: " + line);
+        }
+
+        private void Section(string title) => _results.Add(TextBlock(title).SemiBold().PT(8));
 
         public HTMLElement Render() => _content.Render();
     }
