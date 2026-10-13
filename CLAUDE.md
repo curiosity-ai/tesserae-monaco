@@ -1083,13 +1083,14 @@ Two things this depends on, both easy to break:
   one visit creates one page's editors rather than every page's at startup — and leaving a page unmounts
   them. That is a feature: it exercises the components' disposal on every click.
 
-There are 35 pages in four groups: **Editors** (the components themselves, plus the diff's own API and
+There are 36 pages in four groups: **Editors** (the components themselves, plus the diff's own API and
 `Colorize`), **Language services** (one page per provider — completion, hover documentation, signature
 help, inline completion, formatting, diagnostics, code actions, navigation, inlay hints and lenses, folding, links
 and colours, semantic tokens, a custom language, deferred grammars, and Monaco's bundled workers),
 **Decorations and widgets**, and **Runtime and hosting** (options, events, actions and commands,
 several documents, several *editors*, themes, a modal, remount, persisted history, the multi-editor
-shell, a document's settings, and the lifecycle page with its own test). The sidebar sorts groups
+shell, a document's settings, and two pages that test themselves: the lifecycle page, and editors in
+pivot tabs and modals). The sidebar sorts groups
 alphabetically and pages by their `Order`.
 
 Two consequences of a page being rebuilt on every visit, both of which cost a debugging round:
@@ -1251,9 +1252,11 @@ baseline. An uncaught error or unhandled rejection on the page during a step fai
 takes about 11 seconds.
 
 Run it by hand, or from Playwright: open `#/view/Lifecycle`, click the button, and wait for
-`.tssm-lifecycle-summary` to read `passed` or `FAILED`; each line carries `tssm-lifecycle-ok` or
-`tssm-lifecycle-fail`, and a failing line is also written to the console. Leave the page alone while it
-runs: it moves the focus and opens popups.
+`.tssm-test-summary` to read `passed` or `FAILED`; each line carries `tssm-test-ok` or
+`tssm-test-fail`, and a failing line is also written to the console. Leave the page alone while it
+runs: it moves the focus and opens popups. The machinery - the button, the lines, the waits, the error
+capture, and reading the suggest list and the hover out of the page - is `SampleTest`
+(`Samples/SampleTest.cs`), shared with the next page's test; a new self-testing page builds on it.
 
 How it reads Monaco from inside the page: completion is opened with `editor.trigger(...,
 "editor.action.triggerSuggest")` at the start of the document's empty last line, so every word the
@@ -1282,6 +1285,38 @@ its completion and hover failed from the first check.
 What it does not see: a provider registration leaked on a dead model. Each provider gates on its own
 model and answers nothing for another, so a leak is invisible from the page, and Monaco does not expose
 its registries. The models count is the nearest proxy.
+
+### Editors in pivot tabs and modals (in the gallery)
+
+The **Pivots and Modals** page tests what an editor keeps when a Tesserae container takes it out of
+view, which depends on two things: whether the container hides its content or removes it from the
+DOM, and whether the editor component is created once, outside the container, or inside the
+container's content lambda. Five cases, 3 rounds each, 174 checks, about 10 seconds:
+
+| Case | Out of view | Back in view |
+|---|---|---|
+| `Pivot` tab, `cached: true`, editor created outside | hidden (zero height), editor alive | the **same** editor: text, caret **and undo history** |
+| `Pivot` tab, `cached: false`, editor created outside | removed, editor torn down | a **new** editor from the same component: text and caret, **no undo** |
+| `Pivot` tab, `cached: false`, editor created in the lambda | removed, editor torn down | a new component: the document **starts over** |
+| one `Modal`, `Hide()` then `Show()` again | removed, editor torn down | a new editor: text and caret, no undo |
+| a new `Modal` each time around the same editor | removed, editor torn down | a new editor: text and caret, no undo |
+
+What carries text and caret through a removal is `MonacoComponent`'s re-arm: leaving the DOM calls
+`BeforeDispose` (which saves the text and the view state) and re-arms the mount observer, so being added
+back builds a new editor and replays everything. Undo cannot come along, because Monaco's undo stack is
+not serialisable (see "Persisting history"). Every round also checks that the editor is laid out and
+drawing lines, that its completion offers exactly its own two words, that hover answers, and that
+exactly one editor holds its document; at the end every count is back to the start. Verified by
+mutation: with `HandleRemoved` no longer calling `ArmMountObserver()`, the three removal cases with an
+editor created outside fail at their first re-show ("an editor came back at all"), while the cached tab
+and the lambda-built editor still pass, which is the right split. It was also driven through the UI with
+real clicks and keystrokes in Debug and Release: text typed by hand survived three tab switches and
+three hide/show cycles in every case but the lambda-built one.
+
+Two things it needed: the layout check is polled, because Monaco draws its first lines on the next
+animation frame after the editor is created, and a single read in the same tick finds no `.view-line`
+in an editor that is fine; and a tab title is `PivotTitle(...)`, since a bare `TextBlock` title has no
+padding and the tab strip runs the names together.
 
 Build in **Release** at least once before shipping: only a Release site is chunked, so a Debug-only
 pass never loads the package's module entry or its chunks.
