@@ -47,7 +47,13 @@ namespace Tesserae.Monaco
         void        updateOptions(EditorOptions options);
         HTMLElement getDomNode();
 
-        IJsDisposable onDidChangeModelContent(Action listener);
+        /// <summary>
+        /// Declared once, with the typed event. A second declaration under the same JavaScript name
+        /// (there was an argument-less one beside this) gets a <c>$1</c> suffix from the compiler, and
+        /// which of the two gets it is the compiler's choice: after a compiler update it landed on the
+        /// one <c>PersistHistory</c> calls, and every editor with a history failed to set up.
+        /// </summary>
+        IJsDisposable onDidChangeModelContent(Action<IContentChangedEvent> listener);
         IJsDisposable onDidChangeModelDecorations(Action listener);
         IJsDisposable addAction(EditorAction action);
 
@@ -170,14 +176,6 @@ namespace Tesserae.Monaco
         IJsDisposable onDidContentSizeChange(Action<IContentSizeChangedEvent> listener);
         IJsDisposable onDidAttemptReadOnlyEdit(Action listener);
         IJsDisposable onDidDispose(Action listener);
-
-        /// <summary>
-        /// The typed content event, alongside the argument-less <see cref="onDidChangeModelContent"/>
-        /// the package already used. Declared under its own C# name because two declarations cannot
-        /// share a <c>[Name]</c>.
-        /// </summary>
-        [Name("onDidChangeModelContent")]
-        IJsDisposable onDidChangeModelContentDetailed(Action<IContentChangedEvent> listener);
 
         /// <summary>
         /// Reads an option by its <see cref="IEditorOptionIds"/> id. Monaco's <c>getOption</c> is

@@ -740,7 +740,7 @@ namespace Tesserae.Monaco
 
             var editor = MonacoApi.editor.create(container, options);
 
-            editor.onDidChangeModelContent(() => _onChanged?.Invoke());
+            editor.onDidChangeModelContent(_ => _onChanged?.Invoke());
 
             return editor;
         }
