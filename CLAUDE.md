@@ -1003,9 +1003,14 @@ editor's tokenizer for its language (a `csharp` signature comes out looking like
 **command link**: `MonacoEditor.CommandLink(id, argument)` builds `command:<id>?<json>` and Monaco's
 opener runs the command registered through `MonacoEditor.RegisterCommand(id, handler)`, spreading the
 decoded JSON over the handler's arguments — the same path a code lens and F12 take, and how VS Code's own
-"Go to type" links work. Only a `MarkdownString` marked `isTrusted` gets its command links; an untrusted
-one has them stripped to their text, so the string overload of `OnHover` trusts (it is the host's own
-text) and the `MarkdownString` overload lets a host decide. Monaco does **not** hide the hover when a
+"Go to type" links work. Only a trusted `MarkdownString` gets its command links; an untrusted one has
+them stripped to their text. Trust is scoped: `MonacoEditor.TrustedMarkdown(markdown, ids)` sets Monaco's
+`isTrusted: { enabledCommands }` (the `trustedCommands` field, the same JS property as `isTrusted`), so a
+link to any other command is stripped too. That matters because hover text is rarely all the host's own:
+a doc comment, or a user's code, can carry `[x](command:editor.action.…)`, and `isTrusted = true` would
+run it. The string overload of `OnHover` uses `TrustedMarkdown(markdown)`, which enables exactly the
+commands registered through `RegisterCommand` at that moment; the `MarkdownString` overload lets a host
+decide. Monaco does **not** hide the hover when a
 link in it is clicked — measured, with the controller's hide method stubbed out — so a command that opens
 something calls `MonacoEditor.HideHovers()` first, which goes through the hover controller's public
 `hideContentHover()`, the method Escape runs.

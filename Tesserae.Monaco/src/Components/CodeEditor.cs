@@ -281,7 +281,8 @@ namespace Tesserae.Monaco
         /// with <see cref="MonacoEditor.CommandLink"/> runs a command registered through
         /// <see cref="MonacoEditor.RegisterCommand(string, Action{object}, DisposableBag)"/> - which is how
         /// documentation gets a clickable action without any listener on the rendered popup. The string is
-        /// marked trusted for that reason, and raw HTML in it is escaped rather than rendered; use the
+        /// trusted for the registered commands only (<see cref="MonacoEditor.TrustedMarkdown(string)"/>),
+        /// so a link to any other command in it is stripped, and raw HTML in it is escaped; use the
         /// <see cref="OnHover(Func{CodeContext, Task{MarkdownString}})"/> overload to decide either
         /// differently.
         /// </summary>
@@ -293,7 +294,7 @@ namespace Tesserae.Monaco
             {
                 var documentation = await onHover(context);
 
-                return string.IsNullOrWhiteSpace(documentation) ? null : new MarkdownString { value = documentation, isTrusted = true };
+                return string.IsNullOrWhiteSpace(documentation) ? null : MonacoEditor.TrustedMarkdown(documentation);
             });
         }
 

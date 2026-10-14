@@ -120,7 +120,7 @@ namespace Tesserae.Monaco.Sample
                     Card(VStack().WS().Children(
                         TextBlock("Do not inject HTML into the rendered popup. An earlier host of these components sent its documentation as escaped HTML behind a marker, watched the popup with a MutationObserver, wrote innerHTML into it, re-measured the widget through Monaco's private hover controller, and cleared the inline styles it left behind with a second observer - four pieces of machinery to bypass Monaco's renderer, every one of them tied to internal class names that move between releases."),
                         TextBlock("Monaco's own supportHtml is not the answer either. It keeps HTML, but sanitises it against an allowlist that, since 0.56, no longer includes class - only style on a span, for its colours - so HTML cannot be styled from a stylesheet, and a bare <T> in the text vanishes as an unknown tag. Markdown, a fenced code block and the theme cover everything the HTML was for.").MT(8),
-                        TextBlock("Mark a MarkdownString trusted only when the host controls its text: command links run on a trusted string and are stripped to their text on an untrusted one. The string overload of OnHover trusts what it is given; the MarkdownString overload lets a host decide. And a command that opens something should call MonacoEditor.HideHovers() first - the popup renders in the shared host above everything else on the page and would sit on top of what the command opened.").MT(8))).SetTitle("Best Practices")))
+                        TextBlock("Trust a MarkdownString for the commands its links need, not for everything: MonacoEditor.TrustedMarkdown(markdown, ids) runs links to those commands and strips any other to its text, so a link that arrived with a doc comment or a user's code cannot run an arbitrary editor command. isTrusted = true trusts every command; keep it for text the host writes entirely itself. The string overload of OnHover trusts the commands registered through RegisterCommand; the MarkdownString overload lets a host decide. And a command that opens something should call MonacoEditor.HideHovers() first - the popup renders in the shared host above everything else on the page and would sit on top of what the command opened.").MT(8))).SetTitle("Best Practices")))
                .FlatSection(VStack().Children(
                     Card(VStack().WS().Children(
                         SampleSubTitle("Try it"),
@@ -153,7 +153,11 @@ namespace Tesserae.Monaco.Sample
 
             markdown += "$(book) [Open the documentation for " + name + "](" + MonacoEditor.CommandLink(SHOW_DOCS_COMMAND, name) + ")";
 
-            return new MarkdownString { value = markdown, isTrusted = true, supportThemeIcons = true };
+            var documentation = MonacoEditor.TrustedMarkdown(markdown, SHOW_DOCS_COMMAND);
+
+            documentation.supportThemeIcons = true;
+
+            return documentation;
         }
 
         private static void EnsureCommand()

@@ -23,6 +23,7 @@ namespace Tesserae.Monaco
         private static HTMLElement _overflowWidgetsHost;
 
         private static readonly HashSet<string>        _registeredLanguages = new HashSet<string>();
+        private static readonly Dictionary<string, int> _registeredCommands  = new Dictionary<string, int>();
         private static readonly List<TokenColor>       _tokenColors         = new List<TokenColor>();
         private static readonly List<LanguageDefinition> _pendingLanguages  = new List<LanguageDefinition>();
         private static readonly List<Action>             _pendingActions    = new List<Action>();

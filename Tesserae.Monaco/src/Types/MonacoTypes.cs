@@ -137,6 +137,16 @@ namespace Tesserae.Monaco
         public bool isTrusted;
 
         /// <summary>
+        /// Trusts <c>command:</c> links to the listed commands only, Monaco's
+        /// <c>isTrusted: { enabledCommands }</c>; a link to any other command is stripped to its text.
+        /// The same JavaScript property as <see cref="isTrusted"/>, so set one or the other. Prefer this
+        /// over <see cref="isTrusted"/> whenever the markdown carries text the host does not control,
+        /// such as a doc comment: with <see cref="isTrusted"/> a link in it could run any command.
+        /// </summary>
+        [Name("isTrusted")]
+        public MarkdownTrustedOptions trustedCommands;
+
+        /// <summary>
         /// Whether raw HTML in the markdown is kept rather than escaped. Monaco sanitises it against an
         /// allowlist - the structural tags, <c>href</c>, <c>title</c>, and <c>style</c> on a <c>span</c>
         /// for its colours - and drops everything else, <c>class</c> and <c>data-*</c> attributes
@@ -147,6 +157,13 @@ namespace Tesserae.Monaco
 
         /// <summary>Whether <c>$(icon-name)</c> is drawn as the codicon of that name.</summary>
         public bool supportThemeIcons;
+    }
+
+    /// <summary>Matching Monaco's <c>MarkdownStringTrustedOptions</c>: the commands a trusted markdown string may run.</summary>
+    [ObjectLiteral]
+    public class MarkdownTrustedOptions
+    {
+        public string[] enabledCommands;
     }
 
     /// <summary>One entry in the suggest list, matching Monaco's <c>CompletionItem</c>.</summary>

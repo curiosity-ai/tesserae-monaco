@@ -126,6 +126,9 @@ namespace Tesserae.Monaco
             IJsDisposable registration = null;
             var           released     = false;
 
+            _registeredCommands.TryGetValue(id, out var count);
+            _registeredCommands[id] = count + 1;
+
             WhenLoaded(() =>
             {
                 if (released) return;
@@ -135,9 +138,14 @@ namespace Tesserae.Monaco
 
             Action release = () =>
             {
+                if (released) return;
+
                 released = true;
                 registration?.dispose();
                 registration = null;
+
+                if (_registeredCommands.TryGetValue(id, out var remaining) && remaining > 1) _registeredCommands[id] = remaining - 1;
+                else _registeredCommands.Remove(id);
             };
 
             bag?.Add(release);
@@ -154,6 +162,35 @@ namespace Tesserae.Monaco
             if (handler is null) return () => { };
 
             return RegisterCommand(id, argument => handler((T)argument), bag);
+        }
+
+        /// <summary>
+        /// Markdown whose <c>command:</c> links may run only the commands registered through
+        /// <see cref="RegisterCommand(string, Action{object}, DisposableBag)"/> at the time of the call -
+        /// the trust a host's own documentation needs, without letting a link that came in with text the
+        /// host does not control (a doc comment, a user's code) run any other command in the editor.
+        /// </summary>
+        public static MarkdownString TrustedMarkdown(string markdown)
+        {
+            var commands = new string[_registeredCommands.Count];
+            var i        = 0;
+
+            foreach (var id in _registeredCommands.Keys) commands[i++] = id;
+
+            return TrustedMarkdown(markdown, commands);
+        }
+
+        /// <summary>
+        /// Markdown whose <c>command:</c> links may run only <paramref name="enabledCommands"/>; a link to
+        /// any other command is stripped to its text. None listed means no command link runs.
+        /// </summary>
+        public static MarkdownString TrustedMarkdown(string markdown, params string[] enabledCommands)
+        {
+            return new MarkdownString
+            {
+                value           = markdown,
+                trustedCommands = new MarkdownTrustedOptions { enabledCommands = enabledCommands ?? new string[0] }
+            };
         }
 
         /// <summary>
