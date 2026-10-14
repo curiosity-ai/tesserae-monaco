@@ -1,0 +1,28 @@
+<Project Sdk="Transpose.Build.Target/26.8.4125">
+  <!--
+    A consumer of the packed Tesserae.Monaco nupkg, built the way a real app builds it: a
+    PackageReference and nothing from this repo. Not part of Tesserae.Monaco.slnx, since it needs a
+    packed package to restore - scripts/test-package-consumer.mjs packs one, builds this project
+    against it in every variant a consumer can pick, and drives each in Chromium.
+
+    Tesserae is pinned at the package's own floor, so this is the oldest Tesserae a consumer can
+    legally combine with the package.
+
+    The Tesserae.Monaco version is a literal on purpose: tps reads PackageReference versions from
+    this file's XML rather than from MSBuild, so a $(Property) there silently drops the reference.
+    The script packs that exact version.
+  -->
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <DefineConstants>TRANSPOSE</DefineConstants>
+    <AssemblyName>app</AssemblyName>
+    <RootNamespace>PackageConsumer</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Transpose.BCL" Version="26.9.5840" />
+    <PackageReference Include="Transpose.Core" Version="26.9.5838" />
+    <PackageReference Include="Tesserae" Version="2026.10.71905" />
+    <PackageReference Include="Tesserae.Monaco" Version="0.0.0-consumer" />
+  </ItemGroup>
+</Project>

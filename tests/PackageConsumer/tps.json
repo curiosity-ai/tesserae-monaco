@@ -1,0 +1,12 @@
+{
+  // The configuration every Curiosity front-end ships: a Release site split into ES modules, which
+  // takes the package's ModuleEntry/ModuleChunk variants. The test script removes "outputBy" for its
+  // classic Release variant, and a Debug build is never chunked whatever this says.
+  "output": "$(OutDir)/tps/",
+  "fileName": "app.js",
+  "outputBy": "Module",
+  "html": { "disabled": false, "title": "Tesserae.Monaco package consumer" },
+  "cleanOutputFolderBeforeBuildPattern": "*.js|*.css",
+  "console": { "enabled": false },
+  "loader": { "type": "Global" }
+}

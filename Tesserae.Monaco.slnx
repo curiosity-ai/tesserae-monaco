@@ -10,5 +10,6 @@
     <File Path=".azure-devops/build-nuget-transpose.yml" />
     <File Path=".github/workflows/pages.yml" />
     <File Path="scripts/stage-samples.mjs" />
+    <File Path="scripts/test-package-consumer.mjs" />
   </Folder>
 </Solution>

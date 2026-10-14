@@ -22,6 +22,7 @@ Tesserae.Monaco/               the package
   src/Types/                   [ObjectLiteral] interop types, CodeDiagnostic, CodeContext, LanguageDefinition
   build/bundle-monaco.mjs      esbuild: Monaco's ESM build -> the scripts we ship
   buildTransitive/*.targets     copies the bundle into a consuming app's output
+tests/PackageConsumer/         a PackageReference consumer, driven by scripts/test-package-consumer.mjs
 Tesserae.Monaco.Sample/        the sample gallery - a sidebar of features, one page each
   src/App.cs                   sidebar, routing, reflection-based page discovery
   src/Samples/                 one ISample per feature, plus the shared page furniture
@@ -231,6 +232,26 @@ with the consumer, and only past a version whose members this package actually u
 On the consuming side nothing else is needed: a plain `PackageReference` to `Tesserae.Monaco`, and the
 app's own `outputBy: "Module"`. The package's `buildTransitive` targets copy Monaco into
 `assets/js/monaco` and the compiler picks the variant of the C# output, as for Tesserae and GraphKit.
+
+**The package itself is tested as a package**, because the sample cannot do it: a `ProjectReference`
+compiles the package's sources into the sample's own build, so the nupkg's embedded variants are never
+what the sample runs. `node scripts/test-package-consumer.mjs` packs the nupkg as `0.0.0-consumer` into
+a temporary feed, builds `tests/PackageConsumer` (a `PackageReference`, Tesserae at the package's own
+floor `2026.10.71905`) three ways - Release with `outputBy: "Module"`, Release without it, Debug - and
+drives each in Chromium: index.html loads the right variant, the module build extracts and fetches
+`chunks/Tesserae.Monaco/*.mjs` and never asks for `Tesserae.Monaco.min.js`, the editors mount and
+tokenize, the diff's worker decorations arrive, completion lists and inserts, hover answers, the
+multi-editor opens two tabs and the history modal mounts its diff, with no page error, console error
+or failed request. About 45 seconds. Verified by mutation: with `outputBy` removed from the package's
+`tps.json`, the module build loads the classic bundle beside a module Tesserae, mounts nothing, and
+fails with `pageerror: $ctor1` - which is the configuration this package shipped before
+`outputBy: "Module"`.
+
+Two things it needed: the consumer's `Tesserae.Monaco` version is a **literal** in the `.csproj`,
+because `tps` reads `PackageReference` versions out of the project XML rather than from MSBuild, and a
+`$(Property)` there drops the reference without a warning (the compile then fails on `Tesserae.Monaco`
+not existing); and the script deletes that version from the global packages folder before restoring,
+since `tps` resolves references from there and would otherwise compile against a stale copy.
 
 ## Monaco assets are NOT Transpose resources
 
@@ -1319,7 +1340,10 @@ in an editor that is fine; and a tab title is `PivotTitle(...)`, since a bare `T
 padding and the tab strip runs the names together.
 
 Build in **Release** at least once before shipping: only a Release site is chunked, so a Debug-only
-pass never loads the package's module entry or its chunks.
+pass never loads the package's module entry or its chunks. And run `node scripts/test-package-consumer.mjs`
+after anything that changes how the package is built or packed (`tps.json`, the `.csproj`, the
+targets, a Transpose or Tesserae pin): the sample takes the package by `ProjectReference` and cannot
+see the nupkg.
 
 Serve the sample with `dotnet serve`. It is a long-running server that does not exit on its own, so
 start it in the background and poll the port rather than waiting for the process to finish.
