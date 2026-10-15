@@ -64,7 +64,7 @@ namespace Tesserae.Monaco.Sample
                         SampleSubTitle("Try it"),
                         TextBlock("Five decorations at once: the line, the glyph, the underlined range, the ruler mark and the injected note. Then type a line above line 3 and watch them move with the text."),
                         editor.WS().H(220.px()).MT(8),
-                        HStack().WS().AlignItemsCenter().PT(8).Children(toggle, status.PL(8.px())),
+                        HStack().WS().Wrap().Gap(8.px()).AlignItemsCenter().PT(8).Children(toggle, status.PL(8.px())),
                         SampleHint("Hover the dot in the glyph margin: a glyph decoration carries its own hover message.")
                     )).SetTitle("Usage")))
                .SeeAlso(typeof(WidgetsSample), typeof(DiagnosticsSample), typeof(CodeEditorSample));

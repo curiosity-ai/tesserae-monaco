@@ -70,14 +70,14 @@ namespace Tesserae.Monaco.Sample
                     Card(VStack().WS().Children(
                         SampleSubTitle("Themes"),
                         TextBlock("Switch the theme - the editor below follows, along with the rest of the page."),
-                        HStack().WS().AlignItemsCenter().Gap(8.px()).PT(8).Children(
+                        HStack().WS().Wrap().Gap(8.px()).AlignItemsCenter().PT(8).Children(
                             Button("Light").SetIcon(UIcons.Sun).OnClick(() => SwitchTheme(false, ShowActiveTheme)),
                             Button("Dark").SetIcon(UIcons.Moon).OnClick(() => SwitchTheme(true, ShowActiveTheme)),
                             activeTheme),
                         viewer.WS().H(200.px()).MT(8),
                         SampleSubTitle("Resolving a file extension"),
                         TextBlock("TryGetLanguageIdForExtension asks Monaco's registry, so it covers every language the bundle ships - and any custom one that declared an extension."),
-                        HStack().WS().AlignItemsCenter().Gap(8.px()).PT(8).Children(extension, Button("Resolve").OnClick(() => Resolve()), resolved),
+                        HStack().WS().Wrap().Gap(8.px()).AlignItemsCenter().PT(8).Children(extension, Button("Resolve").OnClick(() => Resolve()), resolved),
                         SampleSubTitle("Every language Monaco knows"),
                         languageList.WS().MT(8)
                     )).SetTitle("Usage")))

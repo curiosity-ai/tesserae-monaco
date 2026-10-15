@@ -85,13 +85,6 @@ namespace Tesserae.Monaco.Sample
 
             var sidebar = Sidebar();
 
-            // On mobile we use navbar mode: horizontal bar + full-screen sliding drawer. Evaluated
-            // once at startup; the CSS (tss-mobile class) handles the visual switch on resize.
-            if (Theme.IsMobileMode)
-            {
-                sidebar.AsNavbar();
-            }
-
             sidebar.AddHeader(new SidebarText("header", "Tesserae.Monaco", "TSS", textSize: TextSize.XLarge, textWeight: TextWeight.Bold));
 
             var searchBox = new SidebarSearchBox("search", "Search...");
@@ -107,21 +100,20 @@ namespace Tesserae.Monaco.Sample
             // A page is only built when it is opened, so a single editor is created per visit rather
             // than eleven at startup - which is also what a host app does with Monaco.
             var contentArea = Defer(currentPage, async page => page is null
-                ? (IComponent)CenteredCardWithBackground(Message("Tesserae.Monaco", "Monaco editor, viewer and diff components for Tesserae. Pick a feature on the left.").Icon(UIcons.FileCode))
+                ? (IComponent)CenteredCardWithBackground(Message("Tesserae.Monaco", "Monaco editor, viewer and diff components for Tesserae. Pick a feature from the list.").Icon(UIcons.FileCode))
                 : VStack().S().ScrollY().Children((await page.ContentGenerator()).WS().MinHeight(100.percent())));
 
-            // On mobile the sidebar is a fixed top navbar, so the layout is vertical (sidebar then
-            // content). On desktop it is horizontal (sidebar left, content right).
-            Stack pageContent;
+            // On a phone the sidebar is a page (Sidebar.AsPage) that takes turns with the content, the
+            // same shape as Tesserae's own gallery: picking a feature steps it aside, and this bar's back
+            // button brings it back. The bar collapses itself on a desktop, where the sidebar is a rail.
+            var pageBar = SidebarPageBar(sidebar)
+               .Brand(TextBlock("TSS").Bold().Foreground(Theme.Primary.Background))
+               .SetTitle("Tesserae.Monaco");
 
-            if (Theme.IsMobileMode)
-            {
-                pageContent = VStack().Class("tss-page-layout").S().Children(sidebar.WS(), contentArea.WS().H(1).Grow());
-            }
-            else
-            {
-                pageContent = HStack().Class("tss-page-layout").S().Children(sidebar.HS(), contentArea.HS().W(1).Grow());
-            }
+            currentPage.Observe(page => pageBar.SetTitle(page is object ? page.Name : "Tesserae.Monaco"));
+
+            var content     = VStack().Children(pageBar, contentArea.WS().H(1).Grow());
+            var pageContent = HStack().Class("tss-page-layout").S().Children(sidebar.HS(), content.HS().W(1).Grow());
 
             MountToBody(pageContent);
 
@@ -142,15 +134,8 @@ namespace Tesserae.Monaco.Sample
                 })
                .ToDictionary(s => s.Name, s => s);
 
-            var openClose = new SidebarCommand(UIcons.AngleLeft).Tooltip("Close Sidebar");
-
-            // In mobile/navbar mode the drawer always starts closed (the hamburger opens it). On
-            // desktop, restore the last open/closed preference.
-            if (!Theme.IsMobileMode)
-            {
-                var sidebarOpenState = bool.TryParse(localStorage.getItem(_sidebarOpenStateKey), out var v) ? v : true;
-                sidebar.Closed(!sidebarOpenState);
-            }
+            // A page is always open, so the command that closes the rail is hidden with the brand's own
+            var openClose = new SidebarCommand(UIcons.AngleLeft).Tooltip("Close Sidebar").Class("tss-sidebar-close-command");
 
             openClose.OnClick(() =>
             {
@@ -232,6 +217,40 @@ namespace Tesserae.Monaco.Sample
             {
                 Router.Register($"#/view/{kv.Key.Replace(" ", "%20")}", _ => currentPage.Value = kv.Value);
             }
+
+            // Follows the window between the two layouts. On a phone the page opens on whatever the
+            // address names, and on the list when it names nothing. Back on a desktop the rail
+            // returns to the user's own open/closed preference.
+            void ApplyLayoutMode()
+            {
+                var isMobile = Theme.IsMobileMode;
+
+                sidebar.AsPage(isMobile);
+
+                if (isMobile)
+                {
+                    if (currentPage.Value is object) sidebar.ShowContent();
+                    else                             sidebar.ShowSidebar();
+                }
+                else
+                {
+                    var sidebarOpenState = bool.TryParse(localStorage.getItem(_sidebarOpenStateKey), out var v) ? v : true;
+                    sidebar.Closed(!sidebarOpenState);
+
+                    openClose.SetIcon(sidebarOpenState ? UIcons.AngleLeft : UIcons.AngleRight)
+                       .Tooltip(sidebarOpenState ? "Close Sidebar" : "Open Sidebar");
+                }
+            }
+
+            ApplyLayoutMode();
+            Theme.OnMobileModeChanged += ApplyLayoutMode;
+
+            // A route reached by a link or the browser's back button is what the user asked for, so on
+            // a phone it gets the screen.
+            currentPage.ObserveFutureChanges(page =>
+            {
+                if (sidebar.IsPage && page is object) sidebar.ShowContent();
+            });
 
             Router.Initialize();
 

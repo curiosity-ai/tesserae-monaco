@@ -1093,6 +1093,10 @@ Two things this depends on, both easy to break:
 - **Reflection has to be emitted inline.** `tps.json` carries `"reflection": { "disabled": false,
   "target": "inline" }`. With the metadata in a separate `.meta.js` the discovery finds nothing and the
   sidebar comes up empty.
+- **On a phone the sidebar is a page** (`Sidebar.AsPage`, as in Tesserae's own gallery): it and the
+  feature page take turns filling the screen, and a `SidebarPageBar` above the page brings the list
+  back. `ApplyLayoutMode` follows `Theme.OnMobileModeChanged`, so resizing switches it. Rows of demo
+  buttons are `HStack().Wrap()`, or the last one is cut off at 390px.
 - **Pages are built lazily and torn down on navigation.** `Defer` builds the page when it is opened, so
   one visit creates one page's editors rather than every page's at startup — and leaving a page unmounts
   them. That is a feature: it exercises the components' disposal on every click.

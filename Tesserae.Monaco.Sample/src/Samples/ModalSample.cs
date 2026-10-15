@@ -26,7 +26,7 @@ namespace Tesserae.Monaco.Sample
                     Card(VStack().WS().Children(
                         SampleSubTitle("Try it"),
                         TextBlock("Open the modal and press Ctrl+Space on the last line. The suggest list must be fully visible, including the part that falls outside the modal's box."),
-                        HStack().WS().PT(8).Children(
+                        HStack().WS().Wrap().Gap(8.px()).PT(8).Children(
                             Button("Open editor in a modal").SetIcon(UIcons.WindowMaximize).OnClick(OpenModal))
                     )).SetTitle("Usage")))
                .SeeAlso(typeof(CompletionAndHoverSample), typeof(AutoHeightSample), typeof(EditorOptionsSample));

@@ -91,7 +91,7 @@ namespace Tesserae.Monaco.Sample
                         SampleSubTitle("Try it"),
                         TextBlock("Every key gets a \": color\" or \": number\" hint before its value, and each region line carries a lens that folds it. Click one."),
                         editor.WS().H(240.px()).MT(8),
-                        HStack().WS().AlignItemsCenter().PT(8).Children(
+                        HStack().WS().Wrap().Gap(8.px()).AlignItemsCenter().PT(8).Children(
                             Button("Toggle inlay hints").SetIcon(UIcons.Notes).OnClick(() => editor.RunAction("editor.action.toggleInlayHints")),
                             clicked.PL(8.px())),
                         SampleHint("The lens runs Monaco's own editor.fold action, so the code lens and the Folding page are two halves of the same thing.")

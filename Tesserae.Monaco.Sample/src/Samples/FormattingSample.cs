@@ -35,7 +35,7 @@ namespace Tesserae.Monaco.Sample
                         SampleSubTitle("Try it"),
                         TextBlock("This formatter trims trailing whitespace and collapses runs of blank lines. Right-click and pick Format Document, or press the platform's keybinding."),
                         editor.WS().H(200.px()).MT(8),
-                        HStack().WS().AlignItemsCenter().PT(8).Children(
+                        HStack().WS().Wrap().Gap(8.px()).AlignItemsCenter().PT(8).Children(
                             Button("Format document").SetIcon(UIcons.TextCheck).OnClick(() => RunFormatDocument(editor)),
                             Button("Mess it up again").OnClick(() => editor.SetText(SampleCode.Messy))),
                         SampleHint("Format Document: Ctrl+Shift+I on Linux, Shift+Alt+F on Windows, Shift+Option+F on macOS. Format Selection: Ctrl+K Ctrl+F everywhere.")

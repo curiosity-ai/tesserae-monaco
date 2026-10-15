@@ -52,7 +52,7 @@ namespace Tesserae.Monaco.Sample
                         SampleSubTitle("Try it"),
                         TextBlock("Click between the parens of Sum(1, 2) and press Ctrl+Shift+Space, or use the button. Type a comma and the bolded parameter moves to the second one."),
                         editor.WS().H(160.px()).MT(8),
-                        HStack().WS().AlignItemsCenter().PT(8).Children(
+                        HStack().WS().Wrap().Gap(8.px()).AlignItemsCenter().PT(8).Children(
                             Button("Show parameter hints").SetIcon(UIcons.FunctionSquare).OnClick(() =>
                             {
                                 editor.SetPosition(new Position { lineNumber = 2, column = 18 });

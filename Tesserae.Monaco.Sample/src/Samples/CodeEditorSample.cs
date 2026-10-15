@@ -35,7 +35,7 @@ namespace Tesserae.Monaco.Sample
                         SampleSubTitle("Try it"),
                         TextBlock("Type in the editor and the character count follows. Word wrap is on - Alt+Z, or the editor's own context menu, toggles it."),
                         editor.WS().H(220.px()).MT(8),
-                        HStack().WS().AlignItemsCenter().PT(8).Children(
+                        HStack().WS().Wrap().Gap(8.px()).AlignItemsCenter().PT(8).Children(
                             Button("Go to line 5").OnClick(() => editor.RevealLine(5).SetPosition(new Position { lineNumber = 5, column = 1 }).Focus()),
                             Button("Read-only").OnClick(() => editor.ReadOnly()),
                             Button("Editable").OnClick(() => editor.ReadOnly(false)),

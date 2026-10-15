@@ -37,7 +37,7 @@ namespace Tesserae.Monaco.Sample
                         SampleSubTitle("Language picked from a file extension"),
                         TextBlock("The same viewer, with .SetLanguageByExtension(\".cs\") instead of a language id."),
                         byExtension.WS().H(200.px()).MT(8),
-                        HStack().WS().AlignItemsCenter().PT(8).Children(
+                        HStack().WS().Wrap().Gap(8.px()).AlignItemsCenter().PT(8).Children(
                             Button("Make editable").OnClick(() => byExtension.Editable()),
                             Button("Back to read-only").OnClick(() => byExtension.Editable(false)))
                     )).SetTitle("Usage")))

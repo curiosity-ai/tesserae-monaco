@@ -45,7 +45,7 @@ namespace Tesserae.Monaco.Sample
                         SampleSubTitle("Try it"),
                         TextBlock("Type a space after the return on line 3 and the ghost text appears. Tab accepts it, Escape dismisses it. The button does the same edit from code and then asks Monaco for the suggestion, because an edit the user did not type does not trigger one on its own."),
                         editor.WS().H(160.px()).MT(8),
-                        HStack().WS().AlignItemsCenter().PT(8).Children(
+                        HStack().WS().Wrap().Gap(8.px()).AlignItemsCenter().PT(8).Children(
                             Button("Type a space after 'return'").SetIcon(UIcons.Ghost).OnClick(() =>
                             {
                                 editor.SetText(START);
