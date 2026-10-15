@@ -77,7 +77,7 @@ namespace Tesserae.Monaco.Sample
                             log.PL(8.px())),
                         SampleHint("The open tabs and the active one are in the URL: copy it into another browser tab and the same editors open.")
                     )).SetTitle("Usage")))
-               .SeeAlso(typeof(SeveralDocumentsSample), typeof(NavigationSample), typeof(RemountSample));
+               .SeeAlso(typeof(MultiEditorPageSample), typeof(SeveralDocumentsSample), typeof(NavigationSample), typeof(RemountSample));
         }
 
         private static List<EditorDocument> BuildCatalog(MultiEditor shell, TextBlock log)

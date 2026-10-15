@@ -116,7 +116,7 @@ namespace Tesserae.Monaco
         /// </summary>
         public MultiEditor()
         {
-            _tree = new Tree().Compact();
+            _tree = new Tree().Compact(!Theme.IsMobileMode);
 
             _searchBox = SearchBox("Filter...").SearchAsYouType().OnSearch((s, term) => ApplySearch(term));
 
@@ -1672,6 +1672,10 @@ namespace Tesserae.Monaco
         /// </summary>
         private void ApplyLayout()
         {
+            // A file explorer's density on a desktop; on a phone the rows are touch targets, so the tree
+            // keeps Tesserae's regular density there, wherever it is mounted.
+            _tree.Compact(!Theme.IsMobileMode);
+
             if (_treeOutside)
             {
                 _split.LeftIsSmaller(_treeWidth.px(), minLeftSize: 160.px());

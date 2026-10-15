@@ -511,7 +511,10 @@ Decisions that shape it, each the cheapest way to a behaviour a user notices:
   last tab brings the tree back. Only the split's pane widths and the panes' visibility change; the
   editors are never moved in the DOM, which would tear them down and lose their undo. The splitter is
   hidden on a phone and the desktop width is kept in `_treeWidth`, so widening the window restores it.
-  It follows `Theme.OnMobileModeChanged` only while mounted. The back button's accessible name is
+  It follows `Theme.OnMobileModeChanged` only while mounted. The tree is `Compact()` on a desktop only:
+  on a phone its rows are touch targets, so `ApplyLayout` switches it to Tesserae's regular density, and
+  Tesserae's `tss.mobile.css` (from the release after 2026.10.71970) makes every tree row and pivot tab
+  44px there whatever the density. The back button's accessible name is
   `PhoneBackLabel(...)`, for a host that translates.
 - **A host with a page-mode sidebar keeps the tree there instead.** The turn-taking above is for a
   shell that is a widget on a page (the gallery, a modal). An app whose sidebar is already a page on a
@@ -1109,13 +1112,14 @@ Two things this depends on, both easy to break:
   one visit creates one page's editors rather than every page's at startup — and leaving a page unmounts
   them. That is a feature: it exercises the components' disposal on every click.
 
-There are 36 pages in four groups: **Editors** (the components themselves, plus the diff's own API and
+There are 37 pages in four groups: **Editors** (the components themselves, plus the diff's own API and
 `Colorize`), **Language services** (one page per provider — completion, hover documentation, signature
 help, inline completion, formatting, diagnostics, code actions, navigation, inlay hints and lenses, folding, links
 and colours, semantic tokens, a custom language, deferred grammars, and Monaco's bundled workers),
 **Decorations and widgets**, and **Runtime and hosting** (options, events, actions and commands,
 several documents, several *editors*, themes, a modal, remount, persisted history, the multi-editor
-shell, a document's settings, and two pages that test themselves: the lifecycle page, and editors in
+shell and the same shell as a whole page (Multi Editor Page, shaped like Mosaik's Build view), a
+document's settings, and two pages that test themselves: the lifecycle page, and editors in
 pivot tabs and modals). The sidebar sorts groups
 alphabetically and pages by their `Order`.
 
