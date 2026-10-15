@@ -8,8 +8,9 @@ using static Tesserae.UI;
 namespace Tesserae.Monaco.Sample
 {
     /// <summary>
-    /// The MultiEditor as a whole page, the way Mosaik's Build view hosts it: a slim toolbar with the
-    /// loading state and a filter button, and the shell filling everything below it. The catalog is
+    /// The MultiEditor as a whole page, the way Mosaik's Build view hosts it: the shell fills the page,
+    /// the filter button sits beside the filter box (FilterActions) and the loading state under it
+    /// (TreeHeader). The catalog is
     /// shaped like Mosaik's too - category folders with a "+" and a "..." that are always showing, nested
     /// endpoint paths, compile errors as document status, a built-in section behind a filter, a landing
     /// pane while nothing is open - so a change to the shell's rendering can be checked here against the
@@ -38,7 +39,7 @@ namespace Tesserae.Monaco.Sample
 
         private readonly MultiEditor              _shell;
         private readonly Stack                    _content;
-        private readonly TextBlock                _loading = TextBlock().Secondary().NoWrap().Collapse();
+        private readonly TextBlock                _loading = TextBlock().Small().Secondary().NoWrap().PB(4).Collapse();
         private readonly SettableObservable<bool> _showBuiltIn = new SettableObservable<bool>(false);
         private readonly SettableObservable<bool> _onlyFailing = new SettableObservable<bool>(false);
 
@@ -50,6 +51,8 @@ namespace Tesserae.Monaco.Sample
             _shell = MonacoEditor.MultiEditor()
                .Class(SHELL_CLASS)
                .FilterPlaceholder("Search across endpoints, tools and other items...")
+               .FilterActions(BuildFilterButton())
+               .TreeHeader(_loading)
                .Search(SearchAsync)
                .PersistInUrl("open", "active", viewKey: null)
                .PersistLayout("gallery:multi-editor-page")
@@ -62,16 +65,15 @@ namespace Tesserae.Monaco.Sample
             _showBuiltIn.ObserveFutureChanges(_ => RebuildDocuments());
             _onlyFailing.ObserveFutureChanges(_ => RebuildDocuments());
 
-            _content = VStack().S().Children(
-                BuildToolbar(),
-                _shell.WS().H(10).Grow());
+            _content = VStack().S().Children(_shell.S());
 
             _content.WhenMounted(() => LoadAsync().FireAndForget());
         }
 
         public HTMLElement Render() => _content.Render();
 
-        private IComponent BuildToolbar()
+        // Beside the filter box, the row whose results it narrows, rather than in a toolbar of its own.
+        private IComponent BuildFilterButton()
         {
             var filterButton = Button(UIcons.Filter).Tooltip("Filter items");
 
@@ -82,9 +84,7 @@ namespace Tesserae.Monaco.Sample
 
             filterButton.OnClick(() => Tippy.ShowFor(filterButton, BuildFilterContent(), out var _, TooltipAnimation.ShiftAway, TooltipPlacement.BottomEnd, delayHide: 200, maxWidth: 320));
 
-            return HStack().WS().NoShrink().AlignItemsCenter().PL(8).PR(8).PT(4).PB(4).Children(
-                _loading.W(10).Grow(),
-                filterButton);
+            return filterButton;
         }
 
         private IComponent BuildFilterContent()
