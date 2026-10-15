@@ -28,6 +28,7 @@ namespace Tesserae.Monaco.Sample
                .PersistLayout("gallery:multi-editor")
                .Views("gallery:multi-editor")
                .FilterPlaceholder("Filter documents...")
+               .FilterActions(Button(UIcons.Filter).Tooltip("A host's own control, beside the filter box").OnClick(() => log.Text = "filter button clicked"))
                .Landing(() => VStack().AlignItemsCenter().Gap(8.px()).Children(
                     Icon(UIcons.WindowRestore, size: TextSize.Large, color: Theme.Secondary.Foreground),
                     TextBlock("Pick a document on the left, or press Ctrl+P").Secondary()))

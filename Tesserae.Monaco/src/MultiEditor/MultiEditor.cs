@@ -39,6 +39,8 @@ namespace Tesserae.Monaco
         private readonly Stack                              _treeScroll;
         private readonly Tree                               _tree;
         private readonly SearchBox                          _searchBox;
+        private readonly Stack                              _filterRow;
+        private readonly Stack                              _treeHeader;
         private readonly Stack                              _rightPane;
         private readonly Pivot                              _tabs;
         private readonly CommandPalette                     _palette;
@@ -113,9 +115,17 @@ namespace Tesserae.Monaco
             // The views row is built and shown by Views(...); until then it takes no room.
             _viewHeader = HStack().WS().NoShrink().PL(8).PR(8).PT(8).AlignItemsCenter().Gap(4.px()).Collapse();
 
+            // W(10).Grow() rather than WS(): a host's FilterActions sit beside the box, and a 100% width
+            // would claim the whole row and squeeze them.
+            _filterRow = HStack().WS().NoShrink().P(8).AlignItemsCenter().Gap(4.px()).Children(_searchBox.W(10).Grow());
+
+            // Filled by TreeHeader(...); until then it takes no room.
+            _treeHeader = VStack().WS().NoShrink().PL(8).PR(8).Collapse();
+
             _treePane = VStack().S().Children(
                 _viewHeader,
-                HStack().WS().NoShrink().P(8).AlignItemsCenter().Children(_searchBox.WS().Grow()),
+                _filterRow,
+                _treeHeader,
                 _treeScroll);
 
             _tabs = Pivot().S().EnableCtrlTabSwitching().Reorderable()
@@ -544,6 +554,37 @@ namespace Tesserae.Monaco
         public MultiEditor FilterPlaceholder(string placeholder)
         {
             _searchBox.Placeholder = placeholder ?? "";
+
+            return this;
+        }
+
+        /// <summary>
+        /// Puts the host's own controls on the filter row, to the right of the filter box - a button that
+        /// opens the host's filters, say. They keep their own width; the box takes what is left.
+        /// </summary>
+        public MultiEditor FilterActions(params IComponent[] actions)
+        {
+            foreach (var action in actions ?? Array.Empty<IComponent>())
+            {
+                if (action is object) _filterRow.Add(action.NoShrink());
+            }
+
+            return this;
+        }
+
+        /// <summary>
+        /// Puts the host's own components between the filter row and the tree - a loading line or a notice
+        /// about what the tree is showing. The row takes no room while it has nothing in it.
+        /// </summary>
+        public MultiEditor TreeHeader(params IComponent[] components)
+        {
+            foreach (var component in components ?? Array.Empty<IComponent>())
+            {
+                if (component is null) continue;
+
+                _treeHeader.Add(component);
+                _treeHeader.Show();
+            }
 
             return this;
         }
