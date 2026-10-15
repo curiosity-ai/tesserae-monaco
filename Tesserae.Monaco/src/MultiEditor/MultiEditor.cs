@@ -26,6 +26,10 @@ namespace Tesserae.Monaco
     /// <see cref="EditorDocument.Content"/> shows that instead, so a shell can mix code editors with forms and
     /// viewers. Hidden tabs stay mounted: switching away and back keeps the caret, the scroll offset, the undo
     /// history and the markers, and costs nothing to come back to.
+    ///
+    /// On a phone (<see cref="UI.Theme.IsMobileMode"/>) the tree and the documents take turns filling the
+    /// shell instead of sharing it: opening a document shows it with a back bar above the tabs, and the bar's
+    /// back button brings the tree back - the same shape as a <see cref="Sidebar"/> rendered as a page.
     /// </summary>
     [Transpose.Name("tssm.MultiEditor")]
     public sealed class MultiEditor : IComponent
@@ -42,6 +46,11 @@ namespace Tesserae.Monaco
         private readonly Stack                              _filterRow;
         private readonly Stack                              _treeHeader;
         private readonly Stack                              _rightPane;
+        private readonly Stack                              _rightColumn;
+        private readonly Stack                              _phoneBar;
+        private readonly TextBlock                          _phoneBarTitle;
+        private readonly Button                             _phoneBack;
+        private readonly IComponent                         _splitter;
         private readonly Pivot                              _tabs;
         private readonly CommandPalette                     _palette;
         private readonly List<EditorDocument>               _catalog     = new List<EditorDocument>();
@@ -79,6 +88,8 @@ namespace Tesserae.Monaco
         private int                                _searchGeneration;
         private string                             _searchTerm = "";
         private HashSet<string>                    _searchHits;
+        private int                                _treeWidth = 320;
+        private bool                               _phoneShowsTree = true;
 
         // Views: named subsets of the catalog, kept in a store the host may replace.
         private readonly List<EditorView>              _views        = new List<EditorView>();
@@ -132,11 +143,21 @@ namespace Tesserae.Monaco
                .OnNavigate((s, e) => OnTabSelected(e.TargetPivot))
                .OnReorder((s, e) => OnTabsReordered(e.TabIds));
 
-            _rightPane = VStack().S();
+            _rightPane = VStack().WS().H(10).Grow();
 
-            _split = SplitView().S().Resizable(width => OnSplitResized(width)).LeftIsSmaller(320.px(), minLeftSize: 160.px())
+            // The bar a phone shows above the tabs, styled as Tesserae's SidebarPageBar so it matches the
+            // app shell's own back bar. It is only shown on a phone, where the tree is a page of its own.
+            _phoneBack     = Button().SetIcon(UIcons.AngleLeft).Class("tss-sidebar-page-bar-back").AriaLabel("Show the list of documents").OnClick(() => ShowTreeOnPhone());
+            _phoneBarTitle = TextBlock().Class("tss-sidebar-page-bar-title").SemiBold().NoWrap();
+            _phoneBar      = HStack().Class("tss-sidebar-page-bar").AlignItemsCenter().WS().NoShrink().Children(_phoneBack, _phoneBarTitle.W(10).Grow()).Collapse();
+
+            _rightColumn = VStack().S().Children(_phoneBar, _rightPane);
+
+            _split = SplitView().S().Resizable(width => OnSplitResized(width)).LeftIsSmaller(_treeWidth.px(), minLeftSize: 160.px())
                .Left(_treePane, background: Theme.Secondary.Background)
-               .Right(_rightPane);
+               .Right(_rightColumn);
+
+            _splitter = Raw(_split.Render().querySelector(":scope > .tss-splitter").As<HTMLElement>());
 
             _palette                   = new CommandPalette(_split);
             _palette.GlobalShortcutKey = "p";
@@ -185,6 +206,7 @@ namespace Tesserae.Monaco
 
             RebuildTree();
             RefreshPalette();
+            RefreshPhoneBarTitle();
             OpenPending();
             UpdateUrl();
 
@@ -305,6 +327,7 @@ namespace Tesserae.Monaco
                 existing.Rebind(document);
                 ShowTabs();
                 _tabs.Select(document.Id);
+                ShowDocumentOnPhone();
 
                 if (focus) existing.Focus();
 
@@ -332,6 +355,7 @@ namespace Tesserae.Monaco
             // showing the closed tab's emptied-out cached node. A tab that has just been created has
             // nothing cached to re-render, so the refresh costs it nothing.
             _tabs.Select(document.Id, refresh: true);
+            ShowDocumentOnPhone();
 
             if (focus) tab.Focus();
 
@@ -545,7 +569,8 @@ namespace Tesserae.Monaco
         /// <summary>The tree pane's starting width; a remembered width (<see cref="PersistLayout"/>) wins over it.</summary>
         public MultiEditor TreeWidth(int pixels)
         {
-            _split.LeftIsSmaller(pixels.px(), minLeftSize: 160.px());
+            _treeWidth = pixels;
+            ApplyLayout();
 
             return this;
         }
@@ -1467,6 +1492,8 @@ namespace Tesserae.Monaco
 
             _activeId = id;
 
+            RefreshPhoneBarTitle();
+
             UpdateUrl();
 
             _onActiveChanged?.Invoke(ActiveDocument);
@@ -1520,6 +1547,7 @@ namespace Tesserae.Monaco
             {
                 _activeId = null;
                 ShowLanding();
+                ShowTreeOnPhone();
                 _onActiveChanged?.Invoke(null);
             }
 
@@ -1550,6 +1578,81 @@ namespace Tesserae.Monaco
 
         #endregion
 
+        #region Phone layout
+
+        /// <summary>
+        /// The label of the back button a phone shows above an open document, read by screen readers and
+        /// browser automation. The button is an icon, so the label is all a host needs to translate.
+        /// </summary>
+        public MultiEditor PhoneBackLabel(string label)
+        {
+            _phoneBack.AriaLabel(label);
+
+            return this;
+        }
+
+        /// <summary>
+        /// On a phone, brings the tree back over the documents - what the back button above an open document
+        /// does. The open tabs stay open. Does nothing on a wider screen, where both are always on screen.
+        /// </summary>
+        public MultiEditor ShowTreeOnPhone()
+        {
+            _phoneShowsTree = true;
+            ApplyLayout();
+
+            return this;
+        }
+
+        private void ShowDocumentOnPhone()
+        {
+            _phoneShowsTree = false;
+            ApplyLayout();
+        }
+
+        private void RefreshPhoneBarTitle()
+        {
+            _phoneBarTitle.Text = ActiveDocument?.Title ?? "";
+        }
+
+        /// <summary>
+        /// Lays the split out for the window: the tree beside the documents on a wide screen, and one of the
+        /// two filling the shell on a phone. Only the panes' visibility and widths change, so an editor is
+        /// never moved in the DOM - which would tear it down - when the phone switches between them.
+        /// </summary>
+        private void ApplyLayout()
+        {
+            if (!Theme.IsMobileMode)
+            {
+                _split.LeftIsSmaller(_treeWidth.px(), minLeftSize: 160.px());
+                _split.Open();
+                _splitter.Show();
+                _rightColumn.Show();
+                _phoneBar.Collapse();
+                return;
+            }
+
+            _splitter.Collapse();
+
+            // With no document open there is nothing to switch to, so the tree is the page.
+            if (_phoneShowsTree || !_showingTabs)
+            {
+                _split.LeftIsSmaller(100.percent());
+                _split.Open();
+                _rightColumn.Collapse();
+            }
+            else
+            {
+                // A pixel width gives the right pane its flex-grow back, so it fills what the tree leaves.
+                _split.LeftIsSmaller(_treeWidth.px(), minLeftSize: 160.px());
+                _split.Close();
+                _rightColumn.Show();
+                RefreshPhoneBarTitle();
+                _phoneBar.Show();
+            }
+        }
+
+        #endregion
+
         #region URL and layout persistence
 
         private void ArmMountObserver()
@@ -1563,9 +1666,14 @@ namespace Tesserae.Monaco
 
                 UnsavedChangesGuard.TrackOpenTabs();
 
+                // The phone layout follows the window for as long as the shell is on the page.
+                Theme.OnMobileModeChanged += ApplyLayout;
+                ApplyLayout();
+
                 DomObserver.WhenRemoved(_split.Render(), () =>
                 {
                     _mounted = false;
+                    Theme.OnMobileModeChanged -= ApplyLayout;
                     UnsavedChangesGuard.ForgetOpenTabs();
                     ArmMountObserver();
                 });
@@ -1660,6 +1768,8 @@ namespace Tesserae.Monaco
 
         private void OnSplitResized(int width)
         {
+            if (width > 0) _treeWidth = width;
+
             if (_layoutKey is object && width > 0) window.localStorage.setItem(_layoutKey + ":width", width.ToString());
         }
 
@@ -1686,7 +1796,11 @@ namespace Tesserae.Monaco
         {
             var width = window.localStorage.getItem(_layoutKey + ":width");
 
-            if (int.TryParse(width ?? "", out var pixels) && pixels >= 160) _split.LeftIsSmaller(pixels.px(), minLeftSize: 160.px());
+            if (int.TryParse(width ?? "", out var pixels) && pixels >= 160)
+            {
+                _treeWidth = pixels;
+                ApplyLayout();
+            }
 
             foreach (var path in Split(window.localStorage.getItem(_layoutKey + ":expanded")))
             {

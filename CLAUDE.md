@@ -504,6 +504,15 @@ Decisions that shape it, each the cheapest way to a behaviour a user notices:
 - **Ctrl+S twice over.** Inside Monaco `CodeEditor.OnSave` binds the key ahead of the browser; outside
   it - focus in a form tab, or nowhere - the shell's own `keydown` listener saves the active document,
   and skips a press whose target is inside `.monaco-editor` so a save does not run twice.
+- **On a phone the tree and the documents take turns.** While `Theme.IsMobileMode` is on, `ApplyLayout`
+  shows one pane at a time, the way an app shell's `Sidebar.AsPage` does: the tree fills the shell until a
+  document opens, then the document fills it under a back bar (`tss-sidebar-page-bar` classes, so it
+  matches `SidebarPageBar` with no stylesheet here) whose button calls `ShowTreeOnPhone()`. Closing the
+  last tab brings the tree back. Only the split's pane widths and the panes' visibility change; the
+  editors are never moved in the DOM, which would tear them down and lose their undo. The splitter is
+  hidden on a phone and the desktop width is kept in `_treeWidth`, so widening the window restores it.
+  It follows `Theme.OnMobileModeChanged` only while mounted. The back button's accessible name is
+  `PhoneBackLabel(...)`, for a host that translates.
 
 Verified in the gallery with Playwright, Debug and Release: three tabs open with three live editors,
 the URL carries the open set and the active tab through a reload, a middle click closes, a dirty tab
