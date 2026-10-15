@@ -496,6 +496,11 @@ Decisions that shape it, each the cheapest way to a behaviour a user notices:
 - **`Documents(...)` rebuilds the tree from scratch** and re-binds open tabs by id. Folder expansion is
   remembered per path (`_expanded`) and re-applied, which is also what `PersistLayout` stores; opening a
   folder for a filter match does not touch it, because `Tree.Filter` raises no `OnExpanded`.
+- **A host's own controls go on the shell's rows, not above the shell.** `FilterActions(...)` puts them
+  to the right of the filter box (the box is `W(10).Grow()` there, not `WS()`, so a 100% width does not
+  squeeze them) and `TreeHeader(...)` between the filter row and the tree, collapsed while empty. Without
+  them Mosaik's Build view had to put its filter button in a row of its own above the whole shell, far
+  from the box whose results it filters.
 - **Ctrl+S twice over.** Inside Monaco `CodeEditor.OnSave` binds the key ahead of the browser; outside
   it - focus in a form tab, or nowhere - the shell's own `keydown` listener saves the active document,
   and skips a press whose target is inside `.monaco-editor` so a save does not run twice.

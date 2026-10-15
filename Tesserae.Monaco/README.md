@@ -439,7 +439,7 @@ with no identity yet — which is not written to the URL until it joins the cata
 | Catalog | `Documents`, `Add`, `Remove`, `Folder`, `SetStatus`, `Catalog`, `GetDocument` |
 | Tabs | `Open(id)`, `Open(document)`, `Select`, `CloseAsync`, `CloseAllAsync`, `OpenDocumentIds`, `ActiveDocumentId`, `ActiveDocument`, `IsOpen`, `EditorOf` |
 | Saving | `SaveAsync(id)`, `SaveAllAsync`, `IsDirty`, `HasUnsavedChanges`, `MarkDirty`, `ConfirmClose` |
-| Configuration | `ConfigureEditor`, `Landing`, `TreeWidth`, `FilterPlaceholder`, `Search`, `QuickOpen`, `PersistInUrl`, `PersistLayout` |
+| Configuration | `ConfigureEditor`, `Landing`, `TreeWidth`, `FilterPlaceholder`, `FilterActions`, `TreeHeader`, `Search`, `QuickOpen`, `PersistInUrl`, `PersistLayout` |
 | Events | `OnActiveChanged`, `OnOpened`, `OnClosed`, `OnSaved`, `OnDirtyChanged` |
 
 The URL round-trip writes the active tab under its own key and reads it back *before* re-opening the
