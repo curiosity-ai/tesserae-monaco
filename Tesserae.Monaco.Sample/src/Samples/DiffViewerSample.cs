@@ -41,7 +41,7 @@ namespace Tesserae.Monaco.Sample
                         SampleSubTitle("Try it"),
                         TextBlock("Switch layouts, and step through the changes with the navigation buttons."),
                         diff.WS().H(300.px()).MT(8),
-                        HStack().WS().AlignItemsCenter().PT(8).Children(
+                        HStack().WS().Wrap().Gap(8.px()).AlignItemsCenter().PT(8).Children(
                             toggle,
                             Button("Next change").OnClick(() => diff.GoToNextDifference()),
                             Button("Previous change").OnClick(() => diff.GoToPreviousDifference()),

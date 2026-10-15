@@ -41,13 +41,13 @@ namespace Tesserae.Monaco.Sample
                         SampleSubTitle("A validator of your own"),
                         TextBlock("This one flags every TODO. Type one on any line - the squiggle appears about a second after you stop typing."),
                         editor.WS().H(220.px()).MT(8),
-                        HStack().WS().AlignItemsCenter().PT(8).Children(
+                        HStack().WS().Wrap().Gap(8.px()).AlignItemsCenter().PT(8).Children(
                             Button("Validate now").OnClick(() => editor.Validate()),
                             Button("Clear markers").OnClick(() => editor.ClearMarkers())),
                         SampleSubTitle("Monaco's own worker"),
                         TextBlock("No validator is attached here - the json language worker produces the markers. The document below is valid, so it starts clean; break it and the errors appear."),
                         json.WS().H(160.px()).MT(8),
-                        HStack().WS().AlignItemsCenter().PT(8).Children(
+                        HStack().WS().Wrap().Gap(8.px()).AlignItemsCenter().PT(8).Children(
                             Button("Break the JSON").OnClick(() => json.SetText("{ \"name\": , }")),
                             Button("Restore").OnClick(() => json.SetText(SampleCode.Json)))
                     )).SetTitle("Usage")))

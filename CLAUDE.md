@@ -504,6 +504,26 @@ Decisions that shape it, each the cheapest way to a behaviour a user notices:
 - **Ctrl+S twice over.** Inside Monaco `CodeEditor.OnSave` binds the key ahead of the browser; outside
   it - focus in a form tab, or nowhere - the shell's own `keydown` listener saves the active document,
   and skips a press whose target is inside `.monaco-editor` so a save does not run twice.
+- **On a phone the tree and the documents take turns.** While `Theme.IsMobileMode` is on, `ApplyLayout`
+  shows one pane at a time, the way an app shell's `Sidebar.AsPage` does: the tree fills the shell until a
+  document opens, then the document fills it under a back bar (`tss-sidebar-page-bar` classes, so it
+  matches `SidebarPageBar` with no stylesheet here) whose button calls `ShowTreeOnPhone()`. Closing the
+  last tab brings the tree back. Only the split's pane widths and the panes' visibility change; the
+  editors are never moved in the DOM, which would tear them down and lose their undo. The splitter is
+  hidden on a phone and the desktop width is kept in `_treeWidth`, so widening the window restores it.
+  It follows `Theme.OnMobileModeChanged` only while mounted. The tree is `Compact()` on a desktop only:
+  on a phone its rows are touch targets, so `ApplyLayout` switches it to Tesserae's regular density, and
+  Tesserae's `tss.mobile.css` (from the release after 2026.10.71970) makes every tree row and pivot tab
+  44px there whatever the density. The back button's accessible name is
+  `PhoneBackLabel(...)`, for a host that translates.
+- **A host with a page-mode sidebar keeps the tree there instead.** The turn-taking above is for a
+  shell that is a widget on a page (the gallery, a modal). An app whose sidebar is already a page on a
+  phone (`Sidebar.AsPage`, Mosaik) would otherwise show two back bars stacked, so it calls
+  `TreeOutside()`, mounts `TreePanel` in a `SidebarComponent` of a child sidebar it `ShiftTo`s, and calls
+  its sidebar's `ShowContent()` from `OnDocumentShown` - Tesserae's rule for a list inside a
+  `SidebarComponent`, and the shape of Mosaik's chat history. `TreePanel` lives in `_treeHost` inside the
+  split because `SplitView.Left` styles the element it is given *as the pane*: handed the panel directly,
+  `Close()` and the pane width travelled with it into the sidebar and collapsed it there.
 
 Verified in the gallery with Playwright, Debug and Release: three tabs open with three live editors,
 the URL carries the open set and the active tab through a reload, a middle click closes, a dirty tab
@@ -1084,17 +1104,22 @@ Two things this depends on, both easy to break:
 - **Reflection has to be emitted inline.** `tps.json` carries `"reflection": { "disabled": false,
   "target": "inline" }`. With the metadata in a separate `.meta.js` the discovery finds nothing and the
   sidebar comes up empty.
+- **On a phone the sidebar is a page** (`Sidebar.AsPage`, as in Tesserae's own gallery): it and the
+  feature page take turns filling the screen, and a `SidebarPageBar` above the page brings the list
+  back. `ApplyLayoutMode` follows `Theme.OnMobileModeChanged`, so resizing switches it. Rows of demo
+  buttons are `HStack().Wrap()`, or the last one is cut off at 390px.
 - **Pages are built lazily and torn down on navigation.** `Defer` builds the page when it is opened, so
   one visit creates one page's editors rather than every page's at startup — and leaving a page unmounts
   them. That is a feature: it exercises the components' disposal on every click.
 
-There are 36 pages in four groups: **Editors** (the components themselves, plus the diff's own API and
+There are 37 pages in four groups: **Editors** (the components themselves, plus the diff's own API and
 `Colorize`), **Language services** (one page per provider — completion, hover documentation, signature
 help, inline completion, formatting, diagnostics, code actions, navigation, inlay hints and lenses, folding, links
 and colours, semantic tokens, a custom language, deferred grammars, and Monaco's bundled workers),
 **Decorations and widgets**, and **Runtime and hosting** (options, events, actions and commands,
 several documents, several *editors*, themes, a modal, remount, persisted history, the multi-editor
-shell, a document's settings, and two pages that test themselves: the lifecycle page, and editors in
+shell and the same shell as a whole page (Multi Editor Page, shaped like Mosaik's Build view), a
+document's settings, and two pages that test themselves: the lifecycle page, and editors in
 pivot tabs and modals). The sidebar sorts groups
 alphabetically and pages by their `Order`.
 
