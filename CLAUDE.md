@@ -513,6 +513,14 @@ Decisions that shape it, each the cheapest way to a behaviour a user notices:
   hidden on a phone and the desktop width is kept in `_treeWidth`, so widening the window restores it.
   It follows `Theme.OnMobileModeChanged` only while mounted. The back button's accessible name is
   `PhoneBackLabel(...)`, for a host that translates.
+- **A host with a page-mode sidebar keeps the tree there instead.** The turn-taking above is for a
+  shell that is a widget on a page (the gallery, a modal). An app whose sidebar is already a page on a
+  phone (`Sidebar.AsPage`, Mosaik) would otherwise show two back bars stacked, so it calls
+  `TreeOutside()`, mounts `TreePanel` in a `SidebarComponent` of a child sidebar it `ShiftTo`s, and calls
+  its sidebar's `ShowContent()` from `OnDocumentShown` - Tesserae's rule for a list inside a
+  `SidebarComponent`, and the shape of Mosaik's chat history. `TreePanel` lives in `_treeHost` inside the
+  split because `SplitView.Left` styles the element it is given *as the pane*: handed the panel directly,
+  `Close()` and the pane width travelled with it into the sidebar and collapsed it there.
 
 Verified in the gallery with Playwright, Debug and Release: three tabs open with three live editors,
 the URL carries the open set and the active tab through a reload, a middle click closes, a dirty tab

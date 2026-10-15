@@ -40,6 +40,7 @@ namespace Tesserae.Monaco
 
         private readonly SplitView                          _split;
         private readonly Stack                              _treePane;
+        private readonly Stack                              _treeHost;
         private readonly Stack                              _treeScroll;
         private readonly Tree                               _tree;
         private readonly SearchBox                          _searchBox;
@@ -90,6 +91,8 @@ namespace Tesserae.Monaco
         private HashSet<string>                    _searchHits;
         private int                                _treeWidth = 320;
         private bool                               _phoneShowsTree = true;
+        private bool                               _treeOutside;
+        private Action<EditorDocument>             _onDocumentShown;
 
         // Views: named subsets of the catalog, kept in a store the host may replace.
         private readonly List<EditorView>              _views        = new List<EditorView>();
@@ -153,8 +156,13 @@ namespace Tesserae.Monaco
 
             _rightColumn = VStack().S().Children(_phoneBar, _rightPane);
 
+            // SplitView styles the element it is given as the pane itself, so the tree panel sits in a host of
+            // its own: the pane's width and collapse land on the host, and the panel can leave for somewhere
+            // else (TreeOutside) without carrying them along.
+            _treeHost = VStack().S().Children(_treePane);
+
             _split = SplitView().S().Resizable(width => OnSplitResized(width)).LeftIsSmaller(_treeWidth.px(), minLeftSize: 160.px())
-               .Left(_treePane, background: Theme.Secondary.Background)
+               .Left(_treeHost, background: Theme.Secondary.Background)
                .Right(_rightColumn);
 
             _splitter = Raw(_split.Render().querySelector(":scope > .tss-splitter").As<HTMLElement>());
@@ -174,6 +182,12 @@ namespace Tesserae.Monaco
 
         /// <summary>The root element - the split view.</summary>
         public HTMLElement Render() => _split.Render();
+
+        /// <summary>
+        /// The tree with its filter box and views row - the left pane of the split. A host that puts it
+        /// somewhere else calls <see cref="TreeOutside"/> and mounts this where it wants it.
+        /// </summary>
+        public IComponent TreePanel => _treePane;
 
         #region Documents and folders
 
@@ -327,7 +341,7 @@ namespace Tesserae.Monaco
                 existing.Rebind(document);
                 ShowTabs();
                 _tabs.Select(document.Id);
-                ShowDocumentOnPhone();
+                ShowDocument(document);
 
                 if (focus) existing.Focus();
 
@@ -355,7 +369,7 @@ namespace Tesserae.Monaco
             // showing the closed tab's emptied-out cached node. A tab that has just been created has
             // nothing cached to re-render, so the refresh costs it nothing.
             _tabs.Select(document.Id, refresh: true);
-            ShowDocumentOnPhone();
+            ShowDocument(document);
 
             if (focus) tab.Focus();
 
@@ -1603,10 +1617,47 @@ namespace Tesserae.Monaco
             return this;
         }
 
-        private void ShowDocumentOnPhone()
+        /// <summary>
+        /// Shows only the documents: the host has mounted <see cref="TreePanel"/> somewhere of its own - the
+        /// app's sidebar while it is a page, on a phone - and its own page bar is the way back to it, so the
+        /// shell draws neither the tree nor its phone back bar. Pass false to take the tree back.
+        /// </summary>
+        public MultiEditor TreeOutside(bool outside = true)
+        {
+            if (_treeOutside == outside) return this;
+
+            _treeOutside = outside;
+
+            // The panel is moved out by the host mounting it; moving it back is putting it in its host again.
+            if (!outside && _treePane.Render().parentElement != _treeHost.Render())
+            {
+                _treeHost.Clear();
+                _treeHost.Add(_treePane);
+            }
+
+            ApplyLayout();
+
+            return this;
+        }
+
+        /// <summary>
+        /// A document was brought to the front - opened, revealed again, or restored from the URL. A host
+        /// that keeps the tree outside the shell (<see cref="TreeOutside"/>) steps its list aside here, the
+        /// way a page-mode sidebar does when a row is picked in it.
+        /// </summary>
+        public MultiEditor OnDocumentShown(Action<EditorDocument> handler)
+        {
+            _onDocumentShown += handler;
+
+            return this;
+        }
+
+        private void ShowDocument(EditorDocument document)
         {
             _phoneShowsTree = false;
             ApplyLayout();
+
+            _onDocumentShown?.Invoke(document);
         }
 
         private void RefreshPhoneBarTitle()
@@ -1621,6 +1672,16 @@ namespace Tesserae.Monaco
         /// </summary>
         private void ApplyLayout()
         {
+            if (_treeOutside)
+            {
+                _split.LeftIsSmaller(_treeWidth.px(), minLeftSize: 160.px());
+                _split.Close();
+                _splitter.Collapse();
+                _rightColumn.Show();
+                _phoneBar.Collapse();
+                return;
+            }
+
             if (!Theme.IsMobileMode)
             {
                 _split.LeftIsSmaller(_treeWidth.px(), minLeftSize: 160.px());
