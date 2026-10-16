@@ -127,9 +127,25 @@ consumed as-is:
   upstream marks AMD as deprecated and slated for removal. Don't reintroduce it.
 
 So `build/bundle-monaco.mjs` produces `monaco.js`, the `chunks/` beside it, and five `*.worker.js`
-files. Everything that can be resolved ahead of time is: minification, `codicon.ttf` as a data URI,
-Monaco's stylesheets folded into the JS as self-injecting `<style>` elements, and
-`MonacoEnvironment.getWorker` baked in with the worker filenames.
+files. Everything that can be resolved ahead of time is: minification, Monaco's stylesheets folded
+into the JS as self-injecting `<style>` elements, and `MonacoEnvironment.getWorker` baked in with the
+worker filenames.
+
+**`codicon.ttf` ships as a file (`media/codicon-<hash>.ttf`), never as a `data:` URI.** It is the font
+every icon in the editor is drawn with - the suggest list's kind icons, the widgets' close and arrow
+buttons, the folding chevrons - and an earlier version of the bundle inlined it as base64. A
+Content-Security-Policy without `data:` in `font-src` blocks that outright, and a bare
+`default-src 'self'` is enough: measured with exactly that policy injected into the gallery, the
+data-URI build logged `Refused to load the font 'data:font/ttf;base64,…'`, the codicon face reported
+`error` and every icon was gone, while the file build loaded it with no violation. A same-origin file
+is what Monaco's own `editor.main.css` always loaded (the vendored 0.52 build Mosaik used before this
+package fetched `../base/browser/ui/codicons/codicon/codicon.ttf`), so any policy that ran Monaco
+before allows it. The stylesheet is a `<style>` element and so resolves a relative `url()` against the
+*document*; the injector therefore builds the URL from its chunk's `import.meta.url`, with the path
+from that chunk to `media/` filled in after esbuild has placed it, and the font follows the bundle
+wherever it is served from, a sub-path included. What the same policy still blocks is Monaco's own:
+the error squiggle is a `data:image/svg+xml` background its JS generates, blocked identically before
+and after - a host whose CSP should allow it adds `img-src 'self' data:`.
 
 ### The entry is a module, and that is what makes the grammars lazy
 
@@ -223,7 +239,7 @@ one directory down (`/tesserae-monaco/`) walks clean as well.
 **The package pins are floors, so they follow the consumer, not the newest release.** A
 `PackageReference` in a packable project becomes a `>=` dependency in the nuspec, and a consumer that
 pins an older Tesserae than this package asks for gets NuGet's downgrade error (NU1605). So Tesserae is
-pinned at the version Mosaik's front-end compiles against (`2026.10.71905`), not at whatever is
+pinned at the version Mosaik's front-end compiles against (`2026.10.72369`), not at whatever is
 latest; `Transpose.BCL`, `Transpose.Core` and the SDK match Mosaik's pins exactly. Raise them together
 with the consumer, and only past a version whose members this package actually uses. Nothing pins
 `<LangVersion>`: the Transpose SDK overwrites it with the one version `tps` compiles at.

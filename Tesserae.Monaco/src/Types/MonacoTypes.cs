@@ -95,7 +95,10 @@ namespace Tesserae.Monaco
         Customcolor   = 22,
         Folder        = 23,
         TypeParameter = 24,
-        Snippet       = 25
+        User          = 25,
+        Issue         = 26,
+        Tool          = 27,
+        Snippet       = 28
     }
 
     /// <summary>Matching Monaco's <c>CompletionItemInsertTextRule</c>.</summary>

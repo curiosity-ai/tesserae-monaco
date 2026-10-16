@@ -609,13 +609,16 @@ upstream and slated for removal, so it is deliberately not used.
 
 esbuild resolves that graph and emits an ES-module entry, the chunks it pulls in, and the five
 language-service workers into `assets/js/monaco/`. As much as possible is resolved at build time —
-minification, `codicon.ttf` as a data URI, Monaco's stylesheets folded into the JS as self-injecting
-`<style>` elements, and the `MonacoEnvironment` worker wiring:
+minification, Monaco's stylesheets folded into the JS as self-injecting `<style>` elements, and the
+`MonacoEnvironment` worker wiring. The icon font, `codicon.ttf`, is the one asset that stays a file
+(`media/codicon-<hash>.ttf`, resolved against the bundle's own URL): a `data:` font is blocked by any
+Content-Security-Policy without `data:` in `font-src`, and with it every icon in the editor.
 
 | File | Size | Loaded |
 |---|---|---|
-| `monaco.js` + its shared `chunks/` | ~4.1 MB | On first editor (an ES module publishing `window.monaco`) |
+| `monaco.js` + its shared `chunks/` | ~3.9 MB | On first editor (an ES module publishing `window.monaco`) |
 | `chunks/<language>-*.js` | 1–20 KB each | On demand — the first document in that language |
+| `media/codicon-*.ttf` | ~140 KB | With the editor's stylesheet (the icon font) |
 | `editor.worker.js` | ~300 KB | On demand — diffs, word-based suggestions |
 | `json.worker.js` | ~430 KB | On demand — a `json` model |
 | `css.worker.js` | ~1 MB | On demand — a `css`/`scss`/`less` model |
