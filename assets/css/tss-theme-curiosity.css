@@ -616,6 +616,22 @@ body.tss-theme-curiosity .tss-btn-and-icon > .tss-btn.tss-btn-and-icon-icon:hove
     border-radius: 0 var(--tss-border-radius-full) var(--tss-border-radius-full) 0;
 }
 
+body.tss-theme-curiosity .tss-btn.tss-btn-default.tss-btn-spinning,
+body.tss-theme-curiosity .tss-btn.tss-btn-default.tss-btn-spin-resolved {
+    background-color: transparent;
+    border-color: transparent;
+    transition: background-color .72s cubic-bezier(.22, 1, .36, 1), border-color .72s cubic-bezier(.22, 1, .36, 1);
+}
+
+body.tss-theme-curiosity .tss-btn.tss-btn-spinning,
+body.tss-theme-curiosity .tss-btn.tss-btn-spin-resolved {
+    transform: none;
+}
+
+body.tss-theme-curiosity.tss-dark-mode .tss-btn .tss-btn-spin-ring.tss-btn-spin-ring-live:not(.tss-btn-spin-ring-success) {
+    color: var(--tss-highlight-color);
+}
+
 
 body.tss-theme-curiosity .tss-label.tss-disabled > label,
 body.tss-theme-curiosity .tss-label.tss-disabled > label .tss-fontcolor-default {
@@ -2350,7 +2366,15 @@ body.tss-theme-curiosity .tss-omnibox-container:not(.tss-omnibox-chat-and-search
 
 body.tss-theme-curiosity .tss-omnibox-container:focus-within {
     border-color: var(--tss-default-foreground-color);
+}
+
+body.tss-theme-curiosity .tss-omnibox-container:focus-within::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: max(0px, calc(var(--tss-omnibox-radius) - 1px));
     box-shadow: inset 0 0 0 1px var(--tss-default-foreground-color);
+    pointer-events: none;
 }
 
 body.tss-theme-curiosity .tss-omnibox-container:focus-within .tss-omnibox-search-container {
@@ -2976,6 +3000,10 @@ body.tss-theme-curiosity .tss-commandpalette-search-container .tss-omnibox-conta
     border-radius: 0;
     background: transparent;
     box-shadow: none;
+}
+
+body.tss-theme-curiosity .tss-commandpalette-search-container .tss-omnibox-container.tss-commandpalette-search:focus-within::after {
+    content: none;
 }
 
 body.tss-theme-curiosity .tss-commandpalette-search-container .tss-omnibox-container.tss-commandpalette-search .tss-omnibox-search-container .tss-btn.tss-omnibox-search-btn {
@@ -3802,6 +3830,97 @@ body.tss-theme-curiosity .tss-timeline-container .tss-timeline-content {
 }
 
 
+body.tss-theme-curiosity .tss-conversation-comment,
+body.tss-theme-curiosity .tss-conversation-comment-header,
+body.tss-theme-curiosity .tss-conversation-composer-box,
+body.tss-theme-curiosity .tss-conversation-composer-tabs,
+body.tss-theme-curiosity .tss-conversation-composer-tab,
+body.tss-theme-curiosity .tss-conversation-comment-attachment {
+    border-radius: 0;
+}
+
+body.tss-theme-curiosity .tss-conversation-item::before {
+    width: 1px;
+    left: 20.5px;
+}
+
+body.tss-theme-curiosity .tss-conversation-footer {
+    border-top-width: 1px;
+}
+
+body.tss-theme-curiosity .tss-conversation-event-icon {
+    border-radius: 0;
+    width: 24px;
+    height: 24px;
+    margin-left: 1px;
+    background: var(--tss-default-background-color);
+    border: var(--tss-cur-hair);
+    box-shadow: 0 0 0 3px var(--tss-default-background-color);
+}
+
+body.tss-theme-curiosity .tss-conversation-tone-primary,
+body.tss-theme-curiosity .tss-conversation-tone-success,
+body.tss-theme-curiosity .tss-conversation-tone-warning,
+body.tss-theme-curiosity .tss-conversation-tone-danger,
+body.tss-theme-curiosity .tss-conversation-tone-info {
+    border-color: transparent;
+}
+
+body.tss-theme-curiosity .tss-conversation-tone-ai {
+    background: var(--tss-cur-deep);
+    border-color: var(--tss-cur-deep);
+    color: var(--tss-cur-paper);
+}
+
+body.tss-theme-curiosity .tss-conversation-comment-highlighted {
+    box-shadow: none;
+    border-color: var(--tss-cur-signal);
+}
+
+    body.tss-theme-curiosity .tss-conversation-comment-highlighted > .tss-conversation-comment-header {
+        border-bottom-color: var(--tss-cur-signal);
+        background: rgba(47, 107, 255, 0.08);
+    }
+
+body.tss-theme-curiosity .tss-conversation-comment-time,
+body.tss-theme-curiosity .tss-conversation-event-time,
+body.tss-theme-curiosity .tss-conversation-reaction-count,
+body.tss-theme-curiosity .tss-conversation-composer-hint {
+    font-family: var(--tss-monospace-font-family);
+    font-size: var(--tss-font-size-xsmall);
+}
+
+body.tss-theme-curiosity .tss-conversation-composer-hint {
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+body.tss-theme-curiosity .tss-conversation-composer-tab-active {
+    font-weight: var(--tss-font-weight-semibold);
+}
+
+body.tss-theme-curiosity .tss-conversation-compact .tss-conversation-event-icon {
+    width: 22px;
+    height: 22px;
+    margin-left: 0;
+}
+
+
+body.tss-theme-curiosity .tss-metadata-section-title {
+    font-family: var(--tss-monospace-font-family);
+    font-size: var(--tss-font-size-tiny);
+    font-weight: var(--tss-font-weight-regular);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+
+body.tss-theme-curiosity .tss-metadata-item-subtitle,
+body.tss-theme-curiosity .tss-metadata-avatars-more {
+    font-family: var(--tss-monospace-font-family);
+    font-size: var(--tss-font-size-xsmall);
+}
+
+
 body.tss-theme-curiosity .tss-gridpicker .tss-gridpicker-button {
     border-radius: 0;
     border: none;
@@ -4262,7 +4381,7 @@ body.tss-theme-curiosity .tss-taskboard-card:hover {
     box-shadow: 0 0 0 1px var(--tss-default-foreground-color) !important;
 }
 
-body.tss-theme-curiosity .tss-taskboard-card:active {
+body.tss-theme-curiosity .tss-taskboard-column:not(.tss-taskboard-column-readonly) .tss-taskboard-card:active {
     cursor: grabbing;
 }
 
@@ -5474,6 +5593,10 @@ body.tss-theme-curiosity .tippy-box > .tippy-content > .tss-omniresult-footer.ts
 
 body.tss-theme-curiosity.tss-dark-mode .tippy-box > .tippy-content > .tss-omniresult-footer.tss-omniresult-footer-popup {
     border-color: var(--tss-dark-border-color);
+}
+
+body.tss-theme-curiosity .tippy-box .tss-omniresult-footer-popup > .tss-omniresult-footer-entry > .tss-textblock {
+    color: var(--tss-secondary-foreground-color);
 }
 
 body.tss-theme-curiosity .tss-modal.tss-omniresult-modal {
