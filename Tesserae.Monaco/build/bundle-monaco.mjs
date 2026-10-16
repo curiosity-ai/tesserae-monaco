@@ -33,7 +33,8 @@
 import { build, transform } from 'esbuild';
 import { mkdir, rm, readFile, writeFile, readdir, stat } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
-import { dirname, resolve, join, relative } from 'node:path';
+import { dirname, resolve, join, relative, basename, extname, sep } from 'node:path';
+import { createHash } from 'node:crypto';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const pkgRoot = resolve(here, '..');
@@ -60,17 +61,23 @@ const common = {
  * never be requested at all. Injecting from JS keeps each chunk self-contained: the styles arrive
  * exactly when the code that needs them does, and there is no second file for a host to remember.
  *
- * `url(...)` references are inlined as data URIs on the way through - in practice that is Monaco's
- * `codicon.ttf`, which would otherwise have to be served from a path matching the CSS's own.
+ * A relative `url(...)` - in practice Monaco's `codicon.ttf`, the font every icon in the editor is
+ * drawn with - is emitted as a file of its own under `media/` and referenced by a real URL, never
+ * inlined as a `data:` URI. A Content-Security-Policy without `data:` in `font-src` (a bare
+ * `default-src 'self'` is enough) blocks a data-URI font outright, and every codicon - the suggest
+ * list's kind icons, the find widget, the folding arrows - silently disappears. A same-origin file
+ * is what Monaco's own `editor.main.css` always loaded, so it is what any CSP that ran Monaco
+ * before already allows.
+ *
+ * The URL cannot be written into the CSS as a relative path, because the stylesheet is injected as
+ * a `<style>` element and so resolves against the *document*, not against the script. So the
+ * injector builds it at run time from `import.meta.url` - the URL of the chunk the code ended up
+ * in - and the relative path from that chunk to the asset is filled in once esbuild has decided
+ * which chunk that is (see `resolveAssetPlaceholders` below). Like the workers, the font then
+ * follows the bundle wherever it is served from.
  */
-const MIME_TYPES = {
-  '.ttf':   'font/ttf',
-  '.woff':  'font/woff',
-  '.woff2': 'font/woff2',
-  '.svg':   'image/svg+xml',
-  '.png':   'image/png',
-  '.gif':   'image/gif',
-};
+const assetDir = join(outDir, 'media');
+const ASSET_PLACEHOLDER = /__TSSM_ASSET\{([^}]+)\}__/g;
 
 const cssInline = {
   name: 'css-inline',
@@ -78,28 +85,49 @@ const cssInline = {
     builder.onLoad({ filter: /\.css$/ }, async (args) => {
       const minified = await transform(await readFile(args.path, 'utf8'), { loader: 'css', minify: true });
 
-      let css = minified.code;
+      // The CSS is split around each asset reference, so the injector can put a run-time URL between
+      // the pieces: [css, asset, css, asset, ..., css].
+      const pieces = [];
+      let rest = minified.code;
 
-      for (const match of [...css.matchAll(/url\(\s*(['"]?)([^'")]+)\1\s*\)/g)]) {
+      for (const match of [...minified.code.matchAll(/url\(\s*(['"]?)([^'")]+)\1\s*\)/g)]) {
         const reference = match[2];
 
         if (/^(data:|https?:|\/\/|#)/.test(reference)) continue;
 
         const file = resolve(dirname(args.path), reference.split(/[?#]/)[0]);
-        const extension = file.slice(file.lastIndexOf('.'));
+        let asset;
 
         try {
-          const asset = await readFile(file);
-          const mime = MIME_TYPES[extension] || 'application/octet-stream';
-
-          css = css.split(match[0]).join(`url("data:${mime};base64,${asset.toString('base64')}")`);
+          asset = await readFile(file);
         } catch {
           // A url() that does not resolve to a file on disk is left as it was written.
+          continue;
         }
+
+        const name = basename(file, extname(file));
+        const hash = createHash('sha256').update(asset).digest('hex').slice(0, 8);
+        const assetName = `${name}-${hash}${extname(file)}`;
+
+        await mkdir(assetDir, { recursive: true });
+        await writeFile(join(assetDir, assetName), asset);
+
+        const at = rest.indexOf(match[0]);
+
+        pieces.push(rest.slice(0, at), assetName);
+        rest = rest.slice(at + match[0].length);
+      }
+
+      pieces.push(rest);
+
+      let text = JSON.stringify(pieces[0]);
+
+      for (let i = 1; i < pieces.length; i += 2) {
+        text += `+'url("'+new URL("__TSSM_ASSET{${pieces[i]}}__",import.meta.url).href+'")'+${JSON.stringify(pieces[i + 1])}`;
       }
 
       return {
-        contents: `(function(){var s=document.createElement("style");s.setAttribute("data-tssm-monaco","");s.textContent=${JSON.stringify(css)};document.head.appendChild(s)})();`,
+        contents: `(function(){var s=document.createElement("style");s.setAttribute("data-tssm-monaco","");s.textContent=${text};document.head.appendChild(s)})();`,
         loader: 'js',
       };
     });
@@ -233,6 +261,39 @@ await build({
 
 await rm(entryPath);
 await rm(join(outDir, 'monaco-environment.js'));
+
+/**
+ * Fills in the asset paths the css-inline plugin left as placeholders. Only now is it known which
+ * output file each stylesheet's injector landed in - the entry at the root, or a chunk under
+ * `chunks/` - and so what the path from that file to `media/` is. The result is resolved against
+ * that file's own `import.meta.url` at run time.
+ */
+const resolveAssetPlaceholders = async (directory) => {
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    const path = join(directory, entry.name);
+
+    if (entry.isDirectory()) {
+      await resolveAssetPlaceholders(path);
+      continue;
+    }
+
+    if (!entry.name.endsWith('.js')) continue;
+
+    const source = await readFile(path, 'utf8');
+
+    if (!source.includes('__TSSM_ASSET{')) continue;
+
+    const resolved = source.replace(ASSET_PLACEHOLDER, (_, name) => {
+      const target = relative(dirname(path), join(assetDir, name)).split(sep).join('/');
+
+      return target.startsWith('.') ? target : './' + target;
+    });
+
+    await writeFile(path, resolved);
+  }
+};
+
+await resolveAssetPlaceholders(outDir);
 
 // Workers are classic (non-module) scripts: MonacoEnvironment.getWorker hands back a URL that
 // Monaco loads as a plain Worker, so each one has to be a standalone IIFE with no imports left.
