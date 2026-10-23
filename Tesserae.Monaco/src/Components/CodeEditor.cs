@@ -728,6 +728,10 @@ namespace Tesserae.Monaco
         {
             _onBeforeCreate?.Invoke();
 
+            // The saved settings win over everything the host configured, so the tab size goes in ahead of
+            // the model the surface will bind to it.
+            var settings = EffectiveSettings();
+
             var options = BuildBaseOptions(InitialLanguage, InitialText, InitialReadOnly, InitialWordWrap, _autoHeight);
 
             options.snippetSuggestions = "bottom";
@@ -737,6 +741,13 @@ namespace Tesserae.Monaco
             options.hover              = new HoverOptions { enabled = true, sticky = true, delay = HOVER_REQUEST_DELAY_MS, hidingDelay = 300 };
 
             FinishOptions(options, OptionSetters, _configureOptions);
+
+            if (settings is object)
+            {
+                settings.WriteTo(options);
+                TrackWordWrap(settings.WordWrap);
+                Indentation(settings.TabSize, settings.InsertSpaces);
+            }
 
             var editor = MonacoApi.editor.create(container, options);
 
@@ -765,6 +776,14 @@ namespace Tesserae.Monaco
             }
 
             AddWordWrapAction(editor);
+
+            if (_settingsEnabled)
+            {
+                AddSettingsAction(editor);
+
+                // Follows a save or reset made from any editor, or from another tab.
+                Disposables.Add(EditorSettingsStore.Subscribe(ApplySettingsLive));
+            }
 
             if (_navigateOnClickOnly) EnableClickOnlyNavigation(editor);
 
@@ -908,6 +927,97 @@ namespace Tesserae.Monaco
                 run                = _ => WordWrap(!IsWordWrapped)
             });
         }
+
+        #region User settings
+
+        private bool           _settingsEnabled = true;
+        private EditorSettings _settingsDefaults;
+
+        /// <summary>
+        /// The settings this editor uses until the person saves their own from the <b>Editor Settings</b> context-menu
+        /// entry, and returns to on "Reset to defaults". Start from <c>new EditorSettings()</c> (the package's
+        /// defaults) and change what the application wants different, e.g. <c>InlayHints = "off"</c>.
+        /// </summary>
+        public CodeEditor SettingsDefaults(EditorSettings defaults)
+        {
+            _settingsDefaults = defaults?.Clone();
+
+            return this;
+        }
+
+        /// <summary>
+        /// Takes the <b>Editor Settings</b> entry off this editor's context menu and stops it following saved
+        /// settings, for an editor whose look the application owns. Tab size and indentation are the exception
+        /// Monaco imposes: it keeps them for the whole page, so a saved tab size reaches this editor's document too.
+        /// </summary>
+        public CodeEditor NoUserSettings()
+        {
+            _settingsEnabled = false;
+
+            return this;
+        }
+
+        // What the editor should look like right now: the saved settings, else the host's defaults, else null
+        // (leave the construction options exactly as the host configured them).
+        private EditorSettings EffectiveSettings()
+        {
+            if (!_settingsEnabled) return null;
+
+            return EditorSettingsStore.Load(_settingsDefaults) ?? _settingsDefaults;
+        }
+
+        private void ApplySettingsLive()
+        {
+            if (Surface is null) return;
+
+            var settings = EffectiveSettings();
+            var patch    = new EditorOptions();
+
+            if (settings is object)
+            {
+                settings.WriteTo(patch);
+            }
+            else
+            {
+                // A reset with no defaults from the host: the package's own, then whatever this editor was
+                // configured with on top - the same layering the editor was created with.
+                new EditorSettings().WriteTo(patch);
+                FinishOptions(patch, OptionSetters, _configureOptions);
+
+                settings = new EditorSettings();
+            }
+
+            TrackWordWrap(settings.WordWrap);
+
+            Surface.UpdateOptions(patch);
+
+            Indentation(settings.TabSize, settings.InsertSpaces);
+        }
+
+        private void AddSettingsAction(IStandaloneCodeEditor editor)
+        {
+            editor.addAction(new EditorAction
+            {
+                id                 = "tssm.editorSettings",
+                label              = EditorSettingsDialog.T("Editor Settings") + "…",
+                contextMenuGroupId = "z_settings",
+                contextMenuOrder   = 1,
+                run                = _ => ShowSettings()
+            });
+        }
+
+        /// <summary>Opens the same dialog the context-menu entry opens.</summary>
+        public void ShowSettings()
+        {
+            var current = EffectiveSettings() ?? new EditorSettings();
+
+            // Word wrap can be toggled from the context menu without being saved; show what the editor does now.
+            current.WordWrap = IsWordWrapped;
+
+            EditorSettingsDialog.Show(current, EditorSettingsStore.Save, EditorSettingsStore.Clear);
+        }
+
+        #endregion
 
         // Monaco's "go to definition at position" contribution owns three gestures: the modifier-hover that
         // underlines a word and previews its source, the same preview started by pressing the modifier with
