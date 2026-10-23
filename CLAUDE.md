@@ -206,6 +206,20 @@ a clean `npm ci && npm run bundle` was verified byte-identical to the `monaco/` 
 If you bump the `monaco-editor` pin, re-run the browser verification below — worker entry-point paths
 and the CSS-import situation have both changed between minor versions.
 
+## Dependency pins: monaco-editor 0.57.0 and the dompurify override
+
+`monaco-editor` is pinned exactly (0.57.0); esbuild floats on `^0.28`. **`package.json` also carries
+`"overrides": { "dompurify": "3.4.17" }`.** Monaco depends on dompurify with an *exact* version (0.56 on 3.4.8,
+0.57 on 3.4.15), and everything up to 3.4.16 has critical advisories (DOM XSS through the IN_PLACE hooks,
+SAFE_FOR_TEMPLATES bypass); `npm audit` is clean only with the override. dompurify is inlined into the shipped
+`monaco.js`, so this reaches consumers. Drop the override once a Monaco release pins 3.4.17 or later. The
+`.npmrc` cooldown does not stop it: 3.4.17 is older than seven days.
+
+Bump checklist run for 0.57.0, all unchanged from 0.56: `disposeInlineCompletions` still called unguarded,
+`setHoverDelegateFactory` still set by every `StandaloneCodeEditor`, `_onEditorMouseLeave` unchanged
+(`HoverEntryGuard` stays). Walked all 39 pages, Debug and Release, with the console watched; Lifecycle (114
+checks) and Pivots and Modals (174) pass; diff decorations (22) and completion rows arrive.
+
 ## The package ships a module entry, not just bundles
 
 `tps.json` sets `"outputBy": "Module"`. For a package that makes `tps --emit-package` embed every
@@ -1011,7 +1025,7 @@ These were learned the hard way in Mosaik; don't simplify them away.
   use, the bug was reported as monaco-editor#2156 (2020), and vscode#142160 (March 2022, Monaco 0.34)
   fixed it by keeping the hover when the leave event's `relatedTarget` is inside the widget - the same
   test the guard makes. The resizable-hover rewrite later replaced that with the inset rectangle check
-  and nobody re-ran the 2020 case. Still present in 0.56.0 (July 2026, the latest release) and in
+  and nobody re-ran the 2020 case. Still present in 0.57.0 (the pin) and in
   VS Code `main` at the time of writing, so the guard stays until a Monaco release carries a fix; it is
   a no-op once one does. Re-check `_onEditorMouseLeave` in `contentHoverController.js` on each pin bump.
 - **Closing a diff editor broke every suggest list on the page, so the bundle pins the hover-delegate
@@ -1027,7 +1041,7 @@ These were learned the hard way in Mosaik; don't simplify them away.
   root instantiation service. It has to be a microtask, because the event fires inside the base
   constructor, before the subclass's own `setHoverDelegateFactory` call. And `withServices` is used
   because it waits for the first editor rather than initialising the services itself. Still needed in
-  0.56.0. On a pin bump, check `standaloneCodeEditor.js` for the `setHoverDelegateFactory` call.
+  0.57.0. On a pin bump, check `standaloneCodeEditor.js` for the `setHoverDelegateFactory` call.
   The Lifecycle page's test guards it (see "The lifecycle test" below).
 - **A diff editor's two models are ours to dispose.** Monaco does not dispose models handed to
   `setModel`, so `DiffViewer` disposes them itself — the inline versions in Mosaik leak one pair per

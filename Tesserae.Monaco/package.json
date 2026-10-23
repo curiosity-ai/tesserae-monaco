@@ -4,13 +4,16 @@
   "version": "0.1.0",
   "description": "Pins monaco-editor and bundles its ESM build into the scripts shipped by the Tesserae.Monaco package.",
   "dependencies": {
-    "monaco-editor": "0.56.0"
+    "monaco-editor": "0.57.0"
   },
   "devDependencies": {
-    "esbuild": "^0.28.1"
+    "esbuild": "^0.28.2"
   },
   "scripts": {
     "bundle": "node build/bundle-monaco.mjs"
   },
-  "type": "module"
+  "type": "module",
+  "overrides": {
+    "dompurify": "3.4.17"
+  }
 }
