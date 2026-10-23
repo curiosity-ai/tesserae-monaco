@@ -206,14 +206,21 @@ a clean `npm ci && npm run bundle` was verified byte-identical to the `monaco/` 
 If you bump the `monaco-editor` pin, re-run the browser verification below — worker entry-point paths
 and the CSS-import situation have both changed between minor versions.
 
-## Dependency pins: monaco-editor 0.57.0 and the dompurify override
+## Dependency pins: monaco-editor 0.57.0, and dompurify is not ours to override
 
-`monaco-editor` is pinned exactly (0.57.0); esbuild floats on `^0.28`. **`package.json` also carries
-`"overrides": { "dompurify": "3.4.17" }`.** Monaco depends on dompurify with an *exact* version (0.56 on 3.4.8,
-0.57 on 3.4.15), and everything up to 3.4.16 has critical advisories (DOM XSS through the IN_PLACE hooks,
-SAFE_FOR_TEMPLATES bypass); `npm audit` is clean only with the override. dompurify is inlined into the shipped
-`monaco.js`, so this reaches consumers. Drop the override once a Monaco release pins 3.4.17 or later. The
-`.npmrc` cooldown does not stop it: 3.4.17 is older than seven days.
+`monaco-editor` is pinned exactly (0.57.0); esbuild floats on `^0.28`.
+
+**`npm audit` reports a critical `dompurify` advisory (<= 3.4.16), and an npm `overrides` entry does nothing
+about it.** Monaco does not import the `dompurify` package: `esm/vs/base/browser/domSanitize.js` imports
+`./dompurify/dompurify.js`, a copy vendored inside `monaco-editor` (its header reads DOMPurify 3.4.15 in
+0.57.0), and that copy is what esbuild bundles into `monaco.js`. The npm dependency Monaco also declares is
+never imported, so overriding it only changed an unused folder in `node_modules` and made the audit look clean
+while the bundle stayed on 3.4.15 (checked: `chunk-*.js` carries `"3.4.15"`). So the audit finding is real for
+what ships but can only be fixed by a Monaco release that vendors a newer DOMPurify; patching the vendored file
+in the build would be a patched copy of Monaco's code, which the bundle script deliberately never does. Check
+the vendored version on each pin bump (`head -c 200 node_modules/monaco-editor/esm/vs/base/browser/dompurify/dompurify.js`).
+Monaco feeds it markdown hover and suggest documentation (the hosts' own text), so exposure is low, but it
+is not zero.
 
 Bump checklist run for 0.57.0, all unchanged from 0.56: `disposeInlineCompletions` still called unguarded,
 `setHoverDelegateFactory` still set by every `StandaloneCodeEditor`, `_onEditorMouseLeave` unchanged
