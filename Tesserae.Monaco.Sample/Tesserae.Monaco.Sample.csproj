@@ -1,4 +1,4 @@
-<Project Sdk="Transpose.Build.Target/26.9.4870">
+<Project Sdk="Transpose.Build.Target/26.10.6986">
   <PropertyGroup>
     <TargetFramework>netstandard2.0</TargetFramework>
     <DefineConstants>TRANSPOSE</DefineConstants>
@@ -8,10 +8,10 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Transpose.BCL" Version="26.9.5840" />
-    <PackageReference Include="Transpose.Core" Version="26.9.5838" />
-    <PackageReference Include="Tesserae" Version="2026.10.72369" />
-    <PackageReference Include="Tesserae.Themes.Curiosity" Version="26.10.72369" />
+    <PackageReference Include="Transpose.BCL" Version="26.10.7126" />
+    <PackageReference Include="Transpose.Core" Version="26.10.6989" />
+    <PackageReference Include="Tesserae" Version="2026.10.72651" />
+    <PackageReference Include="Tesserae.Themes.Curiosity" Version="26.10.72651" />
   </ItemGroup>
 
   <ItemGroup>
