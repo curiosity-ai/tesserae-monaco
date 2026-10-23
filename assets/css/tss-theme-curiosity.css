@@ -86,8 +86,13 @@ body.tss-theme-curiosity {
     --tss-primary-foreground-hover-color-root: 244, 244, 242;
     --tss-primary-background-active-color-root: 42, 47, 56;
     --tss-primary-foreground-active-color-root: 244, 244, 242;
-    --tss-warning-background-color-root: 176, 106, 0;
+    --tss-warning-background-color-root: 160, 95, 0;
     --tss-warning-foreground-color-root: 255, 255, 255;
+    --tss-warning-border-color-root: 160, 95, 0;
+    --tss-warning-background-hover-color-root: 138, 82, 0;
+    --tss-warning-foreground-hover-color-root: 255, 255, 255;
+    --tss-warning-background-active-color-root: 112, 66, 0;
+    --tss-warning-foreground-active-color-root: 255, 255, 255;
     --tss-danger-background-color-root: 196, 43, 28;
     --tss-danger-foreground-color-root: 255, 255, 255;
     --tss-danger-border-color-root: 196, 43, 28;
@@ -172,6 +177,11 @@ body.tss-theme-curiosity {
     --tss-primary-background-color-transparent: rgba(var(--tss-primary-background-color-root), 0.2);
     --tss-warning-background-color: rgb(var(--tss-warning-background-color-root));
     --tss-warning-foreground-color: rgb(var(--tss-warning-foreground-color-root));
+    --tss-warning-border-color: rgb(var(--tss-warning-border-color-root));
+    --tss-warning-background-hover-color: rgb(var(--tss-warning-background-hover-color-root));
+    --tss-warning-foreground-hover-color: rgb(var(--tss-warning-foreground-hover-color-root));
+    --tss-warning-background-active-color: rgb(var(--tss-warning-background-active-color-root));
+    --tss-warning-foreground-active-color: rgb(var(--tss-warning-foreground-active-color-root));
     --tss-danger-background-color: rgb(var(--tss-danger-background-color-root));
     --tss-danger-foreground-color: rgb(var(--tss-danger-foreground-color-root));
     --tss-danger-border-color: rgb(var(--tss-danger-border-color-root));
@@ -231,6 +241,11 @@ body.tss-theme-curiosity.tss-dark-mode {
     --tss-primary-foreground-active-color-root: 244, 244, 242;
     --tss-warning-background-color-root: 214, 140, 30;
     --tss-warning-foreground-color-root: 17, 20, 24;
+    --tss-warning-border-color-root: 214, 140, 30;
+    --tss-warning-background-hover-color-root: 232, 160, 50;
+    --tss-warning-foreground-hover-color-root: 17, 20, 24;
+    --tss-warning-background-active-color-root: 196, 126, 22;
+    --tss-warning-foreground-active-color-root: 17, 20, 24;
     --tss-danger-background-color-root: 226, 72, 56;
     --tss-danger-foreground-color-root: 255, 255, 255;
     --tss-danger-border-color-root: 226, 72, 56;
@@ -280,6 +295,11 @@ body.tss-theme-curiosity.tss-dark-mode {
     --tss-primary-background-color-transparent: rgba(var(--tss-primary-background-color-root), 0.2);
     --tss-warning-background-color: rgb(var(--tss-warning-background-color-root));
     --tss-warning-foreground-color: rgb(var(--tss-warning-foreground-color-root));
+    --tss-warning-border-color: rgb(var(--tss-warning-border-color-root));
+    --tss-warning-background-hover-color: rgb(var(--tss-warning-background-hover-color-root));
+    --tss-warning-foreground-hover-color: rgb(var(--tss-warning-foreground-hover-color-root));
+    --tss-warning-background-active-color: rgb(var(--tss-warning-background-active-color-root));
+    --tss-warning-foreground-active-color: rgb(var(--tss-warning-foreground-active-color-root));
     --tss-danger-background-color: rgb(var(--tss-danger-background-color-root));
     --tss-danger-foreground-color: rgb(var(--tss-danger-foreground-color-root));
     --tss-danger-border-color: rgb(var(--tss-danger-border-color-root));
@@ -562,12 +582,14 @@ body.tss-theme-curiosity .tss-btn.tss-btn-primary:not(.tss-disabled):active {
 }
 
 body.tss-theme-curiosity .tss-btn.tss-btn-danger:not(.tss-disabled):hover,
+body.tss-theme-curiosity .tss-btn.tss-btn-warning:not(.tss-disabled):hover,
 body.tss-theme-curiosity .tss-btn.tss-btn-success:not(.tss-disabled):hover {
     border-color: transparent;
 }
 
 body.tss-theme-curiosity .tss-btn.tss-btn-primary.tss-btn-nobg:not(.tss-disabled):hover,
 body.tss-theme-curiosity .tss-btn.tss-btn-danger.tss-btn-nobg:not(.tss-disabled):hover,
+body.tss-theme-curiosity .tss-btn.tss-btn-warning.tss-btn-nobg:not(.tss-disabled):hover,
 body.tss-theme-curiosity .tss-btn.tss-btn-success.tss-btn-nobg:not(.tss-disabled):hover {
     background-color: var(--tss-default-background-hover-color);
     border-color: transparent;
@@ -575,6 +597,7 @@ body.tss-theme-curiosity .tss-btn.tss-btn-success.tss-btn-nobg:not(.tss-disabled
 
 body.tss-theme-curiosity .tss-btn.tss-btn-primary.tss-btn-nobg:not(.tss-disabled):active,
 body.tss-theme-curiosity .tss-btn.tss-btn-danger.tss-btn-nobg:not(.tss-disabled):active,
+body.tss-theme-curiosity .tss-btn.tss-btn-warning.tss-btn-nobg:not(.tss-disabled):active,
 body.tss-theme-curiosity .tss-btn.tss-btn-success.tss-btn-nobg:not(.tss-disabled):active {
     background-color: var(--tss-default-background-active-color);
 }
@@ -584,6 +607,15 @@ body.tss-theme-curiosity .tss-btn.tss-btn-danger.tss-btn-nobg:not(.tss-disabled)
 body.tss-theme-curiosity .tss-btn.tss-btn-danger.tss-btn-nobg:not(.tss-disabled):active,
 body.tss-theme-curiosity .tss-btn.tss-btn-danger.tss-btn-nobg:not(.tss-disabled):active .tss-fontcolor-default {
     color: var(--tss-danger-background-color);
+}
+
+body.tss-theme-curiosity .tss-btn.tss-btn-warning.tss-btn-nobg,
+body.tss-theme-curiosity .tss-btn.tss-btn-warning.tss-btn-nobg .tss-fontcolor-default,
+body.tss-theme-curiosity .tss-btn.tss-btn-warning.tss-btn-nobg:not(.tss-disabled):hover,
+body.tss-theme-curiosity .tss-btn.tss-btn-warning.tss-btn-nobg:not(.tss-disabled):hover .tss-fontcolor-default,
+body.tss-theme-curiosity .tss-btn.tss-btn-warning.tss-btn-nobg:not(.tss-disabled):active,
+body.tss-theme-curiosity .tss-btn.tss-btn-warning.tss-btn-nobg:not(.tss-disabled):active .tss-fontcolor-default {
+    color: var(--tss-warning-background-color);
 }
 
 body.tss-theme-curiosity .tss-btn.tss-btn-success.tss-btn-nobg:not(.tss-disabled):hover,
@@ -1656,6 +1688,31 @@ body.tss-theme-curiosity .tss-picker-remove:hover {
 }
 
 
+body.tss-theme-curiosity .tss-autocompletebox-list {
+    border-radius: 0;
+    border-color: var(--tss-default-foreground-color);
+    box-shadow: none;
+}
+
+body.tss-theme-curiosity.tss-dark-mode .tss-autocompletebox-list {
+    border-color: var(--tss-dark-border-color);
+}
+
+body.tss-theme-curiosity .tss-autocompletebox-item {
+    padding: 7px 14px;
+    transition: background-color .15s linear;
+}
+
+body.tss-theme-curiosity .tss-autocompletebox-item.tss-autocompletebox-item-highlight {
+    box-shadow: inset 2px 0 0 var(--tss-default-foreground-color);
+}
+
+body.tss-theme-curiosity .tss-textbox-container.tss-autocompletebox-invalid .tss-textbox {
+    border-color: var(--tss-invalid-border-color);
+    box-shadow: inset 0 0 0 1px var(--tss-invalid-border-color);
+}
+
+
 body.tss-theme-curiosity .tss-panel {
     box-shadow: -1px 0 0 0 var(--tss-default-foreground-color);
 }
@@ -2008,6 +2065,27 @@ body.tss-theme-curiosity .tss-contribution-toggle {
 
 body.tss-theme-curiosity .tss-contribution-toggle:active {
     background: var(--tss-default-background-active-color);
+}
+
+
+body.tss-theme-curiosity .tss-gantt {
+    border-radius: 0;
+}
+
+body.tss-theme-curiosity .tss-gantt-bar {
+    border-radius: 0;
+    --tss-gantt-bar-height: 12px;
+}
+
+body.tss-theme-curiosity .tss-gantt-tick-label,
+body.tss-theme-curiosity .tss-gantt-bar-text {
+    font-family: var(--tss-monospace-font-family);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -.02em;
+}
+
+body.tss-theme-curiosity .tss-gantt-header-label {
+    font-weight: var(--tss-font-weight-semibold);
 }
 
 
@@ -2397,11 +2475,11 @@ body.tss-theme-curiosity .tss-omnibox-container:not(.tss-omnibox-chat-and-search
     background: transparent;
 }
 
-body.tss-theme-curiosity .tss-omnibox-container:not(.tss-omnibox-chat-and-search) .tss-omnibox-search-container .tss-btn:not(.tss-omnibox-ask-ai-btn):not(.tss-btn-primary):not(.tss-btn-success):not(.tss-btn-danger) {
+body.tss-theme-curiosity .tss-omnibox-container:not(.tss-omnibox-chat-and-search) .tss-omnibox-search-container .tss-btn:not(.tss-omnibox-ask-ai-btn):not(.tss-btn-primary):not(.tss-btn-success):not(.tss-btn-warning):not(.tss-btn-danger) {
     color: var(--tss-secondary-foreground-color);
 }
 
-body.tss-theme-curiosity .tss-omnibox-container:not(.tss-omnibox-chat-and-search) .tss-omnibox-search-container .tss-btn:not(.tss-omnibox-ask-ai-btn):not(.tss-btn-primary):not(.tss-btn-success):not(.tss-btn-danger):hover {
+body.tss-theme-curiosity .tss-omnibox-container:not(.tss-omnibox-chat-and-search) .tss-omnibox-search-container .tss-btn:not(.tss-omnibox-ask-ai-btn):not(.tss-btn-primary):not(.tss-btn-success):not(.tss-btn-warning):not(.tss-btn-danger):hover {
     color: var(--tss-default-foreground-color);
 }
 
@@ -2918,6 +2996,11 @@ body.tss-theme-curiosity.tss-dark-mode .tss-spinner {
 body.tss-theme-curiosity .tss-spinner-success,
 body.tss-theme-curiosity.tss-dark-mode .tss-spinner-success {
     --tss-spinner-color: var(--tss-success-background-color);
+}
+
+body.tss-theme-curiosity .tss-spinner-warning,
+body.tss-theme-curiosity.tss-dark-mode .tss-spinner-warning {
+    --tss-spinner-color: var(--tss-warning-background-color);
 }
 
 body.tss-theme-curiosity .tss-spinner-danger,
@@ -3968,22 +4051,22 @@ body.tss-theme-curiosity .tippy-box:not([data-theme]):not(:has(> .tippy-content 
     color: var(--tss-default-background-color);
 }
 
-body.tss-theme-curiosity .tippy-box[data-theme~='tss-sidebar-tippy'] .tss-sidebar-menu .tss-btn:not(.tss-btn-danger):not(.tss-btn-primary):not(.tss-btn-success),
-body.tss-theme-curiosity .tippy-box[data-theme~='tss-tree-tippy'] .tss-tree-menu .tss-tree-command:not(.tss-btn-danger):not(.tss-btn-primary):not(.tss-btn-success) {
+body.tss-theme-curiosity .tippy-box[data-theme~='tss-sidebar-tippy'] .tss-sidebar-menu .tss-btn:not(.tss-btn-danger):not(.tss-btn-warning):not(.tss-btn-primary):not(.tss-btn-success),
+body.tss-theme-curiosity .tippy-box[data-theme~='tss-tree-tippy'] .tss-tree-menu .tss-tree-command:not(.tss-btn-danger):not(.tss-btn-warning):not(.tss-btn-primary):not(.tss-btn-success) {
     background: var(--tss-default-background-color);
     color: var(--tss-default-foreground-color);
     border-color: transparent;
 }
 
-body.tss-theme-curiosity .tippy-box[data-theme~='tss-sidebar-tippy'] .tss-sidebar-menu .tss-btn:not(.tss-btn-danger):not(.tss-btn-primary):not(.tss-btn-success):hover,
-body.tss-theme-curiosity .tippy-box[data-theme~='tss-tree-tippy'] .tss-tree-menu .tss-tree-command:not(.tss-btn-danger):not(.tss-btn-primary):not(.tss-btn-success):hover {
+body.tss-theme-curiosity .tippy-box[data-theme~='tss-sidebar-tippy'] .tss-sidebar-menu .tss-btn:not(.tss-btn-danger):not(.tss-btn-warning):not(.tss-btn-primary):not(.tss-btn-success):hover,
+body.tss-theme-curiosity .tippy-box[data-theme~='tss-tree-tippy'] .tss-tree-menu .tss-tree-command:not(.tss-btn-danger):not(.tss-btn-warning):not(.tss-btn-primary):not(.tss-btn-success):hover {
     background: var(--tss-default-background-hover-color);
     color: var(--tss-default-foreground-color);
     border-color: transparent;
 }
 
-body.tss-theme-curiosity .tippy-box[data-theme~='tss-sidebar-tippy'] .tss-sidebar-menu .tss-btn:not(.tss-btn-danger):not(.tss-btn-primary):not(.tss-btn-success):active,
-body.tss-theme-curiosity .tippy-box[data-theme~='tss-tree-tippy'] .tss-tree-menu .tss-tree-command:not(.tss-btn-danger):not(.tss-btn-primary):not(.tss-btn-success):active {
+body.tss-theme-curiosity .tippy-box[data-theme~='tss-sidebar-tippy'] .tss-sidebar-menu .tss-btn:not(.tss-btn-danger):not(.tss-btn-warning):not(.tss-btn-primary):not(.tss-btn-success):active,
+body.tss-theme-curiosity .tippy-box[data-theme~='tss-tree-tippy'] .tss-tree-menu .tss-tree-command:not(.tss-btn-danger):not(.tss-btn-warning):not(.tss-btn-primary):not(.tss-btn-success):active {
     background: var(--tss-default-background-active-color);
 }
 
@@ -4030,6 +4113,8 @@ body.tss-theme-curiosity .tss-menu-item.tss-menu-item-open {
 
 body.tss-theme-curiosity .tss-menu-item.tss-menu-item-danger:not(.tss-disabled):hover,
 body.tss-theme-curiosity .tss-menu-item.tss-menu-item-danger:not(.tss-disabled):focus,
+body.tss-theme-curiosity .tss-menu-item.tss-menu-item-warning:not(.tss-disabled):hover,
+body.tss-theme-curiosity .tss-menu-item.tss-menu-item-warning:not(.tss-disabled):focus,
 body.tss-theme-curiosity .tss-menu-item.tss-menu-item-primary:not(.tss-disabled):hover,
 body.tss-theme-curiosity .tss-menu-item.tss-menu-item-primary:not(.tss-disabled):focus,
 body.tss-theme-curiosity .tss-menu-item.tss-menu-item-success:not(.tss-disabled):hover,
@@ -4118,12 +4203,13 @@ body.tss-theme-curiosity .tss-actionbutton-container > .tss-actionbutton-actionb
 }
 
 body.tss-theme-curiosity .tss-actionbutton-container > .tss-actionbutton-actionbtn.tss-btn-primary,
-body.tss-theme-curiosity .tss-actionbutton-container > .tss-actionbutton-actionbtn.tss-btn-danger {
+body.tss-theme-curiosity .tss-actionbutton-container > .tss-actionbutton-actionbtn.tss-btn-danger,
+body.tss-theme-curiosity .tss-actionbutton-container > .tss-actionbutton-actionbtn.tss-btn-warning {
     box-shadow: inset 1px 0 0 color-mix(in srgb, currentColor 35%, transparent);
 }
 
-body.tss-theme-curiosity .tss-actionbutton-container > .tss-actionbutton-displaybutton:not(.tss-btn-primary):not(.tss-btn-danger):active,
-body.tss-theme-curiosity .tss-actionbutton-container > .tss-actionbutton-actionbtn:not(.tss-btn-primary):not(.tss-btn-danger):active {
+body.tss-theme-curiosity .tss-actionbutton-container > .tss-actionbutton-displaybutton:not(.tss-btn-primary):not(.tss-btn-danger):not(.tss-btn-warning):active,
+body.tss-theme-curiosity .tss-actionbutton-container > .tss-actionbutton-actionbtn:not(.tss-btn-primary):not(.tss-btn-danger):not(.tss-btn-warning):active {
     background: var(--tss-default-background-active-color);
 }
 
@@ -4314,9 +4400,25 @@ body.tss-theme-curiosity .tss-toast-container > .tss-banner {
 }
 
 
+body.tss-theme-curiosity .tss-banner-time-text {
+    font-family: var(--tss-monospace-font-family);
+    font-size: 10px;
+    font-weight: 400;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: var(--tss-secondary-foreground-color);
+    opacity: 1;
+}
+
+
 body.tss-theme-curiosity .tss-tree-item-content,
 body.tss-theme-curiosity .tss-tree-compact .tss-tree-item-content {
     border-radius: 0;
+}
+
+body.tss-theme-curiosity .tss-tree-item:focus-visible > .tss-tree-item-content {
+    outline: 2px solid var(--tss-default-foreground-color);
+    outline-offset: -2px;
 }
 
 body.tss-theme-curiosity .tss-tree-item-content:active {
@@ -4564,6 +4666,106 @@ body.tss-theme-curiosity .tss-activitycalendar-tooltip {
 
 body.tss-theme-curiosity .tss-activitycalendar-day.tss-activitycalendar-selected {
     box-shadow: 0 0 0 2px var(--tss-default-background-color), 0 0 0 3px var(--tss-default-foreground-color);
+}
+
+
+body.tss-theme-curiosity .tss-scheduler {
+    --tss-scheduler-radius: 0px;
+    --tss-scheduler-today-color: var(--tss-cur-signal);
+    --tss-scheduler-now-color: var(--tss-cur-signal);
+    --tss-scheduler-selection-color: var(--tss-default-foreground-color);
+    border-radius: 0;
+}
+
+body.tss-theme-curiosity .tss-scheduler-title {
+    letter-spacing: -.01em;
+}
+
+body.tss-theme-curiosity .tss-scheduler-tg-dayname,
+body.tss-theme-curiosity .tss-scheduler-tg-hour,
+body.tss-theme-curiosity .tss-scheduler-tg-allday-caption,
+body.tss-theme-curiosity .tss-scheduler-month-weekday,
+body.tss-theme-curiosity .tss-scheduler-tl-corner,
+body.tss-theme-curiosity .tss-scheduler-tl-hour,
+body.tss-theme-curiosity .tss-scheduler-item-time,
+body.tss-theme-curiosity .tss-scheduler-chip-time,
+body.tss-theme-curiosity .tss-scheduler-agenda-time,
+body.tss-theme-curiosity .tss-scheduler-agenda-dayname {
+    font-family: var(--tss-monospace-font-family);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: .04em;
+}
+
+body.tss-theme-curiosity .tss-scheduler-tg-dayname,
+body.tss-theme-curiosity .tss-scheduler-month-weekday,
+body.tss-theme-curiosity .tss-scheduler-tl-corner,
+body.tss-theme-curiosity .tss-scheduler-tg-allday-caption,
+body.tss-theme-curiosity .tss-scheduler-agenda-dayname {
+    text-transform: uppercase;
+    font-size: var(--tss-font-size-tiny);
+}
+
+body.tss-theme-curiosity .tss-scheduler-tg-daynum,
+body.tss-theme-curiosity .tss-scheduler-month-date,
+body.tss-theme-curiosity .tss-scheduler-now::before,
+body.tss-theme-curiosity .tss-scheduler-resource-chip,
+body.tss-theme-curiosity .tss-scheduler-chip-dot {
+    border-radius: 0;
+}
+
+body.tss-theme-curiosity .tss-scheduler-today > .tss-scheduler-tg-daynum,
+body.tss-theme-curiosity .tss-scheduler-today > .tss-scheduler-tl-daylabel > .tss-scheduler-tg-daynum,
+body.tss-theme-curiosity .tss-scheduler-month-cell.tss-scheduler-today > .tss-scheduler-month-date {
+    color: #fff;
+}
+
+body.tss-theme-curiosity .tss-scheduler-ghost {
+    border-radius: 0;
+    border-color: var(--tss-cur-signal);
+    background: color-mix(in srgb, var(--tss-cur-signal) 14%, transparent);
+    font-family: var(--tss-monospace-font-family);
+}
+
+body.tss-theme-curiosity .tss-scheduler-tooltip-time,
+body.tss-theme-curiosity .tss-scheduler-tooltip-resources {
+    font-family: var(--tss-monospace-font-family);
+}
+
+
+body.tss-theme-curiosity .tss-dockpanel,
+body.tss-theme-curiosity .tss-dockpanel-toggle {
+    --tss-dockpanel-radius: 0px;
+    --tss-dockpanel-accent: var(--tss-cur-signal);
+}
+
+body.tss-theme-curiosity .tss-dockpanel-caption,
+body.tss-theme-curiosity .tss-dockpanel-tab,
+body.tss-theme-curiosity .tss-dockpanel-rail-tab {
+    font-family: var(--tss-monospace-font-family);
+    font-size: var(--tss-font-size-xsmall);
+    letter-spacing: .06em;
+    text-transform: uppercase;
+}
+
+body.tss-theme-curiosity .tss-dockpanel-button,
+body.tss-theme-curiosity .tss-dockpanel-restore,
+body.tss-theme-curiosity .tss-dockpanel-rail-tab,
+body.tss-theme-curiosity .tss-dockpanel-guide,
+body.tss-theme-curiosity .tss-dockpanel-guide::before,
+body.tss-theme-curiosity .tss-dockpanel-guide-fill,
+body.tss-theme-curiosity .tss-dockpanel-drag-ghost {
+    border-radius: 0;
+}
+
+body.tss-theme-curiosity .tss-dockpanel-preview {
+    background: color-mix(in srgb, var(--tss-cur-signal) 12%, transparent);
+}
+
+body.tss-theme-curiosity .tss-dockpanel-drag-ghost {
+    font-family: var(--tss-monospace-font-family);
+    font-size: var(--tss-font-size-xsmall);
+    text-transform: uppercase;
+    letter-spacing: .06em;
 }
 
 
@@ -5269,6 +5471,17 @@ body.tss-theme-curiosity .tss-markdown table th {
 
 body.tss-theme-curiosity .tss-markdown dl dt {
     font-style: normal;
+}
+
+
+body.tss-theme-curiosity .tss-mermaid {
+    --pele-line: var(--tss-default-foreground-color);
+    --pele-surface: var(--tss-default-background-hover-color);
+    --pele-surface-alt: var(--tss-default-background-active-color);
+    --pele-border: var(--tss-secondary-foreground-color);
+    --pele-accent: var(--tss-highlight-color);
+    --pele-title-weight: var(--tss-font-weight-regular);
+    --pele-heading-weight: var(--tss-font-weight-semibold);
 }
 
 

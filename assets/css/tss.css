@@ -126830,6 +126830,11 @@ line-height: inherit;
     --tss-primary-foreground-active-color-root: 255, 255, 255;
     --tss-warning-background-color-root: 220, 145, 53;
     --tss-warning-foreground-color-root: 255, 255, 255;
+    --tss-warning-border-color-root: 220, 145, 53;
+    --tss-warning-background-hover-color-root: 196, 126, 38;
+    --tss-warning-foreground-hover-color-root: 255, 255, 255;
+    --tss-warning-background-active-color-root: 172, 108, 28;
+    --tss-warning-foreground-active-color-root: 255, 255, 255;
     --tss-danger-background-color-root: 220, 53, 69;
     --tss-danger-foreground-color-root: 255, 255, 255;
     --tss-danger-border-color-root: 220, 53, 69;
@@ -126878,6 +126883,11 @@ line-height: inherit;
     --tss-primary-background-color-transparent: rgba(var(--tss-primary-background-color-root), 0.2);
     --tss-warning-background-color: rgb(var(--tss-warning-background-color-root));
     --tss-warning-foreground-color: rgb(var(--tss-warning-foreground-color-root));
+    --tss-warning-border-color: rgb(var(--tss-warning-border-color-root));
+    --tss-warning-background-hover-color: rgb(var(--tss-warning-background-hover-color-root));
+    --tss-warning-foreground-hover-color: rgb(var(--tss-warning-foreground-hover-color-root));
+    --tss-warning-background-active-color: rgb(var(--tss-warning-background-active-color-root));
+    --tss-warning-foreground-active-color: rgb(var(--tss-warning-foreground-active-color-root));
     --tss-danger-background-color: rgb(var(--tss-danger-background-color-root));
     --tss-danger-foreground-color: rgb(var(--tss-danger-foreground-color-root));
     --tss-danger-border-color: rgb(var(--tss-danger-border-color-root));
@@ -126962,6 +126972,11 @@ line-height: inherit;
     --tss-primary-foreground-active-color-root: 255, 255, 255;
     --tss-warning-background-color-root: 255, 174, 81;
     --tss-warning-foreground-color-root: 255, 255, 255;
+    --tss-warning-border-color-root: 255, 174, 81;
+    --tss-warning-background-hover-color-root: 214, 138, 52;
+    --tss-warning-foreground-hover-color-root: 255, 255, 255;
+    --tss-warning-background-active-color-root: 184, 116, 40;
+    --tss-warning-foreground-active-color-root: 255, 255, 255;
     --tss-danger-background-color-root: 255, 81, 98;
     --tss-danger-foreground-color-root: 255, 255, 255;
     --tss-danger-border-color-root: 255, 81, 98;
@@ -127009,6 +127024,11 @@ line-height: inherit;
     --tss-primary-background-color-transparent: rgba(var(--tss-primary-background-color-root), 0.2);
     --tss-warning-background-color: rgb(var(--tss-warning-background-color-root));
     --tss-warning-foreground-color: rgb(var(--tss-warning-foreground-color-root));
+    --tss-warning-border-color: rgb(var(--tss-warning-border-color-root));
+    --tss-warning-background-hover-color: rgb(var(--tss-warning-background-hover-color-root));
+    --tss-warning-foreground-hover-color: rgb(var(--tss-warning-foreground-hover-color-root));
+    --tss-warning-background-active-color: rgb(var(--tss-warning-background-active-color-root));
+    --tss-warning-foreground-active-color: rgb(var(--tss-warning-foreground-active-color-root));
     --tss-danger-background-color: rgb(var(--tss-danger-background-color-root));
     --tss-danger-foreground-color: rgb(var(--tss-danger-foreground-color-root));
     --tss-danger-border-color: rgb(var(--tss-danger-border-color-root));
@@ -128468,8 +128488,18 @@ a {
     border-color: var(--tss-danger-border-color);
 }
 
+.tss-btn.tss-btn-warning:not(.tss-disabled) {
+    color: var(--tss-warning-foreground-color);
+    background-color: var(--tss-warning-background-color);
+    border-color: var(--tss-warning-border-color);
+}
+
     .tss-btn.tss-btn-danger:not(.tss-disabled) .tss-fontcolor-default {
         color: var(--tss-danger-foreground-color);
+    }
+
+.tss-btn.tss-btn-warning:not(.tss-disabled) .tss-fontcolor-default {
+        color: var(--tss-warning-foreground-color);
     }
 
     .tss-btn.tss-btn-danger:not(.tss-disabled):hover {
@@ -128477,8 +128507,17 @@ a {
         background-color: var(--tss-danger-background-hover-color);
     }
 
+.tss-btn.tss-btn-warning:not(.tss-disabled):hover {
+        color: var(--tss-warning-foreground-hover-color);
+        background-color: var(--tss-warning-background-hover-color);
+    }
+
         .tss-btn.tss-btn-danger:not(.tss-disabled):hover .tss-fontcolor-default {
             color: var(--tss-danger-foreground-hover-color);
+        }
+
+.tss-btn.tss-btn-warning:not(.tss-disabled):hover .tss-fontcolor-default {
+            color: var(--tss-warning-foreground-hover-color);
         }
 
     .tss-btn.tss-btn-danger:not(.tss-disabled):active {
@@ -128486,8 +128525,17 @@ a {
         background-color: var(--tss-danger-background-active-color);
     }
 
+.tss-btn.tss-btn-warning:not(.tss-disabled):active {
+        color: var(--tss-warning-foreground-active-color);
+        background-color: var(--tss-warning-background-active-color);
+    }
+
         .tss-btn.tss-btn-danger:not(.tss-disabled):active .tss-fontcolor-default {
             color: var(--tss-danger-foreground-active-color);
+        }
+
+.tss-btn.tss-btn-warning:not(.tss-disabled):active .tss-fontcolor-default {
+            color: var(--tss-warning-foreground-active-color);
         }
 
 .tss-btn.tss-btn-success:not(.tss-disabled) {
@@ -128554,13 +128602,27 @@ a {
     color: var(--tss-danger-background-color);
 }
 
+.tss-btn.tss-btn-warning.tss-btn-nobg,
+.tss-btn.tss-btn-warning.tss-btn-nobg .tss-fontcolor-default {
+    color: var(--tss-warning-background-color);
+}
+
     .tss-btn.tss-btn-danger.tss-btn-nobg:hover {
         color: var(--tss-danger-background-hover-color);
         background-color: var(--tss-danger-background-hover-color);
     }
 
+.tss-btn.tss-btn-warning.tss-btn-nobg:hover {
+        color: var(--tss-warning-background-hover-color);
+        background-color: var(--tss-warning-background-hover-color);
+    }
+
         .tss-btn.tss-btn-danger.tss-btn-nobg:hover .tss-fontcolor-default {
             color: var(--tss-danger-background-hover-color);
+        }
+
+.tss-btn.tss-btn-warning.tss-btn-nobg:hover .tss-fontcolor-default {
+            color: var(--tss-warning-background-hover-color);
         }
 
     .tss-btn.tss-btn-danger.tss-btn-nobg:active {
@@ -128568,8 +128630,17 @@ a {
         background-color: var(--tss-danger-background-active-color);
     }
 
+.tss-btn.tss-btn-warning.tss-btn-nobg:active {
+        color: var(--tss-warning-background-active-color);
+        background-color: var(--tss-warning-background-active-color);
+    }
+
         .tss-btn.tss-btn-danger.tss-btn-nobg:active .tss-fontcolor-default {
             color: var(--tss-danger-background-active-color);
+        }
+
+.tss-btn.tss-btn-warning.tss-btn-nobg:active .tss-fontcolor-default {
+            color: var(--tss-warning-background-active-color);
         }
 
 
@@ -128656,6 +128727,17 @@ a {
             filter: none;
         }
 
+
+        .tss-btn.tss-btn-link.tss-btn-warning:not(.tss-disabled),
+        .tss-btn.tss-btn-link.tss-btn-warning:not(.tss-disabled):hover,
+        .tss-btn.tss-btn-link.tss-btn-warning:not(.tss-disabled):active {
+            border: none;
+            background: none;
+            background-color: transparent;
+            box-shadow: none;
+            filter: none;
+        }
+
         .tss-btn.tss-btn-link.tss-btn-primary:not(.tss-disabled):hover {
             background: color-mix(in srgb, var(--tss-primary-background-color) 12%, transparent);
         }
@@ -128676,8 +128758,16 @@ a {
             background: color-mix(in srgb, var(--tss-danger-background-color) 12%, transparent);
         }
 
+.tss-btn.tss-btn-link.tss-btn-warning:not(.tss-disabled):hover {
+            background: color-mix(in srgb, var(--tss-warning-background-color) 12%, transparent);
+        }
+
         .tss-btn.tss-btn-link.tss-btn-danger:not(.tss-disabled):active {
             background: color-mix(in srgb, var(--tss-danger-background-color) 20%, transparent);
+        }
+
+.tss-btn.tss-btn-link.tss-btn-warning:not(.tss-disabled):active {
+            background: color-mix(in srgb, var(--tss-warning-background-color) 20%, transparent);
         }
 
         .tss-btn.tss-btn-link.tss-btn-primary:not(.tss-disabled),
@@ -128715,14 +128805,29 @@ a {
             color: var(--tss-danger-background-color);
         }
 
+.tss-btn.tss-btn-link.tss-btn-warning:not(.tss-disabled),
+        .tss-btn.tss-btn-link.tss-btn-warning:not(.tss-disabled) .tss-fontcolor-default {
+            color: var(--tss-warning-background-color);
+        }
+
             .tss-btn.tss-btn-link.tss-btn-danger:not(.tss-disabled):hover,
             .tss-btn.tss-btn-link.tss-btn-danger:not(.tss-disabled):hover .tss-fontcolor-default {
                 color: var(--tss-danger-background-hover-color);
             }
 
+.tss-btn.tss-btn-link.tss-btn-warning:not(.tss-disabled):hover,
+            .tss-btn.tss-btn-link.tss-btn-warning:not(.tss-disabled):hover .tss-fontcolor-default {
+                color: var(--tss-warning-background-hover-color);
+            }
+
             .tss-btn.tss-btn-link.tss-btn-danger:not(.tss-disabled):active,
             .tss-btn.tss-btn-link.tss-btn-danger:not(.tss-disabled):active .tss-fontcolor-default {
                 color: var(--tss-danger-background-active-color);
+            }
+
+.tss-btn.tss-btn-link.tss-btn-warning:not(.tss-disabled):active,
+            .tss-btn.tss-btn-link.tss-btn-warning:not(.tss-disabled):active .tss-fontcolor-default {
+                color: var(--tss-warning-background-active-color);
             }
 
         .tss-dark-mode .tss-btn.tss-btn-link.tss-btn-primary:not(.tss-disabled):hover,
@@ -128750,9 +128855,19 @@ a {
             color: color-mix(in srgb, var(--tss-danger-background-color) 82%, white);
         }
 
+.tss-dark-mode .tss-btn.tss-btn-link.tss-btn-warning:not(.tss-disabled):hover,
+        .tss-dark-mode .tss-btn.tss-btn-link.tss-btn-warning:not(.tss-disabled):hover .tss-fontcolor-default {
+            color: color-mix(in srgb, var(--tss-warning-background-color) 82%, white);
+        }
+
         .tss-dark-mode .tss-btn.tss-btn-link.tss-btn-danger:not(.tss-disabled):active,
         .tss-dark-mode .tss-btn.tss-btn-link.tss-btn-danger:not(.tss-disabled):active .tss-fontcolor-default {
             color: color-mix(in srgb, var(--tss-danger-background-color) 68%, white);
+        }
+
+.tss-dark-mode .tss-btn.tss-btn-link.tss-btn-warning:not(.tss-disabled):active,
+        .tss-dark-mode .tss-btn.tss-btn-link.tss-btn-warning:not(.tss-disabled):active .tss-fontcolor-default {
+            color: color-mix(in srgb, var(--tss-warning-background-color) 68%, white);
         }
 
 .tss-btn.tss-btn-nominsize {
@@ -128804,13 +128919,28 @@ a {
     color: var(--tss-danger-background-color);
 }
 
+.tss-btn.tss-btn-linkonhover.tss-warning,
+.tss-btn.tss-btn-linkonhover.tss-warning .tss-fontcolor-default {
+    color: var(--tss-warning-background-color);
+}
+
     .tss-btn.tss-btn-linkonhover.tss-danger:hover,
     .tss-btn.tss-btn-linkonhover.tss-danger:hover .tss-fontcolor-default {
         color: var(--tss-danger-background-color);
     }
 
+.tss-btn.tss-btn-linkonhover.tss-warning:hover,
+    .tss-btn.tss-btn-linkonhover.tss-warning:hover .tss-fontcolor-default {
+        color: var(--tss-warning-background-color);
+    }
+
     .tss-btn.tss-btn-linkonhover.tss-danger.tss-disabled,
     .tss-btn.tss-btn-linkonhover.tss-danger.tss-disabled .tss-fontcolor-default {
+        color: var(--tss-disabled-foreground-color);
+    }
+
+.tss-btn.tss-btn-linkonhover.tss-warning.tss-disabled,
+    .tss-btn.tss-btn-linkonhover.tss-warning.tss-disabled .tss-fontcolor-default {
         color: var(--tss-disabled-foreground-color);
     }
 
@@ -132252,6 +132382,109 @@ i.tss-card-title-icon {
         border: 1px solid var(--tss-default-border-color);
         background: var(--tss-default-background-hover-color);
     }
+
+.tss-autocompletebox-list {
+    display: flex;
+    flex-direction: column;
+    box-sizing: border-box;
+    max-height: 300px;
+    overflow-y: auto;
+    padding: 4px 0;
+    background-color: var(--tss-default-background-color);
+    color: var(--tss-default-foreground-color);
+    border: 1px solid var(--tss-default-border-color);
+    border-radius: 4px;
+    box-shadow: var(--tss-box-shadow, 0 4px 16px 0 rgba(0,0,0,0.12));
+}
+
+.tss-autocompletebox-item {
+    flex-shrink: 0;
+    padding: 6px 12px;
+    cursor: pointer;
+    font-size: var(--tss-font-size-small);
+    line-height: 20px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+.tss-autocompletebox-item.tss-autocompletebox-item-highlight {
+    background-color: var(--tss-default-background-hover-color);
+}
+
+.tss-autocompletebox-match {
+    font-weight: var(--tss-font-weight-semibold);
+}
+
+.tss-autocompletebox-field {
+    position: relative;
+    width: 100%;
+}
+
+.tss-textbox-container.tss-autocompletebox .tss-textbox.tss-autocompletebox-has-check {
+    padding-right: calc(var(--tss-autocompletebox-status-width, 0px) + 16px);
+}
+
+.tss-autocompletebox-status {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    right: 10px;
+    max-width: 60%;
+    display: none;
+    align-items: center;
+    gap: 4px;
+    font-size: var(--tss-font-size-small);
+    color: var(--tss-secondary-foreground-color);
+    cursor: default;
+}
+
+.tss-autocompletebox-status.tss-autocompletebox-status-visible,
+.tss-autocompletebox-status.tss-autocompletebox-status-checking {
+    display: flex;
+}
+
+.tss-autocompletebox-status.tss-autocompletebox-status-has-tooltip {
+    cursor: help;
+}
+
+.tss-autocompletebox-status-icon {
+    display: inline-flex;
+    flex-shrink: 0;
+    line-height: 1;
+}
+
+.tss-autocompletebox-status-text {
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.tss-autocompletebox-status-text:empty {
+    display: none;
+}
+
+.tss-autocompletebox-status-valid   { color: var(--tss-success-background-color); }
+.tss-autocompletebox-status-warning { color: var(--tss-warning-background-color); }
+.tss-autocompletebox-status-invalid { color: var(--tss-danger-background-color); }
+
+.tss-textbox-container.tss-autocompletebox-invalid .tss-textbox {
+    border-color: var(--tss-invalid-border-color);
+}
+
+.tss-autocompletebox-status .tss-autocompletebox-status-spinner,
+.tss-autocompletebox-status-checking .tss-autocompletebox-status-icon,
+.tss-autocompletebox-status-spinner .tss-spinner-label {
+    display: none;
+}
+
+.tss-autocompletebox-status-checking .tss-autocompletebox-status-spinner {
+    display: flex;
+}
+
 .tss-panel-container {
     position: absolute;
     top: 0px;
@@ -133155,6 +133388,52 @@ i.tss-card-title-icon {
     margin-bottom: 8px;
 }
 
+.tss-metric-compact .tss-metric-body {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: baseline;
+    column-gap: 8px;
+}
+
+.tss-metric-compact .tss-metric-title,
+.tss-metric-compact.tss-metric-change-in-header .tss-metric-header {
+    margin-bottom: 0;
+}
+
+.tss-metric-compact.tss-metric-change-in-header .tss-metric-header {
+    width: auto;
+}
+
+.tss-metric-compact .tss-metric-change {
+    order: 3;
+    margin-left: 0;
+}
+
+.tss-metric-compact .tss-metric-chart {
+    order: 4;
+    flex-basis: 100%;
+}
+
+.tss-metric-compact .tss-metric-icon > .tss-icontile {
+    --tss-icontile-size: 32px;
+    --tss-icontile-radius: 8px;
+}
+
+.tss-metric-value-filled .tss-metric-value {
+    background: var(--tss-metric-value-background);
+    padding: 2px 10px;
+    border-radius: var(--tss-border-radius-md);
+}
+
+.tss-metric-value-filled:not(.tss-metric-compact) .tss-metric-value {
+    align-self: flex-start;
+}
+
+.tss-metric-value-recolored .tss-metric-value,
+.tss-metric-value-recolored .tss-metric-value * {
+    color: var(--tss-metric-value-foreground);
+}
+
 .tss-metric-chart {
     display: flex;
     flex-direction: column;
@@ -133290,6 +133569,196 @@ i.tss-card-title-icon {
 .tss-contribution-legend-value {
     font-weight: var(--tss-font-weight-semibold);
     font-variant-numeric: tabular-nums;
+}
+
+.tss-gantt {
+    --tss-gantt-label-width: 240px;
+    --tss-gantt-row-height: 44px;
+    --tss-gantt-track-min-width: 480px;
+    --tss-gantt-cell-padding: 16px;
+    --tss-gantt-bar-height: 16px;
+    --tss-gantt-bar-min-width: 4px;
+    --tss-gantt-border: 1px solid var(--tss-default-border-color);
+    width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    border: var(--tss-gantt-border);
+    border-radius: var(--tss-border-radius-lg);
+    background: var(--tss-default-background-color);
+    box-sizing: border-box;
+}
+
+.tss-gantt-grid {
+    display: grid;
+    grid-template-columns: var(--tss-gantt-label-width) minmax(var(--tss-gantt-track-min-width), 1fr);
+    min-width: calc(var(--tss-gantt-label-width) + var(--tss-gantt-track-min-width));
+    position: relative;
+}
+
+.tss-gantt-header-label,
+.tss-gantt-row-label {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    min-width: 0;
+    padding: 0 var(--tss-gantt-cell-padding);
+    border-right: var(--tss-gantt-border);
+    box-sizing: border-box;
+}
+
+.tss-gantt-header-label,
+.tss-gantt-header-track {
+    min-height: 44px;
+    background: var(--tss-secondary-background-color);
+    border-bottom: var(--tss-gantt-border);
+}
+
+.tss-gantt-header-label {
+    font-weight: 600;
+}
+
+.tss-gantt-header-track {
+    position: relative;
+    overflow: hidden;
+}
+
+.tss-gantt-column-label,
+.tss-gantt-tick-label {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    display: flex;
+    align-items: center;
+    color: var(--tss-secondary-foreground-color);
+    font-size: var(--tss-font-size-small);
+    white-space: nowrap;
+}
+
+.tss-gantt-column-label {
+    justify-content: center;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    padding: 0 4px;
+    box-sizing: border-box;
+}
+
+.tss-gantt-tick-label {
+    transform: translateX(-50%);
+}
+
+.tss-gantt-tick-label-start {
+    transform: translateX(4px);
+}
+
+.tss-gantt-tick-label-end {
+    transform: translateX(calc(-100% - 6px));
+}
+
+.tss-gantt-header-separator {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    border-left: var(--tss-gantt-border);
+}
+
+.tss-gantt-lines {
+    grid-column: 2;
+    grid-row: 2 / -1;
+    position: relative;
+    pointer-events: none;
+}
+
+.tss-gantt-line {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    border-left: 1px dashed var(--tss-default-border-color);
+}
+
+.tss-gantt-row-label {
+    grid-column: 1;
+    background: var(--tss-default-background-color);
+    border-bottom: var(--tss-gantt-border);
+    overflow: hidden;
+}
+
+.tss-gantt-row-label > * {
+    min-width: 0;
+}
+
+.tss-gantt-row-track {
+    grid-column: 2;
+    position: relative;
+    border-bottom: var(--tss-gantt-border);
+}
+
+.tss-gantt-row-label:nth-last-child(2),
+.tss-gantt-row-track:last-child {
+    border-bottom: none;
+}
+
+.tss-gantt-bar-group {
+    display: contents;
+}
+
+.tss-gantt-bar {
+    --tss-gantt-bar-color: var(--tss-colors-blue-500);
+    position: absolute;
+    top: 50%;
+    height: var(--tss-gantt-bar-height);
+    transform: translateY(-50%);
+    border-radius: var(--tss-border-radius-full);
+    border: 1px solid color-mix(in srgb, var(--tss-gantt-bar-color) 60%, transparent);
+    background: color-mix(in srgb, var(--tss-gantt-bar-color) 20%, transparent);
+    box-sizing: border-box;
+    z-index: 1;
+}
+
+.tss-gantt-bar:hover {
+    background: color-mix(in srgb, var(--tss-gantt-bar-color) 35%, transparent);
+}
+
+.tss-gantt-bar-clickable {
+    cursor: pointer;
+}
+
+.tss-gantt-bar-striped {
+    background-image: repeating-linear-gradient(-45deg, transparent 0 4px, color-mix(in srgb, var(--tss-gantt-bar-color) 30%, transparent) 4px 8px);
+}
+
+.tss-gantt-bar-blue    { --tss-gantt-bar-color: var(--tss-colors-blue-500); }
+.tss-gantt-bar-green   { --tss-gantt-bar-color: var(--tss-colors-green-500); }
+.tss-gantt-bar-purple  { --tss-gantt-bar-color: var(--tss-colors-purple-500); }
+.tss-gantt-bar-orange  { --tss-gantt-bar-color: var(--tss-colors-orange-500); }
+.tss-gantt-bar-red     { --tss-gantt-bar-color: var(--tss-colors-red-500); }
+.tss-gantt-bar-teal    { --tss-gantt-bar-color: var(--tss-colors-teal-500); }
+.tss-gantt-bar-magenta { --tss-gantt-bar-color: var(--tss-colors-magenta-500); }
+.tss-gantt-bar-yellow  { --tss-gantt-bar-color: var(--tss-colors-yellow-500); }
+.tss-gantt-bar-neutral { --tss-gantt-bar-color: var(--tss-colors-neutral-500); }
+
+.tss-gantt-bar-text {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    padding: 0 6px;
+    color: var(--tss-secondary-foreground-color);
+    font-size: var(--tss-font-size-xsmall);
+    white-space: nowrap;
+    pointer-events: none;
+    z-index: 1;
+}
+
+.tss-gantt-bar-text-inside {
+    padding: 0 10px;
+    color: var(--tss-default-foreground-color);
+}
+
+.tss-gantt-empty {
+    grid-column: 1 / -1;
+    padding: var(--tss-gantt-cell-padding);
+    color: var(--tss-secondary-foreground-color);
 }
 
 .tss-progressindicator {
@@ -135766,7 +136235,8 @@ body.tss-modal-dragging .tss-modal-draggable {
         border-color: transparent;
         position: absolute;
         left: 0;
-        top: 7px;
+        margin: 0;
+        top: 8px;
         z-index: 1;
     }
 
@@ -136013,6 +136483,10 @@ body.tss-modal-dragging .tss-modal-draggable {
 
 .tss-spinner-danger {
     --tss-spinner-color: var(--tss-danger-background-color);
+}
+
+.tss-spinner-warning {
+    --tss-spinner-color: var(--tss-warning-background-color);
 }
 
 .tss-spinner-size-xsmall .tss-spinner {
@@ -137083,19 +137557,19 @@ body.tss-modal-dragging .tss-modal-draggable {
     min-width: 52px !important;
 }
 
-    .tss-sidebar-menu > .tss-sidebar-btn-open > .tss-btn:not(.tss-btn-danger):not(.tss-btn-primary):not(.tss-btn-success),
-    .tss-sidebar-menu > .tss-sidebar-btn-open > a > .tss-btn:not(.tss-btn-danger):not(.tss-btn-primary):not(.tss-btn-success),
-    .tss-sidebar-menu > .tss-sidebar-commands-line > .tss-sidebar-command.tss-btn:not(.tss-btn-danger):not(.tss-btn-primary):not(.tss-btn-success),
-    .tss-sidebar-menu > .tss-sidebar-commands-line > a > .tss-sidebar-command.tss-btn:not(.tss-btn-danger):not(.tss-btn-primary):not(.tss-btn-success) {
+    .tss-sidebar-menu > .tss-sidebar-btn-open > .tss-btn:not(.tss-btn-danger):not(.tss-btn-warning):not(.tss-btn-primary):not(.tss-btn-success),
+    .tss-sidebar-menu > .tss-sidebar-btn-open > a > .tss-btn:not(.tss-btn-danger):not(.tss-btn-warning):not(.tss-btn-primary):not(.tss-btn-success),
+    .tss-sidebar-menu > .tss-sidebar-commands-line > .tss-sidebar-command.tss-btn:not(.tss-btn-danger):not(.tss-btn-warning):not(.tss-btn-primary):not(.tss-btn-success),
+    .tss-sidebar-menu > .tss-sidebar-commands-line > a > .tss-sidebar-command.tss-btn:not(.tss-btn-danger):not(.tss-btn-warning):not(.tss-btn-primary):not(.tss-btn-success) {
         background: var(--tss-tooltip-background-color);
         color: var(--tss-tooltip-foreground-color);
         border-color: var(--tss-tooltip-background-color);
     }
 
-    .tss-sidebar-menu > .tss-sidebar-btn-open > .tss-btn.tss-btn-default:not(.tss-btn-danger):not(.tss-btn-primary):not(.tss-btn-success):hover,
-    .tss-sidebar-menu > .tss-sidebar-btn-open > a > .tss-btn.tss-btn-default:not(.tss-btn-danger):not(.tss-btn-primary):not(.tss-btn-success):hover,
-    .tss-sidebar-menu > .tss-sidebar-commands-line > .tss-sidebar-command:not(.tss-btn-danger):not(.tss-btn-primary):not(.tss-btn-success):hover,
-    .tss-sidebar-menu > .tss-sidebar-commands-line > a > .tss-sidebar-command:not(.tss-btn-danger):not(.tss-btn-primary):not(.tss-btn-success):hover {
+    .tss-sidebar-menu > .tss-sidebar-btn-open > .tss-btn.tss-btn-default:not(.tss-btn-danger):not(.tss-btn-warning):not(.tss-btn-primary):not(.tss-btn-success):hover,
+    .tss-sidebar-menu > .tss-sidebar-btn-open > a > .tss-btn.tss-btn-default:not(.tss-btn-danger):not(.tss-btn-warning):not(.tss-btn-primary):not(.tss-btn-success):hover,
+    .tss-sidebar-menu > .tss-sidebar-commands-line > .tss-sidebar-command:not(.tss-btn-danger):not(.tss-btn-warning):not(.tss-btn-primary):not(.tss-btn-success):hover,
+    .tss-sidebar-menu > .tss-sidebar-commands-line > a > .tss-sidebar-command:not(.tss-btn-danger):not(.tss-btn-warning):not(.tss-btn-primary):not(.tss-btn-success):hover {
         color: var(--tss-default-background-hover-color);
         background: var(--tss-default-foreground-hover-color);
         border-color: var(--tss-default-foreground-color);
@@ -137602,6 +138076,11 @@ body.tss-modal-dragging .tss-modal-draggable {
 .tss-sidebar-btn-open .tss-btn-primary .tss-sidebar-btn-shortcut .tss-kbd-separator,
 .tss-sidebar-btn-open .tss-btn-danger .tss-sidebar-btn-shortcut .tss-kbd-separator,
 .tss-sidebar-btn-open .tss-btn-success .tss-sidebar-btn-shortcut .tss-kbd-separator {
+    color: inherit;
+}
+
+
+.tss-sidebar-btn-open .tss-btn-warning .tss-sidebar-btn-shortcut .tss-kbd-separator{
     color: inherit;
 }
 
@@ -138549,6 +139028,10 @@ body.tss-mobile .tss-message-horizontal {
 
 .tss-sidenav-btn-dot.tss-sidenav-btn-dot-danger {
     background: var(--tss-danger-background-color, #e81123);
+}
+
+.tss-sidenav-btn-dot.tss-sidenav-btn-dot-warning {
+    background: var(--tss-warning-background-color, #e81123);
 }
 
 .tss-sidenav-btn-wrap.tss-sidenav-btn-brand > .tss-btn.tss-sidenav-btn {
@@ -140587,9 +141070,18 @@ body.tss-mobile .tss-message-horizontal {
     color: var(--tss-danger-background-color);
 }
 
+.tss-menu-item.tss-menu-item-warning:not(.tss-disabled) {
+    color: var(--tss-warning-background-color);
+}
+
 .tss-menu-item.tss-menu-item-danger:not(.tss-disabled):hover,
 .tss-menu-item.tss-menu-item-danger:not(.tss-disabled):focus {
     background-color: color-mix(in srgb, var(--tss-danger-background-color) 12%, transparent);
+}
+
+.tss-menu-item.tss-menu-item-warning:not(.tss-disabled):hover,
+.tss-menu-item.tss-menu-item-warning:not(.tss-disabled):focus {
+    background-color: color-mix(in srgb, var(--tss-warning-background-color) 12%, transparent);
 }
 
 .tss-menu-item.tss-menu-item-primary:not(.tss-disabled) {
@@ -140746,6 +141238,7 @@ body.tss-mobile .tss-message-horizontal {
     min-height: 32px;
     display: flex;
     min-width: 100px;
+    width: fit-content;
     align-items: unset;
     justify-content: unset;
     line-height: normal;
@@ -140842,8 +141335,18 @@ body.tss-mobile .tss-message-horizontal {
     border-color: var(--tss-danger-border-color);
 }
 
+.tss-actionbutton-container > .tss-btn-warning {
+    color: var(--tss-warning-foreground-color);
+    background-color: var(--tss-warning-background-color);
+    border-color: var(--tss-warning-border-color);
+}
+
 .tss-actionbutton-container > .tss-btn-danger .tss-fontcolor-default {
     color: var(--tss-danger-foreground-color);
+}
+
+.tss-actionbutton-container > .tss-btn-warning .tss-fontcolor-default {
+    color: var(--tss-warning-foreground-color);
 }
 
 .tss-actionbutton-container > .tss-btn-danger:hover {
@@ -140851,8 +141354,17 @@ body.tss-mobile .tss-message-horizontal {
     background-color: var(--tss-danger-background-hover-color);
 }
 
+.tss-actionbutton-container > .tss-btn-warning:hover {
+    color: var(--tss-warning-foreground-hover-color);
+    background-color: var(--tss-warning-background-hover-color);
+}
+
 .tss-actionbutton-container > .tss-btn-danger:hover .tss-fontcolor-default {
     color: var(--tss-danger-foreground-hover-color);
+}
+
+.tss-actionbutton-container > .tss-btn-warning:hover .tss-fontcolor-default {
+    color: var(--tss-warning-foreground-hover-color);
 }
 
 .tss-actionbutton-container > .tss-btn-danger:active {
@@ -140860,8 +141372,17 @@ body.tss-mobile .tss-message-horizontal {
     background-color: var(--tss-danger-background-active-color);
 }
 
+.tss-actionbutton-container > .tss-btn-warning:active {
+    color: var(--tss-warning-foreground-active-color);
+    background-color: var(--tss-warning-background-active-color);
+}
+
 .tss-actionbutton-container > .tss-btn-danger:active .tss-fontcolor-default {
     color: var(--tss-danger-foreground-active-color);
+}
+
+.tss-actionbutton-container > .tss-btn-warning:active .tss-fontcolor-default {
+    color: var(--tss-warning-foreground-active-color);
 }
 
 
@@ -141295,6 +141816,28 @@ body.tss-mobile .tss-message-horizontal {
     font-weight: var(--tss-font-weight-semibold);
 }
 
+.tss-banner-time {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+    align-self: flex-start;
+    margin-left: auto;
+    padding-left: 8px;
+}
+
+.tss-banner-time-text {
+    font-size: var(--tss-font-size-xsmall);
+    line-height: 20px;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+    color: var(--tss-banner-text-color);
+    opacity: 0.85;
+}
+
+.tss-banner-has-time .tss-banner-header {
+    flex-wrap: nowrap;
+}
+
 .tss-banner-text {
     display: flex;
     align-items: center;
@@ -141387,6 +141930,16 @@ body.tss-mobile .tss-message-horizontal {
     user-select: none;
     -webkit-user-select: none;
     color: var(--tss-default-foreground-color);
+}
+
+.tss-tree:focus,
+.tss-tree-item:focus {
+    outline: none;
+}
+
+.tss-tree-item:focus-visible > .tss-tree-item-content {
+    outline: 2px solid var(--tss-ring-color);
+    outline-offset: -2px;
 }
 
 .tss-tree-item-content:hover {
@@ -141501,6 +142054,7 @@ body.tss-mobile .tss-message-horizontal {
 }
 
 .tss-tree-item-content:hover > .tss-tree-commands,
+.tss-tree-item-content.tss-tree-keyboard-focus > .tss-tree-commands,
 .tss-tree-item-content.tss-selected > .tss-tree-commands,
 .tss-tree-item-content.tss-tree-commands-always-visible > .tss-tree-commands {
     display: flex;
@@ -141583,15 +142137,15 @@ body.tss-mobile .tss-message-horizontal {
     justify-content: flex-start;
 }
 
-.tss-tree-menu > .tss-tree-command:not(.tss-btn-danger):not(.tss-btn-primary):not(.tss-btn-success),
-.tss-tree-menu > a > .tss-tree-command:not(.tss-btn-danger):not(.tss-btn-primary):not(.tss-btn-success) {
+.tss-tree-menu > .tss-tree-command:not(.tss-btn-danger):not(.tss-btn-warning):not(.tss-btn-primary):not(.tss-btn-success),
+.tss-tree-menu > a > .tss-tree-command:not(.tss-btn-danger):not(.tss-btn-warning):not(.tss-btn-primary):not(.tss-btn-success) {
     background: var(--tss-tooltip-background-color);
     color: var(--tss-tooltip-foreground-color);
     border-color: var(--tss-tooltip-background-color);
 }
 
-.tss-tree-menu > .tss-tree-command.tss-btn-default:not(.tss-btn-danger):not(.tss-btn-primary):not(.tss-btn-success):hover,
-.tss-tree-menu > a > .tss-tree-command.tss-btn-default:not(.tss-btn-danger):not(.tss-btn-primary):not(.tss-btn-success):hover {
+.tss-tree-menu > .tss-tree-command.tss-btn-default:not(.tss-btn-danger):not(.tss-btn-warning):not(.tss-btn-primary):not(.tss-btn-success):hover,
+.tss-tree-menu > a > .tss-tree-command.tss-btn-default:not(.tss-btn-danger):not(.tss-btn-warning):not(.tss-btn-primary):not(.tss-btn-success):hover {
     color: var(--tss-default-background-hover-color);
     background: var(--tss-default-foreground-hover-color);
     border-color: var(--tss-default-foreground-color);
@@ -141748,6 +142302,12 @@ body.tss-mobile .tss-message-horizontal {
     color: var(--tss-danger-foreground-color);
     background-color: var(--tss-danger-background-color);
     border-color: var(--tss-danger-border-color);
+}
+
+.tss-diagram-node-warning {
+    color: var(--tss-warning-foreground-color);
+    background-color: var(--tss-warning-background-color);
+    border-color: var(--tss-warning-border-color);
 }
 
 .tss-uptime-row {
@@ -142197,6 +142757,1646 @@ body.tss-mobile .tss-message-horizontal {
         animation: none;
     }
 }
+
+
+.tss-scheduler {
+    --tss-scheduler-gutter-width: 56px;
+    --tss-scheduler-lane-header-width: 160px;
+    --tss-scheduler-header-height: 44px;
+    --tss-scheduler-month-row: 104px;
+    --tss-scheduler-tl-row: 30px;
+    --tss-scheduler-tl-pad: 4px;
+    --tss-scheduler-radius: var(--tss-border-radius-sm);
+    --tss-scheduler-line-color: var(--tss-default-separator-color);
+    --tss-scheduler-minor-line-color: rgba(var(--tss-default-separator-color-root), 0.5);
+    --tss-scheduler-offhours-color: rgba(var(--tss-default-foreground-color-root), 0.03);
+    --tss-scheduler-work-color: var(--tss-default-background-color);
+    --tss-scheduler-today-color: var(--tss-primary-background-color);
+    --tss-scheduler-now-color: var(--tss-danger-background-color);
+    --tss-scheduler-selection-color: var(--tss-default-foreground-color);
+    --tss-scheduler-item-tint: 18%;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    min-width: 0;
+    height: 100%;
+    background: var(--tss-default-background-color);
+    color: var(--tss-default-foreground-color);
+    border: 1px solid var(--tss-default-border-color);
+    border-radius: var(--tss-border-radius-md);
+    overflow: hidden;
+    outline: none;
+    font-size: var(--tss-font-size-small);
+}
+
+    .tss-scheduler:focus-visible {
+        box-shadow: 0 0 0 2px var(--tss-primary-background-color-transparent);
+    }
+
+
+.tss-scheduler-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--tss-default-border-color);
+    flex-shrink: 0;
+}
+
+.tss-scheduler-navigation,
+.tss-scheduler-views,
+.tss-scheduler-commands {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+    .tss-scheduler-navigation > .tss-btn,
+    .tss-scheduler-views > .tss-btn {
+        margin: 0;
+    }
+
+.tss-scheduler-views {
+    gap: 0;
+}
+
+    .tss-scheduler-views > .tss-btn:not(:first-child) {
+        border-top-left-radius: 0;
+        border-bottom-left-radius: 0;
+        margin-left: -1px;
+    }
+
+    .tss-scheduler-views > .tss-btn:not(:last-child) {
+        border-top-right-radius: 0;
+        border-bottom-right-radius: 0;
+    }
+
+.tss-scheduler-commands:empty {
+    display: none;
+}
+
+.tss-scheduler-title {
+    font-size: var(--tss-font-size-smallplus);
+    font-weight: var(--tss-font-weight-semibold);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+    padding: 0 4px;
+}
+
+.tss-scheduler-toolbar-spacer {
+    flex-grow: 1;
+}
+
+.tss-scheduler-body {
+    position: relative;
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+    .tss-scheduler-body > * {
+        flex: 1 1 auto;
+        min-height: 0;
+    }
+
+
+.tss-scheduler-item {
+    --tss-scheduler-item: var(--tss-scheduler-item-color, var(--tss-primary-background-color));
+    box-sizing: border-box;
+    cursor: pointer;
+    outline: none;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+.tss-scheduler-event,
+.tss-scheduler-chip,
+.tss-scheduler-bar {
+    background: color-mix(in srgb, var(--tss-scheduler-item) var(--tss-scheduler-item-tint), var(--tss-default-background-color));
+    color: var(--tss-default-foreground-color);
+    border-left: 3px solid var(--tss-scheduler-item);
+    border-radius: var(--tss-scheduler-radius);
+    overflow: hidden;
+}
+
+.tss-scheduler-item:hover {
+    --tss-scheduler-item-tint: 26%;
+}
+
+.tss-scheduler-item:focus-visible,
+.tss-scheduler-item.tss-scheduler-selected {
+    box-shadow: 0 0 0 2px var(--tss-scheduler-selection-color);
+    z-index: 4;
+}
+
+.tss-scheduler-item.tss-scheduler-selected {
+    --tss-scheduler-item-tint: 34%;
+}
+
+.tss-scheduler-locked {
+    background-image: repeating-linear-gradient(135deg, transparent 0 6px, rgba(var(--tss-default-foreground-color-root), 0.06) 6px 8px);
+    cursor: default;
+}
+
+.tss-scheduler-drag-source {
+    opacity: 0.45;
+}
+
+.tss-scheduler-item-content {
+    min-width: 0;
+    overflow: hidden;
+    pointer-events: none;
+}
+
+.tss-scheduler-item-title {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-weight: var(--tss-font-weight-semibold);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+    .tss-scheduler-item-title > span {
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+.tss-scheduler-item-mark {
+    font-size: 10px;
+    opacity: 0.75;
+    flex-shrink: 0;
+}
+
+.tss-scheduler-item-time {
+    font-size: var(--tss-font-size-xsmall);
+    color: var(--tss-secondary-foreground-color);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.tss-scheduler-resource-chip {
+    display: inline-block;
+    flex-shrink: 0;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--tss-scheduler-item-color, var(--tss-secondary-foreground-color));
+}
+
+.tss-scheduler-resource-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.tss-scheduler-unassigned {
+    font-style: italic;
+    color: var(--tss-secondary-foreground-color);
+}
+
+.tss-scheduler-dragging,
+.tss-scheduler-dragging * {
+    cursor: grabbing !important;
+    user-select: none;
+}
+
+.tss-scheduler-readonly .tss-scheduler-item {
+    cursor: default;
+}
+
+.tss-scheduler-resize {
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 6px;
+    cursor: ns-resize;
+    z-index: 2;
+}
+
+.tss-scheduler-resize-start {
+    top: 0;
+}
+
+.tss-scheduler-resize-end {
+    bottom: 0;
+}
+
+    .tss-scheduler-resize-end::after {
+        content: "";
+        position: absolute;
+        left: calc(50% - 8px);
+        bottom: 2px;
+        width: 16px;
+        height: 2px;
+        border-radius: 1px;
+        background: var(--tss-scheduler-item);
+        opacity: 0;
+    }
+
+.tss-scheduler-item:hover .tss-scheduler-resize-end::after,
+.tss-scheduler-selected .tss-scheduler-resize-end::after {
+    opacity: 0.8;
+}
+
+.tss-scheduler-resize-h {
+    top: 0;
+    bottom: 0;
+    width: 6px;
+    height: auto;
+    cursor: ew-resize;
+}
+
+    .tss-scheduler-resize-h.tss-scheduler-resize-start {
+        left: 0;
+        right: auto;
+    }
+
+    .tss-scheduler-resize-h.tss-scheduler-resize-end {
+        left: auto;
+        right: 0;
+    }
+
+        .tss-scheduler-resize-h.tss-scheduler-resize-end::after {
+            display: none;
+        }
+
+.tss-scheduler-ghost {
+    position: absolute;
+    z-index: 6;
+    box-sizing: border-box;
+    padding: 2px 6px;
+    border: 2px dashed var(--tss-primary-background-color);
+    border-radius: var(--tss-scheduler-radius);
+    background: var(--tss-primary-background-color-transparent);
+    color: var(--tss-default-foreground-color);
+    font-size: var(--tss-font-size-xsmall);
+    font-weight: var(--tss-font-weight-semibold);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    pointer-events: none;
+}
+
+.tss-scheduler-ghost-h {
+    top: var(--tss-scheduler-tl-pad);
+    height: calc(var(--tss-scheduler-tl-row) - 4px);
+    line-height: calc(var(--tss-scheduler-tl-row) - 12px);
+}
+
+.tss-scheduler-drop-target {
+    background: var(--tss-primary-background-color-transparent) !important;
+}
+
+.tss-scheduler-external {
+    cursor: grab;
+}
+
+.tss-scheduler-now {
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 0;
+    border-top: 2px solid var(--tss-scheduler-now-color);
+    z-index: 5;
+    pointer-events: none;
+}
+
+    .tss-scheduler-now::before {
+        content: "";
+        position: absolute;
+        left: -5px;
+        top: -6px;
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: var(--tss-scheduler-now-color);
+    }
+
+.tss-scheduler-now-v {
+    top: 0;
+    bottom: 0;
+    right: auto;
+    width: 0;
+    height: auto;
+    border-top: none;
+    border-left: 2px solid var(--tss-scheduler-now-color);
+}
+
+    .tss-scheduler-now-v::before {
+        left: -6px;
+        top: -5px;
+    }
+
+    .tss-scheduler-now-plain::before {
+        display: none;
+    }
+
+
+.tss-scheduler-timegrid {
+    overflow: auto;
+}
+
+.tss-scheduler-tg-grid {
+    display: grid;
+    grid-template-rows: auto auto;
+    min-width: min-content;
+}
+
+.tss-scheduler-tg-header {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: subgrid;
+    position: sticky;
+    top: 0;
+    z-index: 8;
+    background: var(--tss-default-background-color);
+    border-bottom: 1px solid var(--tss-default-border-color);
+}
+
+.tss-scheduler-tg-corner {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    background: var(--tss-default-background-color);
+    border-right: 1px solid var(--tss-scheduler-line-color);
+}
+
+.tss-scheduler-tg-dayheader,
+.tss-scheduler-tg-resourceheader {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-width: 0;
+    padding: 4px;
+    border-left: 1px solid var(--tss-scheduler-line-color);
+    border-bottom: 1px solid var(--tss-scheduler-line-color);
+    white-space: nowrap;
+    overflow: hidden;
+}
+
+.tss-scheduler-tg-dayheader {
+    height: var(--tss-scheduler-header-height);
+    box-sizing: border-box;
+}
+
+.tss-scheduler-tg-resourceheader {
+    height: 30px;
+    box-sizing: border-box;
+    font-weight: var(--tss-font-weight-semibold);
+}
+
+.tss-scheduler-tg-dayname {
+    color: var(--tss-secondary-foreground-color);
+    text-transform: uppercase;
+    font-size: var(--tss-font-size-xsmall);
+    letter-spacing: .04em;
+}
+
+.tss-scheduler-tg-daynum {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 26px;
+    height: 26px;
+    border-radius: 13px;
+    font-size: var(--tss-font-size-smallplus);
+    font-weight: var(--tss-font-weight-semibold);
+}
+
+.tss-scheduler-today > .tss-scheduler-tg-daynum,
+.tss-scheduler-today > .tss-scheduler-tl-daylabel > .tss-scheduler-tg-daynum {
+    background: var(--tss-scheduler-today-color);
+    color: var(--tss-primary-foreground-color);
+}
+
+.tss-scheduler-today > .tss-scheduler-tg-dayname,
+.tss-scheduler-today > .tss-scheduler-tl-daylabel > .tss-scheduler-tg-dayname {
+    color: var(--tss-scheduler-today-color);
+}
+
+.tss-scheduler-clickable {
+    cursor: pointer;
+}
+
+    .tss-scheduler-clickable:hover .tss-scheduler-tg-daynum {
+        box-shadow: inset 0 0 0 1px var(--tss-default-border-color);
+    }
+
+.tss-scheduler-tg-allday {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: subgrid;
+    grid-auto-rows: 24px;
+    row-gap: 2px;
+    padding: 3px 0;
+    min-height: 24px;
+}
+
+.tss-scheduler-tg-allday-caption {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    background: var(--tss-default-background-color);
+    color: var(--tss-secondary-foreground-color);
+    font-size: var(--tss-font-size-xsmall);
+    text-align: right;
+    padding: 4px 6px 0 0;
+    border-right: 1px solid var(--tss-scheduler-line-color);
+    margin: -3px 0;
+}
+
+.tss-scheduler-tg-allday-cell {
+    border-left: 1px solid var(--tss-scheduler-line-color);
+    margin: -3px 0;
+}
+
+    .tss-scheduler-tg-allday-cell.tss-scheduler-today {
+        background: color-mix(in srgb, var(--tss-scheduler-today-color) 5%, transparent);
+    }
+
+.tss-scheduler-tg-allday > .tss-scheduler-chip {
+    z-index: 1;
+    margin: 0 3px;
+}
+
+.tss-scheduler-tg-gutter {
+    position: sticky;
+    left: 0;
+    z-index: 7;
+    background: var(--tss-default-background-color);
+    border-right: 1px solid var(--tss-scheduler-line-color);
+}
+
+.tss-scheduler-tg-hour {
+    position: absolute;
+    right: 6px;
+    transform: translateY(-50%);
+    color: var(--tss-secondary-foreground-color);
+    font-size: var(--tss-font-size-xsmall);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.tss-scheduler-tg-col {
+    position: relative;
+    border-left: 1px solid var(--tss-scheduler-line-color);
+    background-color: var(--tss-scheduler-offhours-color);
+    background-image: linear-gradient(to bottom, var(--tss-scheduler-line-color) 1px, transparent 1px), linear-gradient(to bottom, var(--tss-scheduler-minor-line-color) 1px, transparent 1px);
+    background-size: 100% var(--tss-scheduler-hour-height), 100% var(--tss-scheduler-slot-height);
+    min-width: 0;
+    touch-action: pan-x pan-y;
+}
+
+    .tss-scheduler-tg-col.tss-scheduler-group-start,
+    .tss-scheduler-tg-header > .tss-scheduler-tg-resourceheader + .tss-scheduler-tg-resourceheader {
+        border-left-color: var(--tss-dark-border-color);
+    }
+
+    .tss-scheduler-tg-col.tss-scheduler-today {
+        background-color: color-mix(in srgb, var(--tss-scheduler-today-color) 4%, transparent);
+    }
+
+.tss-scheduler-tg-work {
+    position: absolute;
+    left: 0;
+    right: 0;
+    background-color: var(--tss-scheduler-work-color);
+    background-image: linear-gradient(to bottom, var(--tss-scheduler-line-color) 1px, transparent 1px), linear-gradient(to bottom, var(--tss-scheduler-minor-line-color) 1px, transparent 1px);
+    background-size: 100% var(--tss-scheduler-hour-height), 100% var(--tss-scheduler-slot-height);
+    pointer-events: none;
+    z-index: 0;
+}
+
+.tss-scheduler-tg-col.tss-scheduler-today > .tss-scheduler-tg-work {
+    background-color: color-mix(in srgb, var(--tss-scheduler-today-color) 4%, var(--tss-scheduler-work-color));
+}
+
+.tss-scheduler-event {
+    position: absolute;
+    z-index: 1;
+    padding: 2px 6px 2px 5px;
+    touch-action: none;
+}
+
+    .tss-scheduler-event.tss-scheduler-event-short {
+        padding-top: 0;
+        padding-bottom: 0;
+    }
+
+        .tss-scheduler-event.tss-scheduler-event-short .tss-scheduler-item-content {
+            display: flex;
+            gap: 6px;
+            align-items: center;
+            height: 100%;
+        }
+
+    .tss-scheduler-event.tss-scheduler-continues-before {
+        border-top-left-radius: 0;
+        border-top-right-radius: 0;
+        border-top: 2px dotted var(--tss-scheduler-item);
+    }
+
+    .tss-scheduler-event.tss-scheduler-continues-after {
+        border-bottom-left-radius: 0;
+        border-bottom-right-radius: 0;
+        border-bottom: 2px dotted var(--tss-scheduler-item);
+    }
+
+
+.tss-scheduler-chip {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+    height: 22px;
+    padding: 0 6px 0 5px;
+    font-size: var(--tss-font-size-xsmall);
+    white-space: nowrap;
+}
+
+    .tss-scheduler-chip:not(.tss-scheduler-banner) {
+        background: transparent;
+        border-left: none;
+    }
+
+        .tss-scheduler-chip:not(.tss-scheduler-banner):hover,
+        .tss-scheduler-chip:not(.tss-scheduler-banner).tss-scheduler-selected {
+            background: color-mix(in srgb, var(--tss-scheduler-item) 14%, transparent);
+        }
+
+    .tss-scheduler-chip .tss-scheduler-item-title {
+        font-weight: var(--tss-font-weight-regular);
+    }
+
+    .tss-scheduler-chip.tss-scheduler-banner .tss-scheduler-item-title {
+        font-weight: var(--tss-font-weight-semibold);
+    }
+
+    .tss-scheduler-chip.tss-scheduler-continues-before {
+        border-top-left-radius: 0;
+        border-bottom-left-radius: 0;
+        border-left-style: dotted;
+    }
+
+    .tss-scheduler-chip.tss-scheduler-continues-after {
+        border-top-right-radius: 0;
+        border-bottom-right-radius: 0;
+    }
+
+.tss-scheduler-chip-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    background: var(--tss-scheduler-item);
+}
+
+.tss-scheduler-chip-time {
+    color: var(--tss-secondary-foreground-color);
+    font-variant-numeric: tabular-nums;
+    flex-shrink: 0;
+}
+
+
+.tss-scheduler-month {
+    display: flex;
+    flex-direction: column;
+    overflow: auto;
+}
+
+.tss-scheduler-month-head {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    border-bottom: 1px solid var(--tss-default-border-color);
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: var(--tss-default-background-color);
+    flex-shrink: 0;
+}
+
+.tss-scheduler-month-weekday {
+    padding: 6px 8px;
+    color: var(--tss-secondary-foreground-color);
+    font-size: var(--tss-font-size-xsmall);
+    text-transform: uppercase;
+    letter-spacing: .04em;
+}
+
+.tss-scheduler-month-grid {
+    flex: 1 1 auto;
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+
+.tss-scheduler-month-cell {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    padding: 2px 3px 4px;
+    border-right: 1px solid var(--tss-scheduler-line-color);
+    border-bottom: 1px solid var(--tss-scheduler-line-color);
+    overflow: hidden;
+}
+
+    .tss-scheduler-month-cell:nth-child(7n) {
+        border-right: none;
+    }
+
+    .tss-scheduler-month-cell.tss-scheduler-other-month {
+        background: var(--tss-scheduler-offhours-color);
+    }
+
+        .tss-scheduler-month-cell.tss-scheduler-other-month > .tss-scheduler-month-date {
+            color: var(--tss-secondary-foreground-color);
+        }
+
+.tss-scheduler-month-date {
+    align-self: flex-start;
+    min-width: 24px;
+    height: 24px;
+    margin: 0 0 2px;
+    padding: 0 6px;
+    border: none;
+    border-radius: 12px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-weight: var(--tss-font-weight-semibold);
+    cursor: pointer;
+}
+
+    .tss-scheduler-month-date:hover {
+        background: var(--tss-default-background-hover-color);
+    }
+
+.tss-scheduler-month-cell.tss-scheduler-today > .tss-scheduler-month-date {
+    background: var(--tss-scheduler-today-color);
+    color: var(--tss-primary-foreground-color);
+}
+
+.tss-scheduler-month-items {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.tss-scheduler-month-more {
+    align-self: flex-start;
+    border: none;
+    background: transparent;
+    color: var(--tss-secondary-foreground-color);
+    font: inherit;
+    font-size: var(--tss-font-size-xsmall);
+    font-weight: var(--tss-font-weight-semibold);
+    padding: 2px 6px;
+    border-radius: var(--tss-scheduler-radius);
+    cursor: pointer;
+}
+
+    .tss-scheduler-month-more:hover {
+        background: var(--tss-default-background-hover-color);
+        color: var(--tss-default-foreground-color);
+    }
+
+
+.tss-scheduler-agenda {
+    overflow: auto;
+    padding: 4px 0;
+}
+
+.tss-scheduler-agenda-day {
+    display: grid;
+    grid-template-columns: 170px minmax(0, 1fr);
+    border-bottom: 1px solid var(--tss-scheduler-line-color);
+}
+
+    .tss-scheduler-agenda-day:last-child {
+        border-bottom: none;
+    }
+
+.tss-scheduler-agenda-date {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 10px 12px;
+}
+
+.tss-scheduler-agenda-daynum {
+    font-size: var(--tss-font-size-mediumplus);
+    font-weight: var(--tss-font-weight-semibold);
+    min-width: 28px;
+    text-align: right;
+}
+
+.tss-scheduler-agenda-dayname {
+    color: var(--tss-secondary-foreground-color);
+    font-size: var(--tss-font-size-xsmall);
+}
+
+.tss-scheduler-agenda-day.tss-scheduler-today .tss-scheduler-agenda-daynum,
+.tss-scheduler-agenda-day.tss-scheduler-today .tss-scheduler-agenda-dayname {
+    color: var(--tss-scheduler-today-color);
+}
+
+.tss-scheduler-agenda-rows {
+    display: flex;
+    flex-direction: column;
+    padding: 4px 8px 4px 0;
+    min-width: 0;
+}
+
+.tss-scheduler-agenda-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 8px;
+    border-radius: var(--tss-scheduler-radius);
+    min-width: 0;
+}
+
+    .tss-scheduler-agenda-row:hover {
+        background: var(--tss-default-background-hover-color);
+    }
+
+    .tss-scheduler-agenda-row.tss-scheduler-selected {
+        background: color-mix(in srgb, var(--tss-scheduler-item) 14%, transparent);
+    }
+
+.tss-scheduler-agenda-time {
+    width: 120px;
+    flex-shrink: 0;
+    color: var(--tss-secondary-foreground-color);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.tss-scheduler-agenda-bar {
+    align-self: stretch;
+    width: 4px;
+    flex-shrink: 0;
+    border-radius: 2px;
+    background: var(--tss-scheduler-item);
+}
+
+.tss-scheduler-agenda-main {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.tss-scheduler-agenda-description {
+    color: var(--tss-secondary-foreground-color);
+    font-size: var(--tss-font-size-xsmall);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.tss-scheduler-agenda-resources {
+    display: flex;
+    gap: 10px;
+    flex-shrink: 0;
+    color: var(--tss-secondary-foreground-color);
+    font-size: var(--tss-font-size-xsmall);
+}
+
+.tss-scheduler-agenda-resource {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.tss-scheduler-agenda-empty {
+    padding: 32px;
+    text-align: center;
+    color: var(--tss-secondary-foreground-color);
+}
+
+
+.tss-scheduler-timeline {
+    overflow: auto;
+}
+
+.tss-scheduler-tl-grid {
+    display: grid;
+    min-width: min-content;
+}
+
+.tss-scheduler-tl-corner {
+    position: sticky;
+    left: 0;
+    top: 0;
+    z-index: 9;
+    display: flex;
+    align-items: flex-end;
+    padding: 0 10px 8px;
+    box-sizing: border-box;
+    background: var(--tss-default-background-color);
+    color: var(--tss-secondary-foreground-color);
+    font-size: var(--tss-font-size-xsmall);
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    border-right: 1px solid var(--tss-default-border-color);
+    border-bottom: 1px solid var(--tss-default-border-color);
+}
+
+.tss-scheduler-tl-header {
+    position: sticky;
+    top: 0;
+    z-index: 8;
+    background: var(--tss-default-background-color);
+    border-bottom: 1px solid var(--tss-default-border-color);
+}
+
+.tss-scheduler-tl-days,
+.tss-scheduler-tl-hours {
+    position: relative;
+}
+
+.tss-scheduler-tl-days {
+    height: 34px;
+}
+
+.tss-scheduler-tl-hours {
+    height: 22px;
+}
+
+.tss-scheduler-tl-day {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    display: flex;
+    align-items: center;
+    box-sizing: border-box;
+    border-left: 1px solid var(--tss-dark-border-color);
+    white-space: nowrap;
+    overflow: clip;
+}
+
+.tss-scheduler-tl-daylabel {
+    position: sticky;
+    left: var(--tss-scheduler-lane-header-width);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 8px;
+}
+
+    .tss-scheduler-tl-day:first-child {
+        border-left-color: transparent;
+    }
+
+    .tss-scheduler-tl-day .tss-scheduler-tg-daynum {
+        min-width: 22px;
+        height: 22px;
+        font-size: var(--tss-font-size-small);
+    }
+
+.tss-scheduler-tl-hour {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    padding: 3px 0 0 4px;
+    box-sizing: border-box;
+    border-left: 1px solid var(--tss-scheduler-line-color);
+    color: var(--tss-secondary-foreground-color);
+    font-size: var(--tss-font-size-tiny);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    overflow: hidden;
+}
+
+.tss-scheduler-tl-laneheader {
+    position: sticky;
+    left: 0;
+    z-index: 7;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 10px;
+    min-width: 0;
+    background: var(--tss-default-background-color);
+    border-right: 1px solid var(--tss-default-border-color);
+    border-bottom: 1px solid var(--tss-scheduler-line-color);
+    font-weight: var(--tss-font-weight-semibold);
+}
+
+.tss-scheduler-tl-lane {
+    position: relative;
+    height: calc(var(--tss-scheduler-tl-rows, 1) * var(--tss-scheduler-tl-row) + 2 * var(--tss-scheduler-tl-pad));
+    min-height: 40px;
+    border-bottom: 1px solid var(--tss-scheduler-line-color);
+    background-color: var(--tss-scheduler-offhours-color);
+    background-image: linear-gradient(to right, var(--tss-dark-border-color) 1px, transparent 1px), linear-gradient(to right, var(--tss-scheduler-minor-line-color) 1px, transparent 1px);
+    background-size: var(--tss-scheduler-tl-day-width) 100%, var(--tss-scheduler-tl-hour-width) 100%;
+    touch-action: pan-x pan-y;
+}
+
+.tss-scheduler-tl-work {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    background: var(--tss-scheduler-work-color);
+    background-image: linear-gradient(to right, var(--tss-scheduler-minor-line-color) 1px, transparent 1px);
+    background-size: var(--tss-scheduler-tl-hour-width) 100%;
+    pointer-events: none;
+}
+
+.tss-scheduler-bar {
+    position: absolute;
+    z-index: 1;
+    height: calc(var(--tss-scheduler-tl-row) - 4px);
+    display: flex;
+    align-items: center;
+    padding: 0 6px 0 5px;
+    font-size: var(--tss-font-size-xsmall);
+    touch-action: none;
+}
+
+    .tss-scheduler-bar.tss-scheduler-continues-before {
+        border-top-left-radius: 0;
+        border-bottom-left-radius: 0;
+        border-left-style: dotted;
+    }
+
+    .tss-scheduler-bar.tss-scheduler-continues-after {
+        border-top-right-radius: 0;
+        border-bottom-right-radius: 0;
+    }
+
+
+.tss-scheduler-tooltip {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 2px 0;
+    max-width: 280px;
+    white-space: normal;
+}
+
+.tss-scheduler-tooltip-title {
+    font-weight: var(--tss-font-weight-semibold);
+}
+
+.tss-scheduler-tooltip-time,
+.tss-scheduler-tooltip-resources {
+    font-size: var(--tss-font-size-xsmall);
+    opacity: 0.8;
+}
+
+.tss-scheduler-tooltip-description {
+    margin-top: 4px;
+    font-size: var(--tss-font-size-xsmall);
+}
+
+
+@media (max-width: 640px) {
+    .tss-scheduler {
+        --tss-scheduler-gutter-width: 44px;
+        --tss-scheduler-lane-header-width: 110px;
+        --tss-scheduler-month-row: 72px;
+    }
+
+    .tss-scheduler-agenda-day {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .tss-scheduler-agenda-time {
+        width: 84px;
+    }
+
+    .tss-scheduler-agenda-resources {
+        display: none;
+    }
+
+    .tss-scheduler-month-cell .tss-scheduler-chip-time {
+        display: none;
+    }
+}
+
+
+.tss-dockpanel {
+    --tss-dockpanel-gap: 4px;
+    --tss-dockpanel-header-height: 34px;
+    --tss-dockpanel-rail-size: 30px;
+    --tss-dockpanel-radius: var(--tss-border-radius-md);
+    --tss-dockpanel-surface: var(--tss-default-background-color);
+    --tss-dockpanel-canvas: var(--tss-secondary-background-color);
+    --tss-dockpanel-accent: var(--tss-primary-background-color);
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-rows: auto auto minmax(0, 1fr) auto;
+    grid-template-areas: "bar bar bar" "top top top" "left main right" "bottom bottom bottom";
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
+    box-sizing: border-box;
+    background: var(--tss-dockpanel-canvas);
+    color: var(--tss-default-foreground-color);
+    border: 1px solid var(--tss-default-border-color);
+    border-radius: var(--tss-dockpanel-radius);
+    overflow: hidden;
+    font-size: var(--tss-font-size-small);
+}
+
+.tss-dockpanel-parking {
+    display: none;
+}
+
+.tss-dockpanel-main {
+    grid-area: main;
+    position: relative;
+    display: flex;
+    min-width: 0;
+    min-height: 0;
+    padding: var(--tss-dockpanel-gap);
+    overflow: hidden;
+}
+
+    .tss-dockpanel-main > .tss-dockpanel-split,
+    .tss-dockpanel-main > .tss-dockpanel-document {
+        flex: 1 1 auto;
+    }
+
+
+.tss-dockpanel-split {
+    display: flex;
+    min-width: 0;
+    min-height: 0;
+}
+
+.tss-dockpanel-split-h {
+    flex-direction: row;
+}
+
+.tss-dockpanel-split-v {
+    flex-direction: column;
+}
+
+.tss-dockpanel-fill {
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: 0;
+}
+
+.tss-dockpanel-region {
+    display: flex;
+    flex-grow: 0;
+    flex-shrink: 1;
+    min-width: 0;
+    min-height: 0;
+}
+
+.tss-dockpanel-region-left,
+.tss-dockpanel-region-right {
+    flex-direction: column;
+}
+
+.tss-dockpanel-region-top,
+.tss-dockpanel-region-bottom {
+    flex-direction: row;
+}
+
+
+.tss-dockpanel-splitter {
+    position: relative;
+    flex: 0 0 var(--tss-dockpanel-gap);
+    z-index: 2;
+    touch-action: none;
+}
+
+    .tss-dockpanel-splitter::after {
+        content: "";
+        position: absolute;
+        background: transparent;
+        border-radius: 2px;
+        transition: background-color .12s;
+    }
+
+.tss-dockpanel-splitter-v {
+    cursor: col-resize;
+}
+
+    .tss-dockpanel-splitter-v::after {
+        top: 0;
+        bottom: 0;
+        left: -2px;
+        right: -2px;
+    }
+
+.tss-dockpanel-splitter-h {
+    cursor: row-resize;
+}
+
+    .tss-dockpanel-splitter-h::after {
+        left: 0;
+        right: 0;
+        top: -2px;
+        bottom: -2px;
+    }
+
+    .tss-dockpanel-splitter:hover::after,
+    .tss-dockpanel-splitter-active::after {
+        background: var(--tss-primary-background-color-transparent);
+    }
+
+.tss-dockpanel-resizing,
+.tss-dockpanel-resizing * {
+    user-select: none !important;
+}
+
+
+.tss-dockpanel-slot,
+.tss-dockpanel-document {
+    display: flex;
+    flex-direction: column;
+    flex-basis: 0;
+    min-width: 0;
+    min-height: 0;
+    background: var(--tss-dockpanel-surface);
+    border: 1px solid var(--tss-default-border-color);
+    border-radius: var(--tss-dockpanel-radius);
+    overflow: hidden;
+}
+
+.tss-dockpanel-slot {
+    flex-shrink: 1;
+}
+
+.tss-dockpanel-document {
+    position: relative;
+}
+
+.tss-dockpanel-document-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+}
+
+.tss-dockpanel-header {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    flex-shrink: 0;
+    height: var(--tss-dockpanel-header-height);
+    padding: 0 4px 0 10px;
+    box-sizing: border-box;
+    border-bottom: 1px solid var(--tss-default-border-color);
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+    .tss-dockpanel-header.tss-dockpanel-movable,
+    .tss-dockpanel-header-tabs .tss-dockpanel-tab {
+        touch-action: none;
+    }
+
+    .tss-dockpanel-header.tss-dockpanel-movable {
+        cursor: grab;
+    }
+
+.tss-dockpanel-header-tabs {
+    padding-left: 2px;
+}
+
+.tss-dockpanel-caption {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    font-weight: var(--tss-font-weight-semibold);
+}
+
+.tss-dockpanel-title {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.tss-dockpanel-icon {
+    flex-shrink: 0;
+    color: var(--tss-secondary-foreground-color);
+    font-size: 12px;
+}
+
+.tss-dockpanel-header-spacer {
+    flex: 1 1 auto;
+    min-width: 4px;
+}
+
+.tss-dockpanel-tabs {
+    display: flex;
+    align-items: stretch;
+    align-self: stretch;
+    min-width: 0;
+    overflow: hidden;
+}
+
+.tss-dockpanel-tab {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    max-width: 180px;
+    padding: 0 10px;
+    border: none;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    background: transparent;
+    color: var(--tss-secondary-foreground-color);
+    font: inherit;
+    cursor: pointer;
+}
+
+    .tss-dockpanel-tab:hover {
+        color: var(--tss-default-foreground-color);
+        background: var(--tss-default-background-hover-color);
+    }
+
+    .tss-dockpanel-tab.tss-dockpanel-tab-active {
+        color: var(--tss-default-foreground-color);
+        font-weight: var(--tss-font-weight-semibold);
+        border-bottom-color: var(--tss-dockpanel-accent);
+    }
+
+        .tss-dockpanel-tab.tss-dockpanel-tab-active .tss-dockpanel-icon {
+            color: var(--tss-dockpanel-accent);
+        }
+
+    .tss-dockpanel-tab:focus-visible,
+    .tss-dockpanel-button:focus-visible,
+    .tss-dockpanel-rail-tab:focus-visible,
+    .tss-dockpanel-restore:focus-visible {
+        outline: 2px solid var(--tss-dockpanel-accent);
+        outline-offset: -2px;
+    }
+
+.tss-dockpanel-button,
+.tss-dockpanel-restore {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    border: none;
+    border-radius: var(--tss-border-radius-sm);
+    background: transparent;
+    color: var(--tss-secondary-foreground-color);
+    cursor: pointer;
+    font-size: 12px;
+}
+
+    .tss-dockpanel-button:hover,
+    .tss-dockpanel-restore:hover {
+        background: var(--tss-default-background-hover-color);
+        color: var(--tss-default-foreground-color);
+    }
+
+.tss-dockpanel-pin-off > i {
+    transform: rotate(-45deg);
+}
+
+.tss-dockpanel-slot-body {
+    position: relative;
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.tss-dockpanel-pane-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+}
+
+.tss-dockpanel-restore {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    z-index: 3;
+    background: var(--tss-dockpanel-surface);
+    box-shadow: 0 0 0 1px var(--tss-default-border-color);
+}
+
+
+.tss-dockpanel-bar {
+    grid-area: bar;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    min-height: var(--tss-dockpanel-header-height);
+    padding: 4px 8px 0 8px;
+    box-sizing: border-box;
+}
+
+    .tss-dockpanel-bar.tss-dockpanel-bar-empty {
+        display: none;
+    }
+
+.tss-dockpanel-bar-title {
+    display: flex;
+    align-items: center;
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+}
+
+    .tss-dockpanel-bar-title:empty {
+        display: none;
+    }
+
+.tss-dockpanel-bar-toggles {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    flex: 0 10 auto;
+    min-width: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+}
+
+    .tss-dockpanel-bar-toggles > * {
+        flex-shrink: 0;
+    }
+
+    .tss-dockpanel-bar-toggles::-webkit-scrollbar {
+        display: none;
+    }
+
+    .tss-dockpanel-bar-toggles:empty {
+        display: none;
+    }
+
+    .tss-dockpanel-bar-title:not(:empty) + .tss-dockpanel-bar-toggles {
+        padding-left: 8px;
+        border-left: 1px solid var(--tss-default-border-color);
+    }
+
+.tss-dockpanel-bar-commands {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex: 0 0 auto;
+    margin-left: auto;
+}
+
+    .tss-dockpanel-bar-commands:empty {
+        display: none;
+    }
+
+
+.tss-dockpanel-toggle {
+    --tss-dockpanel-accent: var(--tss-primary-background-color);
+}
+
+    .tss-btn.tss-dockpanel-toggle.tss-dockpanel-toggle-on {
+        background: color-mix(in srgb, var(--tss-dockpanel-accent) 14%, transparent);
+    }
+
+        .tss-btn.tss-dockpanel-toggle.tss-dockpanel-toggle-on i {
+            color: var(--tss-dockpanel-accent);
+        }
+
+
+.tss-dockpanel-rail {
+    display: flex;
+    gap: 2px;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+}
+
+    .tss-dockpanel-rail.tss-dockpanel-rail-empty {
+        display: none;
+    }
+
+.tss-dockpanel-rail-top {
+    grid-area: top;
+    flex-direction: row;
+    padding: 4px 4px 0 calc(var(--tss-dockpanel-rail-size) + 4px);
+}
+
+.tss-dockpanel-rail-bottom {
+    grid-area: bottom;
+    flex-direction: row;
+    padding: 0 4px 4px calc(var(--tss-dockpanel-rail-size) + 4px);
+}
+
+.tss-dockpanel-rail-left {
+    grid-area: left;
+    flex-direction: column;
+    padding: 4px 0 4px 4px;
+}
+
+.tss-dockpanel-rail-right {
+    grid-area: right;
+    flex-direction: column;
+    padding: 4px 4px 4px 0;
+}
+
+.tss-dockpanel-rail-tab {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 10px;
+    height: var(--tss-dockpanel-rail-size);
+    border: 1px solid var(--tss-default-border-color);
+    border-radius: var(--tss-border-radius-sm);
+    background: var(--tss-dockpanel-surface);
+    color: var(--tss-secondary-foreground-color);
+    font: inherit;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.tss-dockpanel-rail-left .tss-dockpanel-rail-tab,
+.tss-dockpanel-rail-right .tss-dockpanel-rail-tab {
+    writing-mode: vertical-rl;
+    height: auto;
+    width: var(--tss-dockpanel-rail-size);
+    padding: 10px 0;
+}
+
+.tss-dockpanel-rail-left .tss-dockpanel-rail-tab {
+    transform: rotate(180deg);
+}
+
+.tss-dockpanel-rail-tab:hover,
+.tss-dockpanel-rail-tab.tss-dockpanel-rail-tab-open {
+    color: var(--tss-default-foreground-color);
+    border-color: var(--tss-dockpanel-accent);
+}
+
+.tss-dockpanel-rail-tab.tss-dockpanel-rail-tab-open {
+    box-shadow: inset 0 0 0 1px var(--tss-dockpanel-accent);
+}
+
+
+.tss-dockpanel-flyout {
+    position: absolute;
+    z-index: 20;
+    display: flex;
+    padding: var(--tss-dockpanel-gap);
+    box-sizing: border-box;
+    transition: transform .16s ease-out, opacity .16s ease-out;
+    opacity: 0;
+}
+
+    .tss-dockpanel-flyout > .tss-dockpanel-slot {
+        flex: 1 1 auto;
+        box-shadow: var(--tss-shadow-lg);
+    }
+
+.tss-dockpanel-flyout-left {
+    top: 0;
+    bottom: 0;
+    left: 0;
+    transform: translateX(-24px);
+}
+
+.tss-dockpanel-flyout-right {
+    top: 0;
+    bottom: 0;
+    right: 0;
+    flex-direction: row-reverse;
+    transform: translateX(24px);
+}
+
+.tss-dockpanel-flyout-top {
+    left: 0;
+    right: 0;
+    top: 0;
+    flex-direction: column;
+    transform: translateY(-24px);
+}
+
+.tss-dockpanel-flyout-bottom {
+    left: 0;
+    right: 0;
+    bottom: 0;
+    flex-direction: column-reverse;
+    transform: translateY(24px);
+}
+
+.tss-dockpanel-flyout.tss-dockpanel-flyout-shown {
+    transform: none;
+    opacity: 1;
+}
+
+.tss-dockpanel-flyout-splitter {
+    flex: 0 0 6px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .tss-dockpanel-flyout {
+        transition: none;
+    }
+}
+
+
+.tss-dockpanel-dragging,
+.tss-dockpanel-dragging * {
+    cursor: grabbing !important;
+    user-select: none;
+}
+
+.tss-dockpanel-drag-ghost {
+    position: fixed;
+    z-index: 100000;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    border-radius: var(--tss-border-radius-sm);
+    background: var(--tss-default-background-color);
+    color: var(--tss-default-foreground-color);
+    border: 1px solid var(--tss-dockpanel-accent, var(--tss-primary-background-color));
+    box-shadow: var(--tss-shadow-md);
+    font-size: var(--tss-font-size-small);
+    font-weight: var(--tss-font-weight-semibold);
+    pointer-events: none;
+    white-space: nowrap;
+}
+
+.tss-dockpanel-guides {
+    position: absolute;
+    inset: 0;
+    z-index: 30;
+    pointer-events: none;
+}
+
+.tss-dockpanel-preview {
+    position: absolute;
+    display: none;
+    box-sizing: border-box;
+    background: var(--tss-primary-background-color-transparent);
+    border: 2px solid var(--tss-dockpanel-accent);
+    border-radius: var(--tss-dockpanel-radius);
+    transition: left .08s, top .08s, width .08s, height .08s;
+}
+
+.tss-dockpanel-guide {
+    position: absolute;
+    width: 34px;
+    height: 34px;
+    box-sizing: border-box;
+    padding: 5px;
+    border-radius: var(--tss-border-radius-sm);
+    background: var(--tss-default-background-color);
+    border: 1px solid var(--tss-dark-border-color);
+    box-shadow: var(--tss-shadow-md);
+}
+
+    .tss-dockpanel-guide::before {
+        content: "";
+        position: absolute;
+        inset: 5px;
+        border: 1px solid var(--tss-secondary-foreground-color);
+        border-radius: 2px;
+    }
+
+.tss-dockpanel-guide-fill {
+    position: absolute;
+    background: var(--tss-dockpanel-accent);
+    opacity: .55;
+    border-radius: 1px;
+}
+
+.tss-dockpanel-guide-hover {
+    border-color: var(--tss-dockpanel-accent);
+    background: color-mix(in srgb, var(--tss-dockpanel-accent) 12%, var(--tss-default-background-color));
+}
+
+    .tss-dockpanel-guide-hover .tss-dockpanel-guide-fill {
+        opacity: 1;
+    }
+
+.tss-dockpanel-guide-left .tss-dockpanel-guide-fill   { left: 5px;  top: 5px; bottom: 5px; width: 9px; }
+.tss-dockpanel-guide-right .tss-dockpanel-guide-fill  { right: 5px; top: 5px; bottom: 5px; width: 9px; }
+.tss-dockpanel-guide-top .tss-dockpanel-guide-fill    { left: 5px;  right: 5px; top: 5px; height: 9px; }
+.tss-dockpanel-guide-bottom .tss-dockpanel-guide-fill { left: 5px;  right: 5px; bottom: 5px; height: 9px; }
+.tss-dockpanel-guide-tab .tss-dockpanel-guide-fill    { left: 5px;  right: 5px; top: 5px; bottom: 5px; }
+
+.tss-dockpanel-guide-edge.tss-dockpanel-guide-left   { left: 10px; top: calc(50% - 17px); }
+.tss-dockpanel-guide-edge.tss-dockpanel-guide-right  { right: 10px; top: calc(50% - 17px); }
+.tss-dockpanel-guide-edge.tss-dockpanel-guide-top    { top: 10px; left: calc(50% - 17px); }
+.tss-dockpanel-guide-edge.tss-dockpanel-guide-bottom { bottom: 10px; left: calc(50% - 17px); }
 
 
 .tss-nodeview {
@@ -143342,6 +145542,52 @@ body.tss-mobile .tss-message-horizontal {
     position: relative;
 }
 
+.tss-toolcall,
+.tss-toolsused {
+    --tss-toolcall-actions-reserve: 0px;
+}
+
+.tss-toolcall,
+.tss-toolsused-header {
+    --tss-toolcall-widest: initial;
+}
+
+.tss-toolcall {
+    --tss-toolcall-max-width: initial;
+}
+
+.tss-toolcall.tss-toolcall-has-actions,
+.tss-toolsused.tss-toolcall-has-actions {
+    --tss-toolcall-actions-reserve: calc(4px + var(--tss-toolcall-action-count, 0) * 24px);
+}
+
+.tss-toolcall.tss-toolcall-has-actions,
+.tss-toolsused.tss-toolcall-has-actions > .tss-toolsused-header {
+    max-width: calc(100% - var(--tss-toolcall-actions-reserve));
+}
+
+.tss-toolcall.tss-toolcall-has-actions {
+    max-width: calc(min(var(--tss-toolcall-max-width, 100%), 100%) - var(--tss-toolcall-actions-reserve)) !important;
+}
+
+.tss-toolcall:has(> .tss-toolcall-header > .tss-toolcall-progress:not(.tss-liveprogress-empty)) {
+    min-width: min(var(--tss-toolcall-widest, 0px), calc(min(var(--tss-toolcall-max-width, 100%), 100%) - var(--tss-toolcall-actions-reserve, 0px)));
+}
+
+.tss-toolsused-header:has(> .tss-toolsused-progress:not(.tss-liveprogress-empty)) {
+    min-width: min(var(--tss-toolcall-widest, 0px), calc(100% - var(--tss-toolcall-actions-reserve, 0px)));
+}
+
+.tss-toolcall-header:has(> .tss-toolcall-progress:not(.tss-liveprogress-empty)) > .tss-toolcall-text,
+.tss-toolsused-header:has(> .tss-toolsused-progress:not(.tss-liveprogress-empty)) > .tss-toolsused-text {
+    flex: 0 1 auto;
+}
+
+.tss-toolcall-header > .tss-toolcall-progress:not(.tss-liveprogress-empty),
+.tss-toolsused-header > .tss-toolsused-progress:not(.tss-liveprogress-empty) {
+    flex: 1 1 auto;
+}
+
 .tss-toolcall:hover .tss-toolcall-actions,
 .tss-toolcall:focus-within .tss-toolcall-actions,
 .tss-toolsused:hover .tss-toolsused-actions,
@@ -143451,6 +145697,7 @@ body.tss-mobile .tss-message-horizontal {
     align-items: center;
     gap: 10px;
     max-width: 100%;
+    box-sizing: border-box;
     padding: 6px 12px;
     border-radius: 999px;
     border: 1px solid var(--tss-default-border-color);
@@ -143534,6 +145781,7 @@ body.tss-mobile .tss-message-horizontal {
 .tss-toolsused-inline-list > .tss-toolcall {
     display: flex;
     width: 100%;
+    max-width: 100% !important;
     margin-bottom: 0;
     border: none;
     border-radius: 0;
@@ -145499,6 +147747,71 @@ body.tss-mobile .tss-message-horizontal {
     .tss-markdown .tss-markdown-table-actions {
         opacity: 1;
     }
+}
+
+
+.tss-mermaid {
+    --pele-bg: var(--tss-default-background-color);
+    --pele-fg: var(--tss-default-foreground-color);
+    --pele-muted: var(--tss-secondary-foreground-color);
+    --pele-line: var(--tss-secondary-foreground-color);
+    --pele-surface: var(--tss-secondary-background-color);
+    --pele-surface-alt: var(--tss-disabled-background-color);
+    --pele-border: var(--tss-dark-border-color);
+    --pele-accent: var(--tss-primary-background-color);
+    --pele-critical: var(--tss-danger-background-color);
+    --pele-error: var(--tss-danger-background-color);
+    --pele-font: var(--tss-sansserif-font-family);
+    --pele-font-mono: var(--tss-monospace-font-family);
+    --pele-title-weight: var(--tss-font-weight-semibold);
+    --pele-heading-weight: var(--tss-font-weight-semibold);
+    --pele-radius: var(--tss-border-radius-md);
+    --pele-series-1: var(--tss-chart-series-1, var(--tss-colors-blue-600));
+    --pele-series-2: var(--tss-chart-series-2, var(--tss-colors-green-600));
+    --pele-series-3: var(--tss-chart-series-3, var(--tss-colors-orange-600));
+    --pele-series-4: var(--tss-chart-series-4, var(--tss-colors-purple-600));
+    --pele-series-5: var(--tss-chart-series-5, var(--tss-colors-red-600));
+    --pele-series-6: var(--tss-chart-series-6, var(--tss-colors-teal-600));
+    --pele-series-7: var(--tss-chart-series-7, var(--tss-colors-yellow-600));
+    --pele-series-8: var(--tss-chart-series-8, var(--tss-colors-neutral-600));
+
+    display: block;
+    box-sizing: border-box;
+    margin: 16px 0;
+    padding: 16px;
+    overflow: auto;
+    text-align: center;
+    white-space: normal;
+    color: var(--tss-default-foreground-color);
+    background-color: var(--tss-default-background-color);
+    border: 1px solid var(--tss-default-border-color);
+    border-radius: var(--tss-border-radius-md);
+}
+
+.tss-mermaid > svg {
+    max-width: 100%;
+    height: auto;
+}
+
+.tss-markdown pre.tss-mermaid-source {
+    border-left: 3px solid var(--tss-warning-background-color);
+}
+
+.tss-mermaid > pre.tss-mermaid-source {
+    margin: 0;
+    text-align: left;
+    white-space: pre-wrap;
+    font-family: var(--tss-monospace-font-family);
+    font-size: var(--tss-font-size-small);
+    color: var(--tss-secondary-foreground-color);
+}
+
+.tss-mermaid.tss-mermaid-failed {
+    border-color: var(--tss-danger-border-color);
+}
+
+.tss-mermaid:empty {
+    display: none;
 }
 
 
