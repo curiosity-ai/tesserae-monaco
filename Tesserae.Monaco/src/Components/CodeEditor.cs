@@ -728,10 +728,6 @@ namespace Tesserae.Monaco
         {
             _onBeforeCreate?.Invoke();
 
-            // The saved settings win over everything the host configured, so the tab size goes in ahead of
-            // the model the surface will bind to it.
-            var settings = EffectiveSettings();
-
             var options = BuildBaseOptions(InitialLanguage, InitialText, InitialReadOnly, InitialWordWrap, _autoHeight);
 
             options.snippetSuggestions = "bottom";
@@ -742,11 +738,13 @@ namespace Tesserae.Monaco
 
             FinishOptions(options, OptionSetters, _configureOptions);
 
-            if (settings is object)
+            // Saved settings win over everything the host configured; the host's own SettingsDefaults only add
+            // what differs from the package's. The tab size goes in ahead of the model the surface will bind.
+            if (_settingsEnabled)
             {
-                settings.WriteTo(options);
-                TrackWordWrap(settings.WordWrap);
-                Indentation(settings.TabSize, settings.InsertSpaces);
+                WriteSettings(options, includeAppDefaults: true);
+                TrackWordWrap(options.wordWrap == "on");
+                SetIndentationFromOptions(options);
             }
 
             var editor = MonacoApi.editor.create(container, options);
@@ -957,41 +955,47 @@ namespace Tesserae.Monaco
             return this;
         }
 
-        // What the editor should look like right now: the saved settings, else the host's defaults, else null
-        // (leave the construction options exactly as the host configured them).
-        private EditorSettings EffectiveSettings()
+        // Writes what the person saved, else the host's SettingsDefaults, into the options. Saved settings are
+        // written whole. The host's are written only where they differ from the package's defaults, so an
+        // application that merely asked for inlay hints off keeps its own .WordWrap() and Options(...) on the rest.
+        private void WriteSettings(EditorOptions options, bool includeAppDefaults)
         {
-            if (!_settingsEnabled) return null;
+            var saved = EditorSettingsStore.Load(_settingsDefaults);
 
-            return EditorSettingsStore.Load(_settingsDefaults) ?? _settingsDefaults;
+            if (saved is object)
+            {
+                saved.WriteTo(options);
+            }
+            else if (includeAppDefaults && _settingsDefaults is object)
+            {
+                _settingsDefaults.WriteTo(options, new EditorSettings());
+            }
+        }
+
+        // Tab size and spaces are model options too, which Monaco does not apply from the editor options on a
+        // model that already exists - so they are set on the model as well.
+        private void SetIndentationFromOptions(EditorOptions options)
+        {
+            if (options.tabSize > 0) Indentation(options.tabSize, options.insertSpaces);
         }
 
         private void ApplySettingsLive()
         {
             if (Surface is null) return;
 
-            var settings = EffectiveSettings();
-            var patch    = new EditorOptions();
+            // Back to a known base each time - the package's defaults, then whatever this editor was configured
+            // with, then the person's choices - because a reset has to undo what the last save wrote.
+            var patch = new EditorOptions();
 
-            if (settings is object)
-            {
-                settings.WriteTo(patch);
-            }
-            else
-            {
-                // A reset with no defaults from the host: the package's own, then whatever this editor was
-                // configured with on top - the same layering the editor was created with.
-                new EditorSettings().WriteTo(patch);
-                FinishOptions(patch, OptionSetters, _configureOptions);
+            new EditorSettings().WriteTo(patch);
+            FinishOptions(patch, OptionSetters, _configureOptions);
+            WriteSettings(patch, includeAppDefaults: true);
 
-                settings = new EditorSettings();
-            }
-
-            TrackWordWrap(settings.WordWrap);
+            TrackWordWrap(patch.wordWrap == "on");
 
             Surface.UpdateOptions(patch);
 
-            Indentation(settings.TabSize, settings.InsertSpaces);
+            SetIndentationFromOptions(patch);
         }
 
         private void AddSettingsAction(IStandaloneCodeEditor editor)
@@ -1009,7 +1013,7 @@ namespace Tesserae.Monaco
         /// <summary>Opens the same dialog the context-menu entry opens.</summary>
         public void ShowSettings()
         {
-            var current = EffectiveSettings() ?? new EditorSettings();
+            var current = EditorSettingsStore.Load(_settingsDefaults) ?? _settingsDefaults?.Clone() ?? new EditorSettings();
 
             // Word wrap can be toggled from the context menu without being saved; show what the editor does now.
             current.WordWrap = IsWordWrapped;

@@ -1201,9 +1201,12 @@ a reload. The sample page is **Editor Settings**.
 
 - **Saved settings win over the host.** They are written into the construction options after the typed setters
   and `Options(...)`, so a person's font size beats the application's. Before anything is saved, only what the
-  host passed to `SettingsDefaults(EditorSettings)` applies (that is how an application turns inlay hints off:
-  Monaco's own default is `on`, and a registered inlay-hints provider shows immediately). With neither, the
-  options are exactly what the host configured. `NoUserSettings()` removes the entry.
+  host passed to `SettingsDefaults(EditorSettings)` applies, **and only the fields that differ from
+  `new EditorSettings()`** (that is how an application turns inlay hints off: Monaco's own default is `on`, and a
+  registered inlay-hints provider shows immediately). Applying all of them would overwrite the editor's own
+  configuration - Mosaik's markdown editors call `.WordWrap()`, and a full record would have turned it off.
+  With neither, the options are exactly what the host configured. A live reset re-layers the package defaults,
+  the editor's own setters and `Options(...)`, then the host's differences. `NoUserSettings()` removes the entry.
 - **Tab size is a global Monaco option, not a model option.** `Indentation()` goes through `model.updateOptions`,
   and Monaco's `ModelService` re-applies the *global* configuration to every model whenever any configuration
   changes - re-running `detectIndentation` and replacing the tab size with whatever the text looks like it uses.

@@ -19,8 +19,10 @@ namespace Tesserae.Monaco.Sample
             // until they save a choice of their own.
             var defaults = new EditorSettings { InlayHints = "off" };
 
-            var first  = Build(defaults);
-            var second = Build(defaults);
+            var first  = Build(defaults, wrap: false);
+
+            // Configured by the application itself: SettingsDefaults must leave this alone.
+            var second = Build(defaults, wrap: true);
 
             var stored = TextBlock().Small().Secondary().Id("stored-settings");
 
@@ -35,7 +37,7 @@ namespace Tesserae.Monaco.Sample
                .FlatSection(VStack().Children(
                     Card(VStack().WS().Children(
                         TextBlock("Every .CodeEditor() has an Editor Settings entry at the foot of its context menu. It opens a dialog with the preferences a person would reasonably want to change - font size, word wrap, the minimap, inline hints, hover and parameter popups, tab size and more - and Save writes them to localStorage, so they apply to every editor of the application and to the next visit."),
-                        TextBlock("An application that wants other defaults for its people (inline hints off, say) passes an adjusted EditorSettings to .SettingsDefaults(...). Those apply until the person saves a choice, and are what Reset to defaults returns to. .NoUserSettings() takes the entry away for an editor whose look the application owns.").MT(8))).SetTitle("Overview")))
+                        TextBlock("An application that wants other defaults for its people (inline hints off, say) passes an adjusted EditorSettings to .SettingsDefaults(...). Only what differs from the package's defaults is applied, so the rest of an editor's own configuration (the second editor here sets .WordWrap()) is left alone. They apply until the person saves a choice, and are what Reset to defaults returns to. .NoUserSettings() takes the entry away for an editor whose look the application owns.").MT(8))).SetTitle("Overview")))
                .FlatSection(VStack().Children(
                     Card(VStack().WS().Children(
                         TextBlock("Saved settings win over everything the application configured, so only offer the entry where that is the intention. A save or a reset reaches every live editor - and every other tab - without a reload; EditorSettingsStore.Subscribe(...) is the same notification for a host that wants to follow it."),
@@ -56,9 +58,10 @@ namespace Tesserae.Monaco.Sample
                .SeeAlso(typeof(EditorOptionsSample), typeof(InlayHintsAndLensesSample));
         }
 
-        private static CodeEditor Build(EditorSettings defaults)
+        private static CodeEditor Build(EditorSettings defaults, bool wrap)
         {
             return MonacoEditor.Editor()
+               .WordWrap(wrap)
                .SetLanguage("csharp")
                .SetText(CODE)
                .SettingsDefaults(defaults)

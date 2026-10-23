@@ -111,48 +111,83 @@ namespace Tesserae.Monaco
         /// Writes these settings into a Monaco options object - the construction options, or an empty patch for
         /// <c>updateOptions</c>. A nested option is changed in place when the object already has one, so what the
         /// editor set around the field (the hover delay, the minimap side) survives.
+        ///
+        /// With <paramref name="onlyDifferentFrom"/>, only the settings that differ from it are written: that is how
+        /// a host's <see cref="CodeEditor.SettingsDefaults"/> applies, as the handful of things the application
+        /// changed rather than all of them, so the rest of what the editor was configured with is left alone.
         /// </summary>
-        internal void WriteTo(EditorOptions o)
+        internal void WriteTo(EditorOptions o, EditorSettings onlyDifferentFrom = null)
         {
-            o.fontSize                = FontSize;
-            o.lineNumbers             = LineNumbers;
-            o.wordWrap                = WordWrap ? "on" : "off";
-            o.renderWhitespace        = RenderWhitespace;
-            o.folding                 = Folding;
-            o.fontLigatures           = FontLigatures;
-            o.quickSuggestions        = QuickSuggestions;
-            o.tabSize                 = TabSize;
-            o.insertSpaces            = InsertSpaces;
-            o.detectIndentation       = false;
-            o.formatOnPaste           = FormatOnPaste;
-            o.smoothScrolling         = SmoothScrolling;
-            o.mouseWheelZoom          = MouseWheelZoom;
-            o.codeLens                = CodeLens;
+            var b = onlyDifferentFrom;
 
-            o.minimap                 = o.minimap ?? new MinimapOptions();
-            o.minimap.enabled         = Minimap;
+            if (b is null || FontSize != b.FontSize)                 o.fontSize         = FontSize;
+            if (b is null || LineNumbers != b.LineNumbers)           o.lineNumbers      = LineNumbers;
+            if (b is null || WordWrap != b.WordWrap)                 o.wordWrap         = WordWrap ? "on" : "off";
+            if (b is null || RenderWhitespace != b.RenderWhitespace) o.renderWhitespace = RenderWhitespace;
+            if (b is null || Folding != b.Folding)                   o.folding          = Folding;
+            if (b is null || FontLigatures != b.FontLigatures)       o.fontLigatures    = FontLigatures;
+            if (b is null || QuickSuggestions != b.QuickSuggestions) o.quickSuggestions = QuickSuggestions;
+            if (b is null || FormatOnPaste != b.FormatOnPaste)       o.formatOnPaste    = FormatOnPaste;
+            if (b is null || SmoothScrolling != b.SmoothScrolling)   o.smoothScrolling  = SmoothScrolling;
+            if (b is null || MouseWheelZoom != b.MouseWheelZoom)     o.mouseWheelZoom   = MouseWheelZoom;
+            if (b is null || CodeLens != b.CodeLens)                 o.codeLens         = CodeLens;
 
-            o.stickyScroll            = o.stickyScroll ?? new StickyScrollOptions();
-            o.stickyScroll.enabled    = StickyScroll;
+            // Tab size is a global Monaco option; see EditorOptions.tabSize.
+            if (b is null || TabSize != b.TabSize || InsertSpaces != b.InsertSpaces)
+            {
+                o.tabSize           = TabSize;
+                o.insertSpaces      = InsertSpaces;
+                o.detectIndentation = false;
+            }
 
-            o.guides                  = o.guides ?? new GuidesOptions();
-            o.guides.indentation      = IndentGuides;
-            o.guides.highlightActiveIndentation = IndentGuides;
+            if (b is null || Minimap != b.Minimap)
+            {
+                o.minimap         = o.minimap ?? new MinimapOptions();
+                o.minimap.enabled = Minimap;
+            }
 
-            o.bracketPairColorization = o.bracketPairColorization ?? new BracketPairColorizationOptions();
-            o.bracketPairColorization.enabled = BracketPairColorization;
+            if (b is null || StickyScroll != b.StickyScroll)
+            {
+                o.stickyScroll         = o.stickyScroll ?? new StickyScrollOptions();
+                o.stickyScroll.enabled = StickyScroll;
+            }
 
-            o.inlayHints              = o.inlayHints ?? new InlayHintsOptions();
-            o.inlayHints.enabled      = InlayHints;
+            if (b is null || IndentGuides != b.IndentGuides)
+            {
+                o.guides                            = o.guides ?? new GuidesOptions();
+                o.guides.indentation                = IndentGuides;
+                o.guides.highlightActiveIndentation = IndentGuides;
+            }
 
-            o.hover                   = o.hover ?? new HoverOptions();
-            o.hover.enabled           = Hover;
+            if (b is null || BracketPairColorization != b.BracketPairColorization)
+            {
+                o.bracketPairColorization         = o.bracketPairColorization ?? new BracketPairColorizationOptions();
+                o.bracketPairColorization.enabled = BracketPairColorization;
+            }
 
-            o.parameterHints          = o.parameterHints ?? new ParameterHintsOptions();
-            o.parameterHints.enabled  = ParameterHints;
+            if (b is null || InlayHints != b.InlayHints)
+            {
+                o.inlayHints         = o.inlayHints ?? new InlayHintsOptions();
+                o.inlayHints.enabled = InlayHints;
+            }
 
-            o.inlineSuggest           = o.inlineSuggest ?? new InlineSuggestOptions();
-            o.inlineSuggest.enabled   = InlineSuggestions;
+            if (b is null || Hover != b.Hover)
+            {
+                o.hover         = o.hover ?? new HoverOptions();
+                o.hover.enabled = Hover;
+            }
+
+            if (b is null || ParameterHints != b.ParameterHints)
+            {
+                o.parameterHints         = o.parameterHints ?? new ParameterHintsOptions();
+                o.parameterHints.enabled = ParameterHints;
+            }
+
+            if (b is null || InlineSuggestions != b.InlineSuggestions)
+            {
+                o.inlineSuggest         = o.inlineSuggest ?? new InlineSuggestOptions();
+                o.inlineSuggest.enabled = InlineSuggestions;
+            }
         }
 
         // The stored form is an [ObjectLiteral] record with one nullable field per setting, so a value an older
