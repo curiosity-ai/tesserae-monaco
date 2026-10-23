@@ -1128,7 +1128,7 @@ Two things this depends on, both easy to break:
   one visit creates one page's editors rather than every page's at startup — and leaving a page unmounts
   them. That is a feature: it exercises the components' disposal on every click.
 
-There are 37 pages in four groups: **Editors** (the components themselves, plus the diff's own API and
+There are 38 pages in four groups: **Editors** (the components themselves, plus the diff's own API and
 `Colorize`), **Language services** (one page per provider — completion, hover documentation, signature
 help, inline completion, formatting, diagnostics, code actions, navigation, inlay hints and lenses, folding, links
 and colours, semantic tokens, a custom language, deferred grammars, and Monaco's bundled workers),
@@ -1173,6 +1173,41 @@ Monaco loads — so a colour registered from a page opened later never appears. 
 this itself for a `LanguageDefinition`'s own `TokenColors`; `AddTokenColors` leaves it to the host, and
 the Semantic Tokens page calls `DefineThemes()` and `ApplyTheme()` from `WhenLoaded(...)` for it. The
 symptom is a provider that runs correctly and changes nothing on screen.
+
+## Editor Settings: per-person preferences on the context menu
+
+Every `CodeEditor` carries an **Editor Settings…** entry at the foot of its context menu (group `z_settings`, so
+it sorts last, after the command palette). It opens `EditorSettingsDialog`, built from Tesserae components only,
+over `EditorSettings`: font size, line numbers, word wrap, minimap, whitespace, indent/bracket guides, sticky
+scroll, folding, ligatures, **inlay hints** (off / only while holding Ctrl+Alt / always), hover, parameter hints,
+suggest-as-you-type, inline suggestions, code lenses, tab size and spaces, format on paste, smooth scrolling and
+Ctrl+wheel zoom. Save writes one JSON record to `localStorage["tesserae-monaco-editor-settings"]`
+(`EditorSettingsStore`); every live editor - and every other tab, through the `storage` event - follows without
+a reload. The sample page is **Editor Settings**.
+
+- **Saved settings win over the host.** They are written into the construction options after the typed setters
+  and `Options(...)`, so a person's font size beats the application's. Before anything is saved, only what the
+  host passed to `SettingsDefaults(EditorSettings)` applies (that is how an application turns inlay hints off:
+  Monaco's own default is `on`, and a registered inlay-hints provider shows immediately). With neither, the
+  options are exactly what the host configured. `NoUserSettings()` removes the entry.
+- **Tab size is a global Monaco option, not a model option.** `Indentation()` goes through `model.updateOptions`,
+  and Monaco's `ModelService` re-applies the *global* configuration to every model whenever any configuration
+  changes - re-running `detectIndentation` and replacing the tab size with whatever the text looks like it uses.
+  Found by tracing `onDidChangeOptions` on a reload: the model briefly had the saved 2, then 4. So
+  `EditorSettings.WriteTo` sets `tabSize`, `insertSpaces` and `detectIndentation: false` as *editor* options too.
+  The price: a saved tab size reaches every model on the page, `NoUserSettings()` editors included.
+- **Nested options are changed in place** (`o.hover = o.hover ?? new HoverOptions(); o.hover.enabled = ...`) so the
+  hover delay, the minimap side and `showToolbar` the editor configured survive.
+- **The stored record is an `[ObjectLiteral]` with nullable fields** (`EditorSettingsRecord`): a key an older
+  version never wrote reads as null and keeps the default it is read over.
+- All text is English, through `EditorSettingsDialog.Translate` for a host that translates.
+
+Verified in the gallery with Playwright: the menu entry is last; the dialog opens with inline hints "Off" (the
+sample's `SettingsDefaults`); changing font size, tab size, word wrap, minimap and inline hints and pressing Save
+updates both editors on the page at once (`getRawOptions()`, tab size on the model, hint text in the lines) and
+writes the record; a reload keeps all of it, including the tab size; the dialog reopens with the saved values;
+Reset removes the key and returns every editor to the sample's defaults; the lifecycle test still passes
+(114 checks) and the console stays clean.
 
 ## Several surfaces on one page
 

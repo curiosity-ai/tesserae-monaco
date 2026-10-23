@@ -45,6 +45,18 @@ namespace Tesserae.Monaco
         public bool        formatOnPaste;
         public bool        formatOnType;
 
+        /// <summary>
+        /// Tab size and indentation are <i>global</i> editor options: Monaco hands them to every model on the
+        /// page, and re-applies them whenever any configuration changes. A model's own
+        /// <c>updateOptions</c> is silently replaced the next time that happens, so a setting that has to
+        /// hold goes here.
+        /// </summary>
+        public int         tabSize;
+        public bool        insertSpaces;
+
+        /// <summary>Whether Monaco may replace the tab size with what the text looks like it uses.</summary>
+        public bool        detectIndentation;
+
         public string      wordWrap;
         public string      wrappingIndent;
         public bool        scrollBeyondLastLine;
@@ -103,6 +115,11 @@ namespace Tesserae.Monaco
         public HoverOptions                   hover;
         public BracketPairColorizationOptions bracketPairColorization;
         public PaddingOptions                 padding;
+        public InlayHintsOptions              inlayHints;
+        public ParameterHintsOptions          parameterHints;
+
+        /// <summary>Whether code lenses (the "N references" line above a declaration) are drawn.</summary>
+        public bool        codeLens;
 
         /// <summary>Renders suggest/hover popups into <see cref="overflowWidgetsDomNode"/> instead of clipping them.</summary>
         public bool        fixedOverflowWidgets;
@@ -215,6 +232,21 @@ namespace Tesserae.Monaco
         public bool   sticky;
         public double delay;
         public double hidingDelay;
+    }
+
+    /// <summary>Monaco's <c>IEditorInlayHintsOptions</c> - the grey annotations a language backend injects into the text.</summary>
+    [ObjectLiteral]
+    public class InlayHintsOptions
+    {
+        /// <summary><c>"on"</c>, <c>"off"</c>, <c>"onUnlessPressed"</c> or <c>"offUnlessPressed"</c> (the modifier is Ctrl+Alt).</summary>
+        public string enabled;
+    }
+
+    /// <summary>Monaco's <c>IEditorParameterHintOptions</c> - the signature popup shown while typing arguments.</summary>
+    [ObjectLiteral]
+    public class ParameterHintsOptions
+    {
+        public bool enabled;
     }
 
     [ObjectLiteral]
