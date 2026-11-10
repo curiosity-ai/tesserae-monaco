@@ -21,7 +21,6 @@ Tesserae.Monaco/               the package
   src/Interop/                 [External] declarations of the `monaco` object - see below
   src/Types/                   [ObjectLiteral] interop types, CodeDiagnostic, CodeContext, LanguageDefinition
   build/bundle-monaco.mjs      esbuild: Monaco's ESM build -> the scripts we ship
-  buildTransitive/*.targets     copies the bundle into a consuming app's output
 Tesserae.Monaco.Sample/        the sample gallery - a sidebar of features, one page each
   src/App.cs                   sidebar, routing, reflection-based page discovery
   src/Samples/                 one ISample per feature, plus the shared page furniture
@@ -74,7 +73,7 @@ Node 22, `Transpose.Compiler` as a global tool, the Monaco bundle as its own ste
 
 **The Transpose output folder is the site.** There is no site generator and nothing to template:
 `tps.json` emits an `index.html` that pulls every script with a relative path, and
-`Tesserae.Monaco.targets` copies Monaco in beside it. So `scripts/stage-samples.mjs` only copies
+the compiler extracts Monaco (a package resource) in beside it. So `scripts/stage-samples.mjs` only copies
 that folder to `_site/`, drops the compiler's `.tps-manifest.app.json` (its record of what it wrote,
 for cleaning the folder next build — not something the page fetches), and writes `.nojekyll`.
 
@@ -266,34 +265,43 @@ with the consumer, and only past a version whose members this package actually u
 `<LangVersion>`: the Transpose SDK overwrites it with the one version `tps` compiles at.
 
 On the consuming side nothing else is needed: a plain `PackageReference` to `Tesserae.Monaco`, and the
-app's own `outputBy: "Module"`. The package's `buildTransitive` targets copy Monaco into
-`assets/js/monaco` and the compiler picks the variant of the C# output, as for Tesserae and GraphKit.
+app's own `outputBy: "Module"`. The compiler extracts Monaco into `assets/js/monaco` (it is a package
+resource, see below) and picks the variant of the C# output, as for Tesserae and GraphKit.
 
-## Monaco assets are NOT Transpose resources
+## Monaco assets are a copy-through Transpose resource
 
-This is the trap to avoid. `tps.json` declares no resources at all. Monaco is
-packed into the nupkg under `monaco/` and copied into the consumer's output by
-`buildTransitive/Tesserae.Monaco.targets`. Three reasons it cannot be a `resources` entry:
+`tps.json` declares one resource group, `monaco`: `assets/js/monaco/**` into `assets/js/monaco/`, with
+`"load": false`. The compiler embeds the folder in the package DLL and extracts it into the site of
+every project that references the package, so **every way of building a site gets Monaco** - `dotnet
+build`, `tps` on its own, and the in-process `Transpose.Compiler.Library` a Curiosity workspace compiles
+its own front-end with. Nothing is packed under `monaco/` and there is no MSBuild target.
 
-- Transpose emits a `<script>` tag for every `.js` resource. Eagerly injecting `monaco.js`, its
-  chunks and the workers both breaks them and costs megabytes on first paint — and a classic
-  `<script>` tag cannot evaluate the module entry at all.
-- A `.js` resource is paired with a `.min.js` variant by name, and esbuild's chunk names are baked
-  into the entry's `import` statements, so a renamed file is a 404.
-- Monaco's chunks are esbuild's, named and linked by esbuild. They cannot ride along as Transpose
-  module chunks, which the compiler names after the hash of its own output and links itself.
+It used to be the other way round: a `buildTransitive/Tesserae.Monaco.targets` copied the folder after
+`Build`. That works only where MSBuild runs. A site built without it had no `assets/js/monaco` at all
+(101 files), and every code editor answered a 404 for `monaco.js` - including the editor of the Build page
+that publishes the front-end. Do not bring the target back; a resource is the one channel every build path
+honours.
 
-Mosaik works around the injection problem with a `monaco#name.js.dontload` suffix that its **server**
-strips at runtime (`Library/Curiosity.Shared.Library/FrontEndWatcher.cs`). A standalone package has no
-server, so that trick is not available here.
+Three things that made "a resource" look impossible, and why each is not a problem now:
 
-Two gotchas in the targets file:
+- **A `.js` resource is scripted into index.html.** Only a *bundle* group (a `name` ending in `.js`/`.css`)
+  or one with the default `load`. This group's name is `monaco` and it says `"load": false`: copied, never
+  scripted. (Mosaik's `monaco#name.js.dontload` suffix, which its server strips at runtime, is the older
+  spelling of the same thing and is not needed here.)
+- **A `.js` resource is paired with a `.min.js` by name and renamed.** A file that ships *alone* is
+  copied through verbatim under its own name in every configuration, which is what every file in this
+  folder is: esbuild's chunk names are baked into the entry's `import`s, so a renamed file is a 404.
+- **`*` does not recurse.** `**` does, keeps each file's subfolder, and qualifies the
+  embedded entry's name with it, so two files named alike in different folders do not collapse. An older
+  compiler cannot read a package built this way at all (the build stamp's minimum compiler version), so it
+  fails loudly instead of shipping half the folder.
 
-- `$(OutDir)` is empty at import time (the file is imported before the .NET SDK's own targets), so the
-  destination path must be computed **inside** the target, not in a top-level `PropertyGroup`.
-- A `ProjectReference` does not import the referenced project's `buildTransitive` targets, which is
-  why `Tesserae.Monaco.Sample.csproj` imports the file by hand. That is deliberate: the sample then
-  exercises exactly the copy a real package consumer gets.
+Monaco's chunks are still esbuild's: they are resources here, not Transpose module chunks (which the
+compiler names after the hash of its own output and links itself).
+
+Verified, not assumed: the sample built in Release with no targets import has the same 101 files as the
+bundle, byte for byte, and `index.html` names none of them; a consumer built with `tps restore` +
+`tps --project` against the packed nupkg (no MSBuild anywhere) has all 101.
 
 ## Persisting history: what Monaco actually gives you
 

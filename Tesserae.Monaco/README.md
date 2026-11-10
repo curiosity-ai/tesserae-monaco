@@ -5,7 +5,7 @@ wrapper around the [Monaco](https://github.com/microsoft/monaco-editor) code edi
 powers VS Code.
 
 It lets you drop a code editor, a code viewer or a diff view into a Tesserae app from C#, with no
-JavaScript. Monaco ships inside this NuGet package and is copied into your app's output on build, so
+JavaScript. Monaco ships inside this NuGet package (as a Transpose resource the compiler extracts into your app's output), so
 there is **no preload step and no CDN dependency** — referencing the package is enough, and it works
 offline.
 

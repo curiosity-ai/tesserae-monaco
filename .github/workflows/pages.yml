@@ -5,7 +5,7 @@ name: Publish sample to GitHub Pages
 # Settings -> Pages -> "Deploy from a branch" -> branch `gh-pages` / root.
 #
 # The Transpose output folder *is* the site: `tps.json` emits an index.html that pulls every
-# script with a relative path, and Tesserae.Monaco.targets copies Monaco in next to it. That
+# script with a relative path, and the compiler extracts Monaco (a package resource) in next to it. That
 # is why there is nothing to rewrite for the /tesserae-monaco/ sub-path Pages serves from -
 # the bundle even resolves its own workers from `document.currentScript.src`.
 
