@@ -33,7 +33,6 @@
 
   <ItemGroup>
     <None Include="README.md" Pack="true" PackagePath="\" />
-    <None Include="buildTransitive/Tesserae.Monaco.targets" Pack="true" PackagePath="buildTransitive/" />
   </ItemGroup>
 
   <!--
@@ -45,8 +44,9 @@
     contains ~133 bare `import './x.css'` statements that browsers reject, across 1331 modules - and
     its prebuilt AMD alternative is deprecated upstream. See the header of build/bundle-monaco.mjs.
 
-    The output is packed and copied into the consuming app's output by Tesserae.Monaco.targets,
-    rather than embedded as a Transpose resource - see the note in tps.json.
+    The output is a copy-through Transpose resource (see tps.json), so the compiler embeds it in the
+    package and extracts it into every site that references the package - nothing is packed under
+    monaco/ and no MSBuild target copies it.
   -->
   <PropertyGroup>
     <MonacoBundleDir>$(MSBuildProjectDirectory)/assets/js/monaco</MonacoBundleDir>
@@ -55,20 +55,5 @@
   <Target Name="BundleMonaco" BeforeTargets="BeforeBuild" Inputs="package.json;build/bundle-monaco.mjs" Outputs="$(MonacoBundleDir)/version.txt">
     <Exec Command="npm install --no-audit --no-fund" WorkingDirectory="$(MSBuildProjectDirectory)" />
     <Exec Command="npm run bundle" WorkingDirectory="$(MSBuildProjectDirectory)" />
-  </Target>
-
-  <!--
-    Resolved in a target rather than a static ItemGroup so the glob runs after BundleMonaco has
-    produced the files - a static include is evaluated before any target runs and would come back
-    empty on a fresh clone.
-
-    Hooked on _GetPackageFiles, which is where NuGet collects Pack="true" items. GenerateNuspec is
-    too late: it takes _GetPackageFiles as a dependency, so items added there never reach the
-    nuspec and the package silently ships without Monaco.
-  -->
-  <Target Name="IncludeMonacoInPackage" BeforeTargets="_GetPackageFiles" DependsOnTargets="BundleMonaco">
-    <ItemGroup>
-      <None Include="$(MonacoBundleDir)/**" Pack="true" PackagePath="monaco/" />
-    </ItemGroup>
   </Target>
 </Project>

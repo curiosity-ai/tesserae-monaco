@@ -78,7 +78,7 @@ steps:
     workingDirectory: '$(Build.SourcesDirectory)/Tesserae.Monaco/'
 
 # The sample is not packed, but building it proves the package is consumable end to end - it is the
-# only thing that exercises Tesserae.Monaco.targets copying Monaco into an app's output.
+# only thing that exercises the package's Monaco resource reaching an app's output.
 - task: CmdLine@2
   displayName: 'Build Tesserae.Monaco.Sample'
   inputs:

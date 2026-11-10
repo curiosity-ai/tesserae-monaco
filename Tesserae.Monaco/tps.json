@@ -9,16 +9,26 @@
     // the Bridge-era spelling and now contributes only a load flag), and a Debug consumer still gets
     // one readable bundle, since a Debug site is never chunked.
     "outputBy": "Module",
-    // NOTE: the Monaco distribution itself is deliberately NOT a Transpose resource. It is packed
-    // into the NuGet package under monaco/ and copied into the consuming project's output by
-    // buildTransitive/Tesserae.Monaco.targets instead. Three reasons:
-    //   - Transpose emits a <script> tag for every ".js" resource, but the entry is an ES module a
-    //     classic <script> cannot evaluate at all, and its chunks and the workers are fetched on
-    //     demand; injecting them eagerly both breaks them and costs megabytes on first paint.
-    //   - A ".js" resource is paired with a ".min.js" variant by name, and the chunk names are baked
-    //     into the entry's import statements - a renamed chunk is a 404.
-    //   - Monaco's tree is esbuild's output, not this compiler's: its chunks are named and linked by
-    //     esbuild, so they cannot ride along as Transpose module chunks either.
+    // The Monaco distribution (monaco.js, its chunks, the workers, the codicon font) is a resource, and
+    // a copy-through one: no name ending in .js, so nothing is concatenated or renamed, and "load":
+    // false, so no <script> is injected - the entry is an ES module a classic <script> cannot evaluate,
+    // and its chunks and workers are fetched on demand. "**" keeps the folder structure, which
+    // matters: esbuild named the chunks and wrote their paths into the entry's imports, so a file that
+    // moves or is renamed is a 404. Every file ships under the name esbuild gave it.
+    //
+    // It used to be left out of tps.json and copied by an MSBuild target in buildTransitive/, which
+    // works only for a build that runs MSBuild. A build that does not - the in-process compiler behind a
+    // Curiosity workspace's own front-end - shipped a site with no Monaco at all, and every code editor
+    // answered a 404 for assets/js/monaco/monaco.js. A resource is carried by the compiler itself, so
+    // every way of building a site gets it. The folder is generated (BundleMonaco, gitignored).
+    "resources": [
+        {
+            "name": "monaco",
+            "files": [ "assets/js/monaco/**" ],
+            "output": "assets/js/monaco/",
+            "load": false
+        }
+    ],
     "cleanOutputFolderBeforeBuildPattern": "*.*",
     "loader": {
         "type": "Global"

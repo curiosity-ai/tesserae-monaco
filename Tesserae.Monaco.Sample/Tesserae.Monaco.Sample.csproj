@@ -17,12 +17,4 @@
   <ItemGroup>
     <ProjectReference Include="..\Tesserae.Monaco\Tesserae.Monaco.csproj" />
   </ItemGroup>
-
-  <!--
-    A PackageReference would get this automatically (it lives in the package's buildTransitive/), but
-    a ProjectReference does not import the referenced project's targets - so the sample imports it by
-    hand. This is the same file a real consumer runs, which is the point: the sample exercises the
-    actual Monaco asset copy rather than a bespoke one.
-  -->
-  <Import Project="..\Tesserae.Monaco\buildTransitive\Tesserae.Monaco.targets" />
 </Project>
