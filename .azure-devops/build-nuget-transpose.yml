@@ -37,6 +37,14 @@ steps:
     version: 10.x
     installationPath: $(Agent.ToolsDirectory)/dotnet
 
+- task: UseDotNet@2
+  displayName: 'Use .NET 11 (runtime of the Transpose compiler)'
+  inputs:
+    packageType: sdk
+    version: 11.x
+    includePreviewVersions: true
+    installationPath: $(Agent.ToolsDirectory)/dotnet
+
 - task: NuGetToolInstaller@1
 
 - task: CmdLine@2
