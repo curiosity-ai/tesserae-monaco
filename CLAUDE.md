@@ -741,6 +741,76 @@ discarding and reopening finds the same form; Ctrl+comma opens it from inside th
 Settings entry opens it; the `PropertyGrid` form reports through the same seam; and a pending edit
 survives navigating away and back, re-reported from `OnOpened`.
 
+## Collaborative editing: `MonacoYjsBinding` (and why not y-monaco)
+
+`src/Yjs/` binds a Tesserae `Y.Text` (Tesserae's `Tesserae/src/Yjs/`, Yjs 13.6.33 loaded on demand) to a model and
+its editors: `MonacoTextComponent.BindYjs(text, awareness, undo)` for the components, or
+`new MonacoYjsBinding(...).Attach(model).AddEditor(editor)` for a host's own editors. Remote cursors are drawn by
+`YjsCursorStyles`. The gallery page is **Collaboration**, with a self-test (34 checks).
+
+### What y-monaco 0.1.6 is, and what it gets wrong
+
+[y-monaco](https://github.com/yjs/y-monaco) (`npm pack y-monaco@0.1.6`, one 220-line file, peers
+`monaco-editor >=0.20`, `yjs ^13.3.1`) was reviewed against monaco-editor 0.57.0 and yjs 13.6.33 before writing this.
+It was not bundled: it imports `monaco-editor/esm/vs/editor/editor.api.js` itself (a second Monaco unless the host
+bundles exactly that path) and calls Monaco from script, where this package declares Monaco instead.
+
+- **API compatibility: fine.** Everything it calls still exists in 0.57: `deltaDecorations` (deprecated in favour of
+  `createDecorationsCollection`, not removed), `model.onDidChangeContent` (`changes[]` with `rangeOffset`,
+  `rangeLength`, `text`), `applyEdits`, `getOffsetAt`/`getPositionAt`, `onWillDispose`, `Selection` /
+  `SelectionDirection` / `createWithDirection`. Its Yjs surface (`beforeAllTransactions`, relative positions,
+  `observe` deltas) is unchanged in 13.6.
+- **Line endings: desyncs.** It assumes model offsets equal `Y.Text` indexes. Monaco normalises every line break of a
+  model to the model's EOL, so a CRLF model writes `\r\n` into the shared text and an LF peer then counts one
+  character less per line: inserts land in the wrong place. Mixed line endings in the shared text cannot be
+  represented in any Monaco model at all.
+- **Undo: not handled.** Remote edits go through `applyEdits` (correctly kept off Monaco's undo stack), but Ctrl+Z
+  is left to Monaco's own stack, which knows nothing of remote edits; there is no `Y.UndoManager` integration.
+- **Leaks.** `destroy()` never removes the decorations it drew, never disposes the `onDidChangeCursorSelection`
+  listeners, and registers `awareness.on('change')` once per editor but removes it once. Editors are a fixed `Set`
+  given at construction; the local selection stays in the awareness after `destroy()`.
+- **Cursor CSS is the app's problem.** It emits `yRemoteSelection-<clientID>` / `yRemoteSelectionHead-<clientID>`
+  classes and the host has to write a rule per client. No name label.
+- **Every caret move publishes**, even a programmatic one, and an unchanged selection is re-sent on every remote edit.
+- **Embeds** in the text break its offset arithmetic (`insert.length` of an object).
+- **Its awareness shape is the interop contract**: `selection = { anchor, head }`, the `RelativePosition` objects
+  themselves, which JSON-encode with their null fields. It hands what it receives straight to
+  `createAbsolutePositionFromRelativePosition`, which reads an absent `item` as an ID - so a peer must not publish
+  `relativePositionToJSON` (it drops nulls) or a y-monaco client throws on a caret at the end of the text.
+
+### What the binding does instead
+
+- **LF model, mapped offsets.** The model is set to LF on attach (after `setValue`, which re-detects the EOL from the
+  content) and again after any host edit that changed it. While the shared text holds a `\r`, a copy of it
+  (`_shadow`) maps offsets: a `\r\n` pair is one model character. Without a `\r` the mapping is the identity and
+  costs nothing. The copy starts from `model.getValue()` when a remote insert brings the first `\r` (identical up to
+  then) and is updated op by op, because a remote delete's model length depends on text that is already gone from
+  the `Y.Text` by the time the observer runs.
+- **Local edits:** one transaction, origin the binding, changes applied right to left (Monaco reports them all against
+  the pre-event document). Sorted by index into the array: a `List<IModelContentChange>` cannot be constructed
+  (`genericName` of an `[External]` type with no runtime object - the same trap as `List<IJsDisposable>`).
+- **Remote edits:** `applyEdits` per delta op; every editor's selections are saved as relative positions on
+  `beforeAllTransactions` and restored after.
+- **Presence:** published only from the editor with text focus, and only when the JSON changed. Remote carets and
+  selections are a `createDecorationsCollection` per editor; colours and names go into one `<style>` per
+  collaborator (plus one base sheet), reference-counted across bindings and removed with the last one. Colour and
+  name come from another peer and are untrusted: a colour is used only if it is a hex or colour-function literal,
+  the name is written as an escaped CSS string.
+- **Undo:** a `Y.UndoManager` tracking only the binding as origin (`null` removed). Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y are
+  bound through `EditorSurface.AddCommand` on a bag that is never released, because Monaco cannot remove a command
+  rule; once the editor is no longer bound the handler falls back to Monaco's `undo`/`redo`, so an unbound editor
+  does not lose undo. The selection before each step is kept in the stack item's `meta` and restored when it is
+  undone.
+- **Remount:** `MonacoTextComponent` calls `AttachSurface` at the end of `BindSurface` and `DetachSurface` in
+  `UnbindSurface`; the shared text keeps receiving while the editor is gone and the new model takes its content.
+
+Verified in Chromium, Debug and Release: the page's self-test (concurrent random edits, offline and back, CRLF text,
+caret carried through a remote insert, remote carets drawn, undo local, remount, dispose) passes; Lifecycle (114)
+and Pivots and Modals (174) still pass. Interop with the real y-monaco 0.1.6 was checked by bundling it against the
+page's `window.Y` / `window.monaco` and binding a CRLF model with it next to a `MonacoYjsBinding` on another document:
+both documents and both models stay equal through edits on either side, each draws the other's caret and selection
+(the C# caret at the end of the text included), and disposing the C# binding withdraws its selection.
+
 ## No language intelligence
 
 The package ships **no** completion, hover or formatting logic — those are delegates the host supplies
@@ -1157,15 +1227,15 @@ Two things this depends on, both easy to break:
   one visit creates one page's editors rather than every page's at startup — and leaving a page unmounts
   them. That is a feature: it exercises the components' disposal on every click.
 
-There are 38 pages in four groups: **Editors** (the components themselves, plus the diff's own API and
+There are 39 pages in four groups: **Editors** (the components themselves, plus the diff's own API and
 `Colorize`), **Language services** (one page per provider — completion, hover documentation, signature
 help, inline completion, formatting, diagnostics, code actions, navigation, inlay hints and lenses, folding, links
 and colours, semantic tokens, a custom language, deferred grammars, and Monaco's bundled workers),
 **Decorations and widgets**, and **Runtime and hosting** (options, events, actions and commands,
 several documents, several *editors*, themes, a modal, remount, persisted history, the multi-editor
 shell and the same shell as a whole page (Multi Editor Page, shaped like Mosaik's Build view), a
-document's settings, and two pages that test themselves: the lifecycle page, and editors in
-pivot tabs and modals). The sidebar sorts groups
+document's settings, and three pages that test themselves: the lifecycle page, editors in
+pivot tabs and modals, and Collaboration (Yjs)). The sidebar sorts groups
 alphabetically and pages by their `Order`.
 
 Two consequences of a page being rebuilt on every visit, both of which cost a debugging round:

@@ -74,6 +74,7 @@ configuration (options, events, actions, widgets) is recorded and replayed, and 
 | Language | `SetLanguage(string)`, `SetLanguage(LanguageDefinition)`, `SetLanguageByExtension` |
 | Models | `Model`, `SetModel`, `SaveViewState`, `RestoreViewState` |
 | History | `PersistHistory(options)`, `PersistHistory(scope, documentId)`, `History`, `ShowHistory()` |
+| Collaboration | `BindYjs(text, awareness = null, undo = true)` → `MonacoYjsBinding` |
 | Selection | `GetPosition`, `SetPosition`, `GetSelection(s)`, `SetSelection(s)`, `GetSelectedText`, `SelectAll` |
 | Scrolling | `RevealLine`, `EnsureLineVisible`, `RevealLineInCenter[IfOutsideViewport]`, `RevealLineNearTop`, `RevealPosition[InCenter]`, `RevealRange…`, `Get/SetScrollTop`, `Get/SetScrollLeft`, `GetScrollHeight`, `GetContentHeight`, `GetContentWidth` |
 | Decorations | `Decorate`, `ClearDecorations`, `GetDecorationRanges`, `CreateDecorations` |
@@ -393,6 +394,40 @@ is the string `"local"` or `"remote"`; anything else, the absent value included,
 Note that persistent is not permanent anywhere in the browser: a user agent may evict a whole origin
 under storage pressure, and clearing site data always does. That is the case mirroring to a server
 exists for.
+
+### Collaborative editing with Yjs
+
+`BindYjs` binds an editor to a shared Yjs text from Tesserae (`Tesserae/src/Yjs/`): the editor shows the shared
+content, local edits are written into it, remote edits appear with every caret kept in place, collaborators'
+carets and selections are drawn in their colour with their name, and Ctrl+Z only undoes this user's edits.
+
+```csharp
+await Yjs.LoadAsync();                                   // Tesserae: fetched on demand
+
+var doc       = new Y.Doc();
+var awareness = new Awareness(doc);
+awareness.setLocalStateField("user", YjsUserColors.UserFor("Ada"));
+
+var provider = new YjsSyncProvider(doc, awareness, async bytes => await PostToServer(bytes));
+// provider.Receive(bytesFromServer) for every message the server pushes
+await provider.ConnectAsync();
+
+var editor  = MonacoEditor.Editor().SetLanguage("csharp");
+var binding = editor.BindYjs(doc.getText("content"), awareness, undo: true);
+// ...
+binding.Dispose();                                       // unbinds; the editor keeps its content
+```
+
+- The binding follows the editor through a remount, and picks up what collaborators wrote while it was away.
+- The awareness field is `selection = { anchor, head }` of Yjs relative positions, the shape
+  [y-monaco](https://github.com/yjs/y-monaco) uses, so JavaScript y-monaco clients and these editors see each
+  other's cursors.
+- The model is kept at LF line endings; a shared text holding `\r\n` (from a CRLF client) is mapped offset for
+  offset, so mixed line endings stay consistent.
+- `binding.UndoManager` is the `Y.UndoManager` behind Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y (`undo: false` leaves
+  Monaco's own undo, which knows nothing about remote edits).
+- For editors a host creates itself: `new MonacoYjsBinding(text, awareness).Attach(model).AddEditor(editor)`;
+  `RemoveEditor`, `DetachModel`.
 
 ### `MultiEditor`
 
