@@ -41,6 +41,7 @@ namespace Tesserae.Monaco
         private Action<T>            _onRendered;
         private EditorViewState      _savedViewState;
         private EditorHistory        _history;
+        private readonly List<MonacoYjsBinding> _yjs = new List<MonacoYjsBinding>();
 
         // Buffered until the editor exists.
         private string _text     = "";
@@ -125,6 +126,10 @@ namespace Tesserae.Monaco
             // After the replay, so a restored revision lands on an editor that already has its
             // options, its events and its own remembered view state rather than racing them.
             _history?.Attach(_surface);
+
+            // Last: the shared text wins over whatever the component remembered from before a remount, since
+            // collaborators may have changed it while this editor was out of the DOM.
+            foreach (var binding in _yjs.ToArray()) binding.AttachSurface(_surface);
         }
 
         /// <summary>
@@ -135,6 +140,8 @@ namespace Tesserae.Monaco
         {
             // Before the surface is dropped: the recorder still has to read the text it is flushing.
             _history?.Detach();
+
+            foreach (var binding in _yjs.ToArray()) binding.DetachSurface(_surface);
 
             if (_surface is object)
             {
@@ -509,6 +516,27 @@ namespace Tesserae.Monaco
             if (_surface is object) _history.Attach(_surface);
 
             return Self;
+        }
+
+        /// <summary>
+        /// Binds the editor to a shared Yjs text (see <see cref="MonacoYjsBinding"/>): its content becomes the shared
+        /// text's, local edits are written into it, remote ones appear with the caret kept in place, and - with
+        /// <paramref name="awareness"/> - collaborators' cursors are drawn and this user's selection is published.
+        /// The binding follows the editor through remounts. Dispose it to unbind; the editor keeps its content.
+        /// </summary>
+        /// <param name="text">The shared text, in a document. Yjs must be loaded (<see cref="Yjs.LoadAsync"/>).</param>
+        /// <param name="awareness">Presence for remote cursors, or null.</param>
+        /// <param name="undo">Whether Ctrl+Z reverts only this user's edits, through a <see cref="Y.UndoManager"/>.</param>
+        public MonacoYjsBinding BindYjs(Y.Text text, Awareness awareness = null, bool undo = true)
+        {
+            var binding = new MonacoYjsBinding(text, awareness, undo);
+
+            _yjs.Add(binding);
+            binding.OnDisposed = () => _yjs.Remove(binding);
+
+            if (_surface != null) binding.AttachSurface(_surface);
+
+            return binding;
         }
 
         /// <summary>

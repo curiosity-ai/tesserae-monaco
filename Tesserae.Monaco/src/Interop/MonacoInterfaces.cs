@@ -289,7 +289,21 @@ namespace Tesserae.Monaco
         /// <summary>Normalises line endings. 0 is LF, 1 is CRLF.</summary>
         void             setEOL(int eol);
 
+        /// <summary>The end-of-line sequence the model normalises every line break to: <c>"\n"</c> or <c>"\r\n"</c>.</summary>
+        string           getEOL();
+
+        /// <summary>
+        /// Applies edits to the model directly: no undo stop, no cursor computation, not on the undo
+        /// stack - what an edit that did not come from this user (a collaborator's) wants.
+        /// </summary>
+        void             applyEdits(ReadOnlyArray<TextEdit> operations);
+
         IJsDisposable    onDidChangeContent(Action<IContentChangedEvent> listener);
+
+        /// <summary>Called once, as the model is disposed.</summary>
+        IJsDisposable    onWillDispose(Action listener);
+
+        bool             isDisposed();
     }
 
     /// <summary>Monaco's <c>IWordAtPosition</c>, or null when the caret isn't on a word.</summary>
