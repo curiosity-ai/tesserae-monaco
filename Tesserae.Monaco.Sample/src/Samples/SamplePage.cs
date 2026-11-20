@@ -32,9 +32,25 @@ namespace Tesserae.Monaco.Sample
 
         public static string FormatName(string sampleType)
         {
-            return string.Join("", sampleType.Replace("Sample", "").Select(c => char.IsUpper(c) ? " " + c : "" + c))
-               .Trim()
-               .Replace(" And ", " and ");
+            // A capital starts a word unless it continues an acronym: "AIVariant" is "AI Variant", not "A I Variant".
+            var name = sampleType.Replace("Sample", "");
+            var text = new System.Text.StringBuilder();
+
+            for (var i = 0; i < name.Length; i++)
+            {
+                var c = name[i];
+
+                if (i > 0 && char.IsUpper(c))
+                {
+                    var afterLower    = !char.IsUpper(name[i - 1]);
+                    var beforeLower   = i + 1 < name.Length && char.IsLower(name[i + 1]);
+                    if (afterLower || beforeLower) text.Append(' ');
+                }
+
+                text.Append(c);
+            }
+
+            return text.ToString().Trim().Replace(" And ", " and ");
         }
     }
 }
