@@ -42,6 +42,7 @@ namespace Tesserae.Monaco
         private EditorViewState      _savedViewState;
         private EditorHistory        _history;
         private readonly List<MonacoYjsBinding> _yjs = new List<MonacoYjsBinding>();
+        private LockedLines _locks;
 
         // Buffered until the editor exists.
         private string _text     = "";
@@ -130,6 +131,10 @@ namespace Tesserae.Monaco
             // Last: the shared text wins over whatever the component remembered from before a remount, since
             // collaborators may have changed it while this editor was out of the DOM.
             foreach (var binding in _yjs.ToArray()) binding.AttachSurface(_surface);
+
+            // After every restore above, so the locks are taken against the text the editor actually shows,
+            // and so none of those restores is held to them.
+            _locks?.AttachSurface(_surface);
         }
 
         /// <summary>
@@ -142,6 +147,9 @@ namespace Tesserae.Monaco
             _history?.Detach();
 
             foreach (var binding in _yjs.ToArray()) binding.DetachSurface(_surface);
+
+            // Keeps the locked lines' current numbers, which the next mount's model is built to match.
+            _locks?.DetachSurface(_surface);
 
             if (_surface is object)
             {
@@ -537,6 +545,47 @@ namespace Tesserae.Monaco
             if (_surface != null) binding.AttachSurface(_surface);
 
             return binding;
+        }
+
+        /// <summary>
+        /// Locks lines so the user cannot change or delete them, while text can still be added before and
+        /// after each one (see <see cref="Monaco.LockedLines"/>). The numbers are lines of the text as it is
+        /// when the editor mounts; from then on each lock follows its line wherever edits move it, through
+        /// remounts included.
+        /// </summary>
+        public T LockLines(params int[] lineNumbers)
+        {
+            EnsureLocks().Lock(lineNumbers);
+            return Self;
+        }
+
+        /// <summary>
+        /// Locks every line whose text matches <paramref name="predicate"/> when the editor mounts - say
+        /// <c>line => line.StartsWith("#")</c> for a markdown template's headings. Lines the user writes later
+        /// are not locked, whatever they look like. See <see cref="Monaco.LockedLines"/>.
+        /// </summary>
+        public T LockLines(Func<string, bool> predicate)
+        {
+            EnsureLocks().Lock(predicate);
+            return Self;
+        }
+
+        /// <summary>
+        /// The guard behind <see cref="LockLines(int[])"/>, or null when nothing was ever locked: the current
+        /// locked line numbers, <c>Unlock</c>, the message shown on a refused edit, and
+        /// <c>RunUnguarded</c> for a host edit that is allowed through.
+        /// </summary>
+        public LockedLines LockedLines => _locks;
+
+        private LockedLines EnsureLocks()
+        {
+            if (_locks is null || _locks.IsDisposed)
+            {
+                _locks = new LockedLines();
+                if (_surface is object) _locks.AttachSurface(_surface);
+            }
+
+            return _locks;
         }
 
         /// <summary>

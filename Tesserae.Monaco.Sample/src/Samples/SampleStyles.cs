@@ -33,7 +33,9 @@ namespace Tesserae.Monaco.Sample
                 "." + Note    + " { color: #6a9955; font-style: italic; }" +
                 "." + Widget  + " { background: #4ec9b0; color: #1e1e1e; padding: 1px 6px; border-radius: 3px; font: 11px sans-serif; white-space: nowrap; }" +
                 "." + Overlay + " { background: rgba(0,0,0,0.6); color: #fff; padding: 2px 8px; border-radius: 3px; font: 11px sans-serif; }" +
-                "." + Zone    + " { background: rgba(79,193,255,0.12); color: #4fc1ff; font: 11px sans-serif; padding: 4px 12px; }";
+                "." + Zone    + " { background: rgba(79,193,255,0.12); color: #4fc1ff; font: 11px sans-serif; padding: 4px 12px; }" +
+                "." + LockedLines.LineClassName   + " { background: rgba(79,193,255,0.10); }" +
+                "." + LockedLines.GutterClassName + " { background: #4fc1ff; width: 3px !important; margin-left: 3px; }";
 
             document.head.appendChild(style);
         }

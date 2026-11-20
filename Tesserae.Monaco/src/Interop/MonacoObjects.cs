@@ -69,6 +69,9 @@ namespace Tesserae.Monaco
     public interface IMessageController
     {
         void closeMessage();
+
+        /// <summary>The small inline message a read-only editor shows when typed into.</summary>
+        void showMessage(string message, Position position);
     }
 
     /// <summary>

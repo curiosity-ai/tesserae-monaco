@@ -300,6 +300,19 @@ namespace Tesserae.Monaco
 
         IJsDisposable    onDidChangeContent(Action<IContentChangedEvent> listener);
 
+        /// <summary>The column just past a line's last character - its length plus one.</summary>
+        int              getLineMaxColumn(int lineNumber);
+
+        /// <summary>
+        /// Replaces the decorations named by <paramref name="oldDecorations"/> with
+        /// <paramref name="newDecorations"/> and returns the new ids. Decorations made here belong to the
+        /// model, so every editor showing it paints them, and their ranges move with the text.
+        /// </summary>
+        string[]         deltaDecorations(ReadOnlyArray<string> oldDecorations, ReadOnlyArray<TextDecoration> newDecorations);
+
+        /// <summary>Where a model decoration is now, or null once it is gone (the model was <c>setValue</c>d).</summary>
+        TextRange        getDecorationRange(string id);
+
         /// <summary>Called once, as the model is disposed.</summary>
         IJsDisposable    onWillDispose(Action listener);
 
