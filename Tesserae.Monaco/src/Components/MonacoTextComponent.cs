@@ -42,6 +42,9 @@ namespace Tesserae.Monaco
         private EditorViewState      _savedViewState;
         private EditorHistory        _history;
         private readonly List<MonacoYjsBinding> _yjs = new List<MonacoYjsBinding>();
+        private LockedLines _locks;
+        private AIEditorLook  _aiLook;
+        private AIAnnotations _ai;
 
         // Buffered until the editor exists.
         private string _text     = "";
@@ -130,6 +133,13 @@ namespace Tesserae.Monaco
             // Last: the shared text wins over whatever the component remembered from before a remount, since
             // collaborators may have changed it while this editor was out of the DOM.
             foreach (var binding in _yjs.ToArray()) binding.AttachSurface(_surface);
+
+            // After every restore above, so the locks are taken against the text the editor actually shows,
+            // and so none of those restores is held to them.
+            _locks?.AttachSurface(_surface);
+
+            _aiLook?.Attach(_surface);
+            _ai?.AttachSurface(_surface);
         }
 
         /// <summary>
@@ -142,6 +152,12 @@ namespace Tesserae.Monaco
             _history?.Detach();
 
             foreach (var binding in _yjs.ToArray()) binding.DetachSurface(_surface);
+
+            // Keeps the locked lines' current numbers, which the next mount's model is built to match.
+            _locks?.DetachSurface(_surface);
+
+            _aiLook?.Detach();
+            _ai?.Detach();
 
             if (_surface is object)
             {
@@ -538,6 +554,146 @@ namespace Tesserae.Monaco
 
             return binding;
         }
+
+        /// <summary>
+        /// Locks lines so the user cannot change or delete them, while text can still be added before and
+        /// after each one (see <see cref="Monaco.LockedLines"/>). The numbers are lines of the text as it is
+        /// when the editor mounts; from then on each lock follows its line wherever edits move it, through
+        /// remounts included.
+        /// </summary>
+        public T LockLines(params int[] lineNumbers)
+        {
+            EnsureLocks().Lock(lineNumbers);
+            return Self;
+        }
+
+        /// <summary>
+        /// Locks every line whose text matches <paramref name="predicate"/> when the editor mounts - say
+        /// <c>line => line.StartsWith("#")</c> for a markdown template's headings. Lines the user writes later
+        /// are not locked, whatever they look like. See <see cref="Monaco.LockedLines"/>.
+        /// </summary>
+        public T LockLines(Func<string, bool> predicate)
+        {
+            EnsureLocks().Lock(predicate);
+            return Self;
+        }
+
+        /// <summary>
+        /// The guard behind <see cref="LockLines(int[])"/>, or null when nothing was ever locked: the current
+        /// locked line numbers, <c>Unlock</c>, the message shown on a refused edit, and
+        /// <c>RunUnguarded</c> for a host edit that is allowed through.
+        /// </summary>
+        public LockedLines LockedLines => _locks;
+
+        private LockedLines EnsureLocks()
+        {
+            if (_locks is null || _locks.IsDisposed)
+            {
+                _locks = new LockedLines();
+                if (_surface is object) _locks.AttachSurface(_surface);
+            }
+
+            return _locks;
+        }
+
+        #region AI
+
+        /// <summary>
+        /// Marks the whole editor as holding what a model wrote - Tesserae's AI variant, as on <c>TextArea.AI(...)</c>:
+        /// the AI tint and the accent edge over the editor, and with <paramref name="badge"/> the <c>AI</c> badge in its
+        /// top-right corner. The text in the editor when this is called (or when it mounts), and again after every
+        /// <c>SetText</c>, is taken as what the model wrote; while the editor still holds it the badge says <c>AI</c>, once
+        /// the user edits it the badge says <paramref name="editedText"/>, and it says <c>AI</c> again if the text is put
+        /// back. To mark only the parts a model wrote, line by line or sentence by sentence, use <see cref="InsertAI"/> /
+        /// <see cref="MarkAI"/> instead (the two combine).
+        /// </summary>
+        /// <param name="value">Whether the AI look is on.</param>
+        /// <param name="strongEffect">The louder form of the AI styling (<c>tss-ai-strong</c>), as everywhere in Tesserae.</param>
+        /// <param name="badge">Shows the <c>AI</c> / <c>Edited</c> badge.</param>
+        /// <param name="editedText">What the badge says once the text was edited; <c>Edited</c> when null.</param>
+        public T AI(bool value = true, bool strongEffect = false, bool badge = false, string editedText = null)
+        {
+            if (_aiLook is null) _aiLook = new AIEditorLook(StylingContainer);
+
+            if (value)
+            {
+                _aiLook.Enable(strongEffect, badge, editedText, _surface);
+            }
+            else
+            {
+                _aiLook.Disable();
+            }
+
+            return Self;
+        }
+
+        /// <summary>Whether <see cref="AI"/> is on.</summary>
+        public bool IsAI => StylingContainer.classList.contains("tssm-ai-editor");
+
+        /// <summary>Whether, with the <see cref="AI"/> badge on, the text now differs from what the model wrote.</summary>
+        public bool IsAIEdited => _aiLook is object && _aiLook.IsEdited;
+
+        /// <summary>
+        /// The parts of the document a model wrote, drawn line by line or sentence by sentence and kept true as the
+        /// user edits (see <see cref="Monaco.AIAnnotations"/>). Created on first use; it follows the editor through
+        /// remounts.
+        /// </summary>
+        public AIAnnotations AIAnnotations
+        {
+            get
+            {
+                if (_ai is null || _ai.IsDisposed)
+                {
+                    _ai = new AIAnnotations();
+                    if (_surface is object) _ai.AttachSurface(_surface);
+                }
+
+                return _ai;
+            }
+        }
+
+        /// <summary>
+        /// Marks text already in the document as written by a model, split as <paramref name="marking"/> says. Valid
+        /// before mount, against the text the editor mounts with.
+        /// </summary>
+        public T MarkAI(TextRange range, AIMarking marking = AIMarking.Lines)
+        {
+            AIAnnotations.Mark(range, marking);
+            return Self;
+        }
+
+        /// <summary>Marks whole lines, <paramref name="first"/> to <paramref name="last"/>, as written by a model.</summary>
+        public T MarkAILines(int first, int last)
+        {
+            AIAnnotations.MarkLines(first, last);
+            return Self;
+        }
+
+        /// <summary>
+        /// Inserts what a model wrote at the caret (over the selection, if there is one) as one undoable edit, marks it
+        /// as <paramref name="marking"/> says, and leaves the caret after it. Returns the inserted range, or null when the
+        /// editor is not mounted or the edit was refused.
+        /// </summary>
+        public TextRange InsertAI(string text, AIMarking marking = AIMarking.Lines)
+        {
+            if (_surface is null) return null;
+
+            var selection = _surface.Native.getSelection();
+            var range     = selection is null ? null : Selections.ToRange(selection);
+            var at        = range is null ? new Position { lineNumber = 1, column = 1 } : new Position { lineNumber = range.startLineNumber, column = range.startColumn };
+
+            var inserted = AIAnnotations.Insert(text, at, marking, range);
+
+            if (inserted is object)
+            {
+                _surface.Native.setPosition(new Position { lineNumber = inserted.endLineNumber, column = inserted.endColumn });
+                _surface.Native.revealLine(inserted.endLineNumber);
+            }
+
+            return inserted;
+        }
+
+        #endregion
 
         /// <summary>
         /// Shorthand for <see cref="PersistHistory(EditorHistoryOptions)"/> with only the two settings

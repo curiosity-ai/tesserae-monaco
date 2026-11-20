@@ -1227,8 +1227,8 @@ Two things this depends on, both easy to break:
   one visit creates one page's editors rather than every page's at startup — and leaving a page unmounts
   them. That is a feature: it exercises the components' disposal on every click.
 
-There are 39 pages in four groups: **Editors** (the components themselves, plus the diff's own API and
-`Colorize`), **Language services** (one page per provider — completion, hover documentation, signature
+There are 41 pages in four groups: **Editors** (the components themselves, plus the diff's own API,
+`Colorize`, Locked Lines and AI Variant), **Language services** (one page per provider — completion, hover documentation, signature
 help, inline completion, formatting, diagnostics, code actions, navigation, inlay hints and lenses, folding, links
 and colours, semantic tokens, a custom language, deferred grammars, and Monaco's bundled workers),
 **Decorations and widgets**, and **Runtime and hosting** (options, events, actions and commands,
@@ -1272,6 +1272,98 @@ Monaco loads — so a colour registered from a page opened later never appears. 
 this itself for a `LanguageDefinition`'s own `TokenColors`; `AddTokenColors` leaves it to the host, and
 the Semantic Tokens page calls `DefineThemes()` and `ApplyTheme()` from `WhenLoaded(...)` for it. The
 symptom is a provider that runs correctly and changes nothing on screen.
+
+## Locked lines: refusing an edit before it happens
+
+`CodeEditor.LockLines(...)` (`src/LockedLines/LockedLines.cs`) makes lines the user cannot change or delete
+while everything around them stays editable — the gallery's **Locked Lines** page locks a markdown template's
+headings with `LockLines(line => line.StartsWith("#"))`. A lock is a line, not a number: it is a model
+decoration with `NeverGrowsWhenTypingAtEdges`, so it moves with edits above it, and Enter at its start or end
+opens a line beside it without the lock swallowing it.
+
+**Monaco has no read-only ranges and no "will change" event**, so the guard intercepts instead of reverting.
+Every user edit — typing, IME, paste, cut, drag and drop, snippets, line commands, format — reaches the model
+through `ITextModel.pushEditOperations`, and both of the cursor's callers treat a null answer as "nothing
+happened" (`cursor.js`: `if (!selectionsAfter) selectionsAfter = ctx.selectionsBefore`, and `if (selections)`
+in `executeEdits`). So the guard sets an own `pushEditOperations` on the model *instance*, shadowing the
+prototype's, answers null for a batch that would touch a locked line, and removes itself with `Script.Delete`,
+which puts Monaco's back. A refused edit never happens: no flicker, and the undo stack is untouched. The
+alternative — reverting in `onDidChangeModelContent` — was rejected because a revert either lands on the undo
+stack (Ctrl+Z re-applies the violation) or is merged into the element the user's typing is still building
+(Ctrl+Z eats the typing — the trap "Persisting history" describes). Undo/redo, `setValue` and `applyEdits` do
+not go through the method, so undo replays only states that were allowed, and a host's `Text` assignment or a
+collaborator's remote edit is never blocked. On a pin bump, check `_innerExecuteCommands` and `executeEdits`
+in `cursor/cursor.js` still tolerate a null result.
+
+The rule, per edit against each locked line (ranges are the pre-edit document): an edit that ends where the
+line begins is allowed only if the line still begins a line afterwards (inserted text ending in `\n`, or a
+deletion starting at column 1); the mirror image for an edit starting where the line ends; anything
+overlapping the text is refused. **Two edge edits on one line in one batch are refused too**: that is how
+Alt+Down moves a line (insert the neighbour above, delete it below), and each half alone passes. Removing an
+*empty* neighbouring line (Backspace on it, Delete at the heading's end) is allowed, deliberately — the
+heading's text and its place among the non-empty lines are unchanged.
+
+Host edits through `ApplyEdits`/`ExecuteEdits` are held to the same rule unless run in
+`LockedLines.RunUnguarded(...)`. `setValue` drops every model decoration, so a flush re-applies the original
+numbers and predicates to the new text; a remount re-locks the lines' *current* numbers (the predicates are
+not re-run, so a heading the user wrote is never locked). After every change the decorations are normalised
+back over whole lines, for edits that bypassed the guard. The refusal shows Monaco's own read-only bubble
+(`messageController.showMessage`) in the focused editor, text from `BlockedMessage`; `OnBlocked` reports the
+line. `_editors` is a `List<object>` because a BCL generic over an `[External]` interface cannot be built.
+
+Verified with Playwright, Debug and Release, with real keystrokes: typing in, before and after a heading,
+Backspace/Delete joining a non-empty line onto it, Backspace at its start, select-all + Delete, a selection
+across it, Ctrl+X, Ctrl+Shift+K, Alt+Up/Down over it, and a paste across it are refused with the text
+unchanged; Enter at its start or end, typing, Ctrl+X and Alt+Down on body lines, deleting whole lines between
+headings and a paste below are allowed, with the locks following (33 checks); undo after an allowed edit
+works; locking/unlocking the caret's line works; a remount keeps moved locks; Lifecycle (114) and Pivots and
+Modals (174) pass; console clean.
+
+## The AI variant: `AI()`, and marks per line or per sentence
+
+Tesserae has one visual language for "a model made this": `AI()` on `Card`, `Button`, `TextBlock`, `TextArea`, ...
+(the purple-to-blue `--tss-ai-*` tokens in Tesserae's `tss.ai.css`, and `AIBadge()`). The editor joins it at two
+levels, both in `src/AI/`; the gallery page is **AI Variant** (`AIVariantSample`).
+
+- **`AI(value, strongEffect, badge, editedText)` marks the whole editor**, with the same signature and rules as
+  `TextArea.AI(...)` and its internal `AIFieldBadge`: the text when the variant is switched on (or at mount), and
+  after every `SetText` (an `isFlush` change), is what the model wrote; the badge says `AI` while the editor
+  holds it, `editedText` (default `Edited`) once it differs, and `AI` again if it is put back. The badge is a
+  Tesserae `AIBadge()` in a Monaco **overlay widget** at `TopRightCorner`, which Monaco keeps clear of the
+  minimap and the scrollbar by itself. The look is a `::after` over the container: Monaco paints an opaque
+  background, so a tint *under* it (what `TextArea` does) would never show; the overlay is translucent and
+  `pointer-events: none`, and the badge sits above it at `z-index: 7`. `AIEditorLook.Attach` detaches first —
+  a re-enable over a live editor (the strong-effect toggle) used to add a second badge that Turn off then left
+  behind.
+- **`InsertAI(text, marking)` / `MarkAI(range, marking)` / `MarkAILines(a, b)` mark only what the model wrote**,
+  through `AIAnnotations` (`editor.AIAnnotations`). `AIMarking.Lines` is one mark per line (tint behind the line,
+  the gradient bar in the `linesDecorationsClassName` strip, dashed once edited); `Sentences` splits at `.`/`!`/`?`
+  followed by whitespace and at line breaks (so `3.14` and `a.b` stay whole), one inline mark per sentence;
+  `Range` is one inline mark. Each mark is a model decoration (`NeverGrowsWhenTypingAtEdges`) that remembers its
+  original text; after every change it is compared again and redrawn as edited, or back, only when that flips.
+  A whole-line mark compares the *line*, since typing at either end of it is outside the non-growing range but
+  is still an edit of that line. A mark whose range collapses (its text deleted) is dropped; a flush drops all
+  (Monaco clears decorations with the old content); a remount saves the ranges and redraws them. Marks also go to
+  the overview ruler and the minimap (edited ones do not), with the accent read as a concrete colour from
+  `--tss-ai-accent`, because those are drawn on a canvas that cannot resolve `var(...)`. That colour is read when
+  a mark is drawn, so it does not follow a later theme switch; the tint, bar and underline do.
+- **This feature injects a stylesheet** (`AIStyles`, one `<style id="tssm-ai-styles">`), which the rest of the
+  package does not: a decoration can only name a class, and these visuals *are* the feature. Every colour in it
+  is a Tesserae `--tss-ai-*` token, so it follows light/dark and a custom theme's AI hue. `YjsCursorStyles` is
+  the precedent.
+- `InsertAI` goes through `pushEditOperations` between two undo stops, so it is one undo step and `LockedLines`
+  can refuse it (it returns null then). Hover text (`GeneratedHover`/`EditedHover`) and the badge's words are
+  English properties for a host that translates.
+
+`SamplePage.FormatName` keeps acronyms together ("AIVariant" -> "AI Variant"; it used to give "A I Variant").
+
+Verified with Playwright, Debug and Release, real keystrokes: the badge goes AI -> Edited on typing, back to AI
+on undo and on Regenerate (`SetText`); the strong effect toggles; Turn off removes look and badge; 3 pre-marked
+lines; inserting a method adds 7 line marks; editing one line, or typing at an AI line's end, edits only it; a
+line typed between AI lines is not marked; marks follow edits; the hover says AI-generated; Accept removes one
+mark; deleting an AI line drops its mark; 2 pre-marked sentences + 3 continued; changing one word edits only that
+sentence and undo restores it; Rewrite selection marks one span; a remount keeps the marks; dark mode clean
+(26-27 checks); every page walks clean; Lifecycle (114) and Pivots and Modals (174) pass.
 
 ## Editor Settings: per-person preferences on the context menu
 
